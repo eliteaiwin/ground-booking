@@ -207,16 +207,18 @@ async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends
         token = create_access_token(user["id"])
         return {"token": token, "user_id": user["id"]}
 
-    # Check if email already exists
+    # Check if email already exists — do NOT auto-link because the google_id
+    # has not been cryptographically verified (token verification is TODO).
+    # Auto-linking an unverified google_id to an existing account would let an
+    # attacker who knows the victim's email take over their account.
     if req.email:
         cursor = await db.execute("SELECT id FROM users WHERE email = ?", (req.email,))
         existing = await cursor.fetchone()
         if existing:
-            # Link google_id to existing account
-            await db.execute("UPDATE users SET google_id = ? WHERE id = ?", (req.google_id, existing["id"]))
-            await db.commit()
-            token = create_access_token(existing["id"])
-            return {"token": token, "user_id": existing["id"]}
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists. Please log in with your existing credentials."
+            )
 
     # Create new user (no password, no phone initially - will need to set phone later)
     full_name = f"{req.first_name} {req.last_name}".strip()
