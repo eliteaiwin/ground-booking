@@ -227,6 +227,8 @@ async def rename_location(
         # Update references in grounds and moderator_locations
         await db.execute("UPDATE grounds SET location = ? WHERE location = ?", (req.new_name, old_name))
         await db.execute("UPDATE moderator_locations SET location = ? WHERE location = ?", (req.new_name, old_name))
+        # Update game ground_name references that use "{location} - {ground}" format
+        await db.execute("UPDATE games SET ground_name = REPLACE(ground_name, ?, ?) WHERE ground_name LIKE ?", (old_name + ' - ', req.new_name + ' - ', old_name + ' - %'))
         await db.commit()
         return {"message": "Location renamed", "old_name": old_name, "new_name": req.new_name}
     except Exception:
@@ -267,6 +269,11 @@ async def rename_ground(
             "UPDATE moderator_locations SET ground_name = ? WHERE location = ? AND ground_name = ?",
             (req.new_name, ground["location"], old_name)
         )
+        # Update game ground_name references
+        old_display = f"{ground['location']} - {old_name}"
+        new_display = f"{ground['location']} - {req.new_name}"
+        await db.execute("UPDATE games SET ground_name = ? WHERE ground_name = ?", (new_display, old_display))
+        await db.execute("UPDATE games SET ground_name = ? WHERE ground_name = ?", (req.new_name, old_name))
         await db.commit()
         return {"message": "Ground renamed", "old_name": old_name, "new_name": req.new_name}
     except Exception:

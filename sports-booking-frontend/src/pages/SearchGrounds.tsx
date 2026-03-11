@@ -103,7 +103,7 @@ export default function SearchGrounds({ onBack }: Props) {
     setLoading(true);
     try {
       const data = await api.searchGrounds(
-        searchLocation || undefined,
+        searchLocation && searchLocation !== 'all' ? searchLocation : undefined,
         searchName || undefined
       );
       setResults(data);

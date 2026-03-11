@@ -195,7 +195,7 @@ export default function AdminScreens({ onBack }: Props) {
     if (!assignUserId || !assignLocation) return;
     setLoading(true);
     try {
-      await api.assignModeratorLocation(Number(assignUserId), assignLocation, assignGround, assignSport);
+      await api.assignModeratorLocation(Number(assignUserId), assignLocation, assignGround === 'all' ? '' : assignGround, assignSport === 'all' ? '' : assignSport);
       showMsg('Moderator assigned successfully!');
       setAssignUserId('');
       setAssignLocation('');
@@ -245,7 +245,7 @@ export default function AdminScreens({ onBack }: Props) {
     if (!searchedUser || !newAssignLocation) return;
     setLoading(true);
     try {
-      await api.assignModeratorLocation(searchedUser.id, newAssignLocation, newAssignGround, newAssignSport);
+      await api.assignModeratorLocation(searchedUser.id, newAssignLocation, newAssignGround === 'all' ? '' : newAssignGround, newAssignSport === 'all' ? '' : newAssignSport);
       showMsg(`Moderator permission added for ${searchedUser.name}!`);
       setNewAssignLocation('');
       setNewAssignGround('');

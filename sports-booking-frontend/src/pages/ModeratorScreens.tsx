@@ -113,7 +113,7 @@ export default function ModeratorScreens({ onBack }: Props) {
     }
   };
 
-  const filteredGrounds = filterLocation
+  const filteredGrounds = filterLocation && filterLocation !== 'all'
     ? grounds.filter(g => g.location === filterLocation)
     : grounds;
 

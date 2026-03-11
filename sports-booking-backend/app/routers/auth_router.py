@@ -130,7 +130,7 @@ async def request_otp(req: OTPRequestModel, db: aiosqlite.Connection = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="Phone number not registered")
 
-    otp_code = ''.join(random.choices(string.digits, k=6))
+    otp_code = ''.join(random.SystemRandom().choices(string.digits, k=6))
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
     await db.execute(
@@ -153,7 +153,7 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="Phone number not registered")
 
-    if not user["otp_code"] or user["otp_code"] != req.otp:
+    if not user["otp_code"] or not __import__('hmac').compare_digest(user["otp_code"], req.otp):
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
     # Check expiry
