@@ -3,9 +3,15 @@ import os
 
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "/data/app.db")
 
-# Fallback for local development
-if not os.path.exists(os.path.dirname(DATABASE_PATH)):
+# Fallback for local development: if the parent directory doesn't exist, use a
+# path relative to this package.  os.path.dirname("app.db") returns "" which
+# makes os.path.exists("") return False — the fallback still applies correctly.
+_db_dir = os.path.dirname(DATABASE_PATH)
+if _db_dir and not os.path.exists(_db_dir):
     DATABASE_PATH = os.path.join(os.path.dirname(__file__), "..", "app.db")
+elif not _db_dir:
+    # Bare filename like "app.db" — resolve relative to project root
+    DATABASE_PATH = os.path.join(os.path.dirname(__file__), "..", DATABASE_PATH)
 
 
 async def get_db():

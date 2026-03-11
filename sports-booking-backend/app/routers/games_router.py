@@ -421,7 +421,10 @@ async def quit_game(
         pass
 
     if quit_penalty_hours > 0 and was_selected:
-        # Check if within penalty window
+        # Check if within penalty window.
+        # Design: if the game is already in_progress (hours_until_game < 0),
+        # penalty still applies — quitting a live game should require payment.
+        # Only skip penalty when hours_until_game >= quit_penalty_hours (early quit).
         try:
             game_dt_str = f"{game['game_date']} {game['game_time']}"
             game_dt = datetime.strptime(game_dt_str, "%Y-%m-%d %H:%M")

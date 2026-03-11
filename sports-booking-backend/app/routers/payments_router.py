@@ -283,15 +283,14 @@ async def mark_paid_with_comment(
             "INSERT INTO payments (game_id, user_id, amount, status, paid_at) VALUES (?, ?, ?, 'paid', ?)",
             (req.game_id, req.user_id, game["cost_per_person"], now)
         )
-    elif payment["status"] == "paid":
-        return {"message": "Already marked as paid"}
-    else:
+    elif payment["status"] != "paid":
         await db.execute(
             "UPDATE payments SET status = 'paid', paid_at = ? WHERE game_id = ? AND user_id = ?",
             (now, req.game_id, req.user_id)
         )
 
-    # Update player payment_confirmed
+    # Always update player payment_confirmed (fixes inconsistency if payment was
+    # already 'paid' but payment_confirmed was still 0 from a prior partial failure)
     await db.execute(
         "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
         (req.game_id, req.user_id)
