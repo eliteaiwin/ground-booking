@@ -14,16 +14,13 @@ interface Props {
 type LoginMode = 'password' | 'otp' | 'google';
 
 export default function LoginPage({ onSwitchToRegister }: Props) {
-  const { login, loginWithOTP, requestOTP, loginWithGoogle } = useAuth();
+  const { login, loginWithOTP, requestOTP } = useAuth();
   const [loginMode, setLoginMode] = useState<LoginMode>('password');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpDemo, setOtpDemo] = useState('');
-  const [googleEmail, setGoogleEmail] = useState('');
-  const [googleFirstName, setGoogleFirstName] = useState('');
-  const [googleLastName, setGoogleLastName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -69,19 +66,6 @@ export default function LoginPage({ onSwitchToRegister }: Props) {
     }
   };
 
-  const handleGoogleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      const googleId = `google_${googleEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
-      await loginWithGoogle(googleId, googleEmail, googleFirstName, googleLastName);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Google login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
