@@ -902,7 +902,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-        {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'completed') && (
+        {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress') && (
           <Card className="border-green-200 bg-green-50">
             <CardContent className="p-4">
               <h4 className="font-semibold text-green-800 mb-2 flex items-center gap-2"><Share2 size={16} /> Send Current Status</h4>
