@@ -235,48 +235,17 @@ export default function LoginPage({ onSwitchToRegister }: Props) {
             </form>
           )}
 
-          {/* Google Login */}
+          {/* Google Login - disabled until proper OAuth is implemented */}
           {loginMode === 'google' && (
-            <form onSubmit={handleGoogleLogin} className="space-y-4">
-              <p className="text-xs text-gray-500 text-center">Sign in with your Google account</p>
-              <div className="space-y-2">
-                <Label htmlFor="google-email">Google Email</Label>
-                <Input
-                  id="google-email"
-                  type="email"
-                  placeholder="your@gmail.com"
-                  value={googleEmail}
-                  onChange={(e) => setGoogleEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="g-first">First Name</Label>
-                  <Input
-                    id="g-first"
-                    placeholder="First name"
-                    value={googleFirstName}
-                    onChange={(e) => setGoogleFirstName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="g-last">Last Name</Label>
-                  <Input
-                    id="g-last"
-                    placeholder="Last name"
-                    value={googleLastName}
-                    onChange={(e) => setGoogleLastName(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
-                <Chrome size={16} className="mr-2" />
-                {loading ? 'Signing in...' : 'Sign in with Google'}
-              </Button>
-            </form>
+            <div className="space-y-4 text-center py-6">
+              <Chrome size={40} className="mx-auto text-gray-400" />
+              <p className="text-sm text-gray-500">
+                Google Sign-In is coming soon.
+              </p>
+              <p className="text-xs text-gray-400">
+                Please use Password or Mobile OTP login for now.
+              </p>
+            </div>
           )}
 
           <Separator />

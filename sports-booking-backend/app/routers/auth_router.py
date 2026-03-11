@@ -186,57 +186,24 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
 @router.post("/google")
 async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends(get_db)):
     """Authenticate or register via Google SSO.
-    
-    WARNING: Currently uses client-supplied google_id without server-side token
-    verification. In production, replace google_id with a Google OAuth ID token
-    and verify it using google-auth library's id_token.verify_oauth2_token()
-    to prevent account impersonation.
+
+    DISABLED: This endpoint is intentionally disabled until proper server-side
+    Google OAuth token verification is implemented.  The previous implementation
+    accepted a client-supplied ``google_id`` without any cryptographic proof,
+    which allowed anyone who could guess (or compute) the ``google_id`` to
+    impersonate any Google-linked account.
+
+    To re-enable:
+      1. Add ``google-auth`` to dependencies.
+      2. Accept a Google **ID token** (not a bare ``google_id``).
+      3. Verify it server-side with
+         ``google.oauth2.id_token.verify_oauth2_token()``.
+      4. Use the verified ``sub`` claim as the stable user identifier.
     """
-    # TODO: Verify Google ID token server-side before trusting google_id
-    # from google.oauth2 import id_token
-    # from google.auth.transport import requests
-    # idinfo = id_token.verify_oauth2_token(req.google_id, requests.Request(), GOOGLE_CLIENT_ID)
-    # verified_google_id = idinfo['sub']
-    # verified_email = idinfo['email']
-
-    # Check if user exists by google_id
-    cursor = await db.execute("SELECT id FROM users WHERE google_id = ?", (req.google_id,))
-    user = await cursor.fetchone()
-
-    if user:
-        token = create_access_token(user["id"])
-        return {"token": token, "user_id": user["id"]}
-
-    # Check if email already exists — do NOT auto-link because the google_id
-    # has not been cryptographically verified (token verification is TODO).
-    # Auto-linking an unverified google_id to an existing account would let an
-    # attacker who knows the victim's email take over their account.
-    if req.email:
-        cursor = await db.execute("SELECT id FROM users WHERE email = ?", (req.email,))
-        existing = await cursor.fetchone()
-        if existing:
-            raise HTTPException(
-                status_code=409,
-                detail="An account with this email already exists. Please log in with your existing credentials."
-            )
-
-    # Create new user (no password, no phone initially - will need to set phone later)
-    full_name = f"{req.first_name} {req.last_name}".strip()
-    # Generate a temporary unique phone placeholder
-    temp_phone = f"google_{req.google_id}"
-
-    cursor = await db.execute(
-        """INSERT INTO users (first_name, last_name, name, phone, email, google_id,
-           notification_preference) VALUES (?, ?, ?, ?, ?, ?, 'whatsapp')""",
-        (req.first_name, req.last_name, full_name, temp_phone, req.email, req.google_id)
+    raise HTTPException(
+        status_code=501,
+        detail="Google authentication is not yet available. Please use password or OTP login."
     )
-    user_id = cursor.lastrowid
-
-    await _assign_roles(db, user_id)
-    await db.commit()
-
-    token = create_access_token(user_id)
-    return {"token": token, "user_id": user_id, "is_new": True}
 
 
 @router.get("/me")
