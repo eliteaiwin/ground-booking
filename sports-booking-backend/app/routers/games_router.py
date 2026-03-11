@@ -356,6 +356,7 @@ async def vote_join_game(
             f"""SELECT g.id FROM games g
                JOIN game_players gp ON g.id = gp.game_id
                WHERE gp.user_id = ? AND g.status = 'completed'
+               AND gp.status = 'selected'
                AND (g.ground_name = ?{like_clause})
                LIMIT 1""",
             query_params
@@ -492,6 +493,7 @@ async def quit_game(
                     f"""SELECT g.id FROM games g
                        JOIN game_players gp ON g.id = gp.game_id
                        WHERE gp.user_id = ? AND g.status = 'completed'
+                       AND gp.status = 'selected'
                        AND (g.ground_name = ?{ft_like})
                        LIMIT 1""",
                     ft_params
