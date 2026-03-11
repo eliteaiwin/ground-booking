@@ -51,6 +51,12 @@ async def record_payment(
         (now, req.game_id, user_id)
     )
 
+    # Update player payment_confirmed so frontend shows correct status
+    await db.execute(
+        "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
+        (req.game_id, user_id)
+    )
+
     # Notify user of payment confirmation
     cursor = await db.execute("SELECT title FROM games WHERE id = ?", (req.game_id,))
     game = await cursor.fetchone()
