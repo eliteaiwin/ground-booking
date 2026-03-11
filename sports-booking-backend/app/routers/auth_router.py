@@ -58,15 +58,17 @@ class UpdateProfileRequest(BaseModel):
 
 
 async def _assign_roles(db: aiosqlite.Connection, user_id: int):
-    """Assign roles: first user gets all roles, others get 'user'."""
-    cursor = await db.execute("SELECT COUNT(*) as cnt FROM users")
-    count_row = await cursor.fetchone()
-    if count_row["cnt"] == 1:
-        await db.execute("INSERT INTO user_roles (user_id, role) VALUES (?, 'admin')", (user_id,))
-        await db.execute("INSERT INTO user_roles (user_id, role) VALUES (?, 'moderator')", (user_id,))
-        await db.execute("INSERT INTO user_roles (user_id, role) VALUES (?, 'user')", (user_id,))
-    else:
-        await db.execute("INSERT INTO user_roles (user_id, role) VALUES (?, 'user')", (user_id,))
+    """Assign roles: first user gets all roles, others get 'user'.
+    
+    Checks user_roles table for existing admins (not user count) to reduce
+    race window. Uses INSERT OR IGNORE for idempotency.
+    """
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM user_roles WHERE role = 'admin'")
+    admin_count = await cursor.fetchone()
+    if admin_count["cnt"] == 0:
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'admin')", (user_id,))
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')", (user_id,))
+    await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'user')", (user_id,))
 
 
 @router.post("/register")

@@ -95,6 +95,16 @@ async def update_user_roles(
     if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Guard: prevent removing the last admin
+    if 'admin' not in req.roles:
+        cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM user_roles WHERE role = 'admin' AND user_id != ?",
+            (target_user_id,)
+        )
+        remaining = await cursor.fetchone()
+        if remaining["cnt"] == 0:
+            raise HTTPException(status_code=400, detail="Cannot remove the last admin role")
+
     # Replace roles
     await db.execute("DELETE FROM user_roles WHERE user_id = ?", (target_user_id,))
     for role in req.roles:

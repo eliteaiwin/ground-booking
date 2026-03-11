@@ -661,6 +661,10 @@ async def vote_player_of_the_day(
     if not await cursor.fetchone():
         raise HTTPException(status_code=403, detail="Only selected players can vote")
 
+    # Prevent self-voting
+    if req.player_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot vote for yourself")
+
     # Check player being voted for was in the game
     cursor = await db.execute(
         "SELECT id FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",

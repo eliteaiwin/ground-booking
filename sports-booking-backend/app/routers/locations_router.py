@@ -100,8 +100,9 @@ async def search_grounds_public(
         query += " AND location = ?"
         params.append(location)
     if ground_name:
-        query += " AND (name LIKE ? OR location LIKE ?)"
-        params.extend([f"%{ground_name}%", f"%{ground_name}%"])
+        escaped = ground_name.replace('%', '\\%').replace('_', '\\_')
+        query += " AND (name LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\')"
+        params.extend([f"%{escaped}%", f"%{escaped}%"])
     query += " ORDER BY location, name"
     cursor = await db.execute(query, params)
     grounds_rows = await cursor.fetchall()
