@@ -39,7 +39,7 @@ class OTPVerifyRequest(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    google_id: str
+    google_id: str  # In production, this should be a Google OAuth ID token verified server-side
     email: str
     first_name: str
     last_name: str
@@ -169,6 +169,9 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
         raise HTTPException(status_code=401, detail="OTP expired")
 
     if not user["otp_code"] or not __import__('hmac').compare_digest(user["otp_code"], req.otp):
+        # Clear OTP on failed attempt to prevent brute-force
+        await db.execute("UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?", (user["id"],))
+        await db.commit()
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
     # Clear OTP after successful verification
@@ -181,7 +184,20 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
 
 @router.post("/google")
 async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends(get_db)):
-    """Authenticate or register via Google SSO."""
+    """Authenticate or register via Google SSO.
+    
+    WARNING: Currently uses client-supplied google_id without server-side token
+    verification. In production, replace google_id with a Google OAuth ID token
+    and verify it using google-auth library's id_token.verify_oauth2_token()
+    to prevent account impersonation.
+    """
+    # TODO: Verify Google ID token server-side before trusting google_id
+    # from google.oauth2 import id_token
+    # from google.auth.transport import requests
+    # idinfo = id_token.verify_oauth2_token(req.google_id, requests.Request(), GOOGLE_CLIENT_ID)
+    # verified_google_id = idinfo['sub']
+    # verified_email = idinfo['email']
+
     # Check if user exists by google_id
     cursor = await db.execute("SELECT id FROM users WHERE google_id = ?", (req.google_id,))
     user = await cursor.fetchone()

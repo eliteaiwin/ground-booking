@@ -158,7 +158,7 @@ async def payment_summary(
            SUM(CASE WHEN p.status='paid' THEN p.amount ELSE 0 END) as total_collected,
            SUM(CASE WHEN p.status='pending' THEN p.amount ELSE 0 END) as total_pending
            FROM games g LEFT JOIN payments p ON g.id = p.game_id
-           WHERE 1=1""" + date_filter + game_status_filter + game_id_filter + """
+           WHERE 1=1""" + date_filter + game_status_filter + game_id_filter + pay_filter + """
            GROUP BY g.id ORDER BY g.game_date DESC"""
     params = date_params + game_id_params
     cursor = await db.execute(query, params)
