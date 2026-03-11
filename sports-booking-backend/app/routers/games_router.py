@@ -475,6 +475,33 @@ async def quit_game(
                     "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
                     (game_id, next_player["user_id"], game["cost_per_person"])
                 )
+
+            # Check if promoted player is first-time on this ground for PostPaid games
+            if game["payment_timing"] == "after":
+                ground_name = game["ground_name"]
+                ft_params = [next_player["user_id"], ground_name]
+                ft_like = ""
+                if ' - ' in ground_name:
+                    loc_part = ground_name.split(' - ')[0]
+                    gnd_part = ground_name.split(' - ')[-1]
+                    esc_loc = loc_part.replace('%', '\\%').replace('_', '\\_')
+                    esc_gnd = gnd_part.replace('%', '\\%').replace('_', '\\_')
+                    ft_like = " OR g.ground_name LIKE ? ESCAPE '\\'"
+                    ft_params.append(f"{esc_loc} - {esc_gnd}")
+                ft_cursor = await db.execute(
+                    f"""SELECT g.id FROM games g
+                       JOIN game_players gp ON g.id = gp.game_id
+                       WHERE gp.user_id = ? AND g.status = 'completed'
+                       AND (g.ground_name = ?{ft_like})
+                       LIMIT 1""",
+                    ft_params
+                )
+                if not await ft_cursor.fetchone():
+                    await db.execute(
+                        "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
+                        (game_id, next_player["user_id"], game["cost_per_person"])
+                    )
+
             # Notify promoted player
             await create_notification(
                 db, next_player["user_id"], game_id, "promoted",

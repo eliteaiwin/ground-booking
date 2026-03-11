@@ -157,14 +157,17 @@ async def payment_summary(
         pay_filter = " AND p.status = 'pending'"
 
     # Per-game summary
+    # Note: pay_filter is applied in the JOIN ON clause (not WHERE) so that games
+    # without matching payments still appear with zeroed counts instead of being
+    # excluded entirely by the LEFT JOIN → INNER JOIN conversion.
     query = """SELECT g.id, g.title, g.sport_type, g.game_date, g.ground_name, g.cost_per_person, g.status as game_status,
            COUNT(p.id) as total_players,
            SUM(CASE WHEN p.status='paid' THEN 1 ELSE 0 END) as paid_count,
            SUM(CASE WHEN p.status='pending' THEN 1 ELSE 0 END) as pending_count,
            SUM(CASE WHEN p.status='paid' THEN p.amount ELSE 0 END) as total_collected,
            SUM(CASE WHEN p.status='pending' THEN p.amount ELSE 0 END) as total_pending
-           FROM games g LEFT JOIN payments p ON g.id = p.game_id
-           WHERE 1=1""" + date_filter + game_status_filter + game_id_filter + pay_filter + """
+           FROM games g LEFT JOIN payments p ON g.id = p.game_id""" + pay_filter + """
+           WHERE 1=1""" + date_filter + game_status_filter + game_id_filter + """
            GROUP BY g.id ORDER BY g.game_date DESC"""
     params = date_params + game_id_params
     cursor = await db.execute(query, params)

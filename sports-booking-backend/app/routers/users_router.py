@@ -43,6 +43,8 @@ async def list_users(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    await require_admin(user_id, db)
+
     cursor = await db.execute(
         "SELECT id, first_name, last_name, name, phone, email, notification_preference, sports, locations, created_at FROM users ORDER BY name"
     )
