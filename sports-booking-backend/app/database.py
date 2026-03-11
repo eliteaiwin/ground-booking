@@ -193,7 +193,7 @@ async def init_db():
         "ALTER TABLE game_players ADD COLUMN position TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE game_players ADD COLUMN team_id INTEGER",
         "ALTER TABLE game_players ADD COLUMN payment_confirmed INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'",
+        "ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'Rs'",
         "ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 90",
         "ALTER TABLE moderator_locations ADD COLUMN sport_type TEXT NOT NULL DEFAULT ''",

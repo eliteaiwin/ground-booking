@@ -340,13 +340,16 @@ async def vote_join_game(
     if game["payment_timing"] == "after":
         ground_name = game["ground_name"]
         # Check if user has played any completed game on this ground before
+        # Escape LIKE special characters to prevent wildcard injection
+        suffix = ground_name.split(' - ')[-1] if ' - ' in ground_name else ground_name
+        escaped_suffix = suffix.replace('%', '\\%').replace('_', '\\_')
         prev_cursor = await db.execute(
             """SELECT g.id FROM games g
                JOIN game_players gp ON g.id = gp.game_id
                WHERE gp.user_id = ? AND g.status = 'completed'
-               AND (g.ground_name = ? OR g.ground_name LIKE ?)
+               AND (g.ground_name = ? OR g.ground_name LIKE ? ESCAPE '\\')
                LIMIT 1""",
-            (user_id, ground_name, f"%{ground_name.split(' - ')[-1] if ' - ' in ground_name else ground_name}%")
+            (user_id, ground_name, f"%{escaped_suffix}%")
         )
         if not await prev_cursor.fetchone():
             is_first_time_on_ground = True

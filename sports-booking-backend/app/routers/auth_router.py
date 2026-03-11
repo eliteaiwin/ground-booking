@@ -157,15 +157,17 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
     # Check expiry
-    if user["otp_expires_at"]:
-        try:
-            expires = datetime.fromisoformat(user["otp_expires_at"])
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) > expires:
-                raise HTTPException(status_code=401, detail="OTP expired")
-        except ValueError:
-            pass
+    if not user["otp_expires_at"]:
+        raise HTTPException(status_code=401, detail="OTP expired")
+
+    try:
+        expires = datetime.fromisoformat(user["otp_expires_at"])
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            raise HTTPException(status_code=401, detail="OTP expired")
+    except ValueError:
+        raise HTTPException(status_code=401, detail="OTP expired")
 
     # Clear OTP after successful verification
     await db.execute("UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?", (user["id"],))
@@ -301,6 +303,10 @@ async def update_profile(
         updates.append("name = ?")
         params.append(f"{fn} {ln}".strip())
     if req.email is not None:
+        # Check email uniqueness
+        cursor = await db.execute("SELECT id FROM users WHERE email = ? AND id != ?", (req.email, user_id))
+        if await cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Email already in use")
         updates.append("email = ?")
         params.append(req.email)
     if req.notification_preference is not None:
@@ -320,6 +326,10 @@ async def update_profile(
         updates.append("currency = ?")
         params.append(req.currency)
     if req.phone is not None:
+        # Check phone uniqueness
+        cursor = await db.execute("SELECT id FROM users WHERE phone = ? AND id != ?", (req.phone, user_id))
+        if await cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Phone number already in use")
         updates.append("phone = ?")
         params.append(req.phone)
         updates.append("phone_verified = ?")
