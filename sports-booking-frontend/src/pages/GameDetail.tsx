@@ -49,8 +49,9 @@ interface Team {
 interface PaymentDetail {
   user_id: number;
   name: string;
-  paid: boolean;
+  status: string;
   amount: number;
+  paid_at: string | null;
 }
 
 interface Game {
@@ -349,8 +350,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
   const positions = SPORT_POSITIONS[game.sport_type] || [];
 
-  const unpaidPlayers = (game.payment_details || []).filter(pd => !pd.paid);
-  const paidPlayers = (game.payment_details || []).filter(pd => pd.paid);
+  const unpaidPlayers = (game.payment_details || []).filter(pd => pd.status === 'pending');
+  const paidPlayers = (game.payment_details || []).filter(pd => pd.status === 'paid');
   const totalReceived = paidPlayers.reduce((sum, p) => sum + p.amount, 0);
   const totalPending = unpaidPlayers.reduce((sum, p) => sum + p.amount, 0);
 

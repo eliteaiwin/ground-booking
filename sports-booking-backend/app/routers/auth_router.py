@@ -153,10 +153,7 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="Phone number not registered")
 
-    if not user["otp_code"] or not __import__('hmac').compare_digest(user["otp_code"], req.otp):
-        raise HTTPException(status_code=401, detail="Invalid OTP")
-
-    # Check expiry
+    # Check expiry first to avoid leaking OTP correctness for expired tokens
     if not user["otp_expires_at"]:
         raise HTTPException(status_code=401, detail="OTP expired")
 
@@ -168,6 +165,9 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
             raise HTTPException(status_code=401, detail="OTP expired")
     except ValueError:
         raise HTTPException(status_code=401, detail="OTP expired")
+
+    if not user["otp_code"] or not __import__('hmac').compare_digest(user["otp_code"], req.otp):
+        raise HTTPException(status_code=401, detail="Invalid OTP")
 
     # Clear OTP after successful verification
     await db.execute("UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?", (user["id"],))

@@ -21,6 +21,7 @@ async def get_db():
 
 async def init_db():
     db = await aiosqlite.connect(DATABASE_PATH)
+    db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA journal_mode=WAL")
     await db.execute("PRAGMA foreign_keys=ON")
 
