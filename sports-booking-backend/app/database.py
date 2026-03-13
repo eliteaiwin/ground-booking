@@ -1,7 +1,9 @@
 import aiosqlite
 import os
+import json as _json
 
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "/data/app.db")
+SEED_MODE = os.environ.get("SEED_MODE", "")  # "demo" or "production" or ""
 
 # Fallback for local development: if the parent directory doesn't exist, use a
 # path relative to this package.  os.path.dirname("app.db") returns "" which
@@ -270,4 +272,102 @@ async def init_db():
         pass
 
     await db.commit()
+
+    # Seed data based on SEED_MODE
+    if SEED_MODE == "production":
+        await _seed_production_data(db)
+
     await db.close()
+
+
+async def _seed_production_data(db: aiosqlite.Connection):
+    """Seed the production instance with 2 admin users + 20 test users.
+    Only runs once (skips if users already exist).
+    """
+    from .auth import hash_password
+
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM users")
+    count = (await cursor.fetchone())["cnt"]
+    if count > 0:
+        return  # Already seeded
+
+    password_hash = hash_password("password123")
+
+    # --- 2 Admin users ---
+    admin_users = [
+        {
+            "first_name": "Tittle", "last_name": "Joseph",
+            "phone": "9900000001", "email": "tittlejoseph@gmail.com",
+            "sports": "soccer,cricket", "locations": "Bangalore",
+            "sport_positions": _json.dumps({"soccer": ["Midfielder"], "cricket": ["Batsman"]}),
+        },
+        {
+            "first_name": "Elite", "last_name": "Dev",
+            "phone": "9900000002", "email": "elitedevlit@gmail.com",
+            "sports": "soccer,cricket,badminton", "locations": "Bangalore",
+            "sport_positions": _json.dumps({"soccer": ["Striker"], "cricket": ["Bowler"], "badminton": ["Singles"]}),
+        },
+    ]
+
+    for admin in admin_users:
+        full_name = f"{admin['first_name']} {admin['last_name']}"
+        cursor = await db.execute(
+            """INSERT INTO users (first_name, last_name, name, phone, email, password_hash,
+               notification_preference, sports, locations, sport_positions)
+               VALUES (?, ?, ?, ?, ?, ?, 'whatsapp', ?, ?, ?)""",
+            (admin["first_name"], admin["last_name"], full_name,
+             admin["phone"], admin["email"], password_hash,
+             admin["sports"], admin["locations"], admin["sport_positions"])
+        )
+        uid = cursor.lastrowid
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'admin')", (uid,))
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')", (uid,))
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'user')", (uid,))
+
+    # --- 20 Test users ---
+    test_users = [
+        {"first_name": "Rahul",    "last_name": "Sharma",    "sports": "soccer,cricket"},
+        {"first_name": "Priya",    "last_name": "Patel",     "sports": "badminton,cricket"},
+        {"first_name": "Amit",     "last_name": "Kumar",     "sports": "soccer"},
+        {"first_name": "Neha",     "last_name": "Singh",     "sports": "soccer,basketball"},
+        {"first_name": "Vikram",   "last_name": "Reddy",     "sports": "cricket"},
+        {"first_name": "Ananya",   "last_name": "Gupta",     "sports": "badminton"},
+        {"first_name": "Rohan",    "last_name": "Verma",     "sports": "soccer,hockey"},
+        {"first_name": "Sneha",    "last_name": "Iyer",      "sports": "cricket,badminton"},
+        {"first_name": "Arjun",    "last_name": "Nair",      "sports": "soccer"},
+        {"first_name": "Kavita",   "last_name": "Menon",     "sports": "basketball"},
+        {"first_name": "Suresh",   "last_name": "Pillai",    "sports": "soccer,cricket"},
+        {"first_name": "Divya",    "last_name": "Rao",       "sports": "badminton,hockey"},
+        {"first_name": "Manish",   "last_name": "Joshi",     "sports": "soccer"},
+        {"first_name": "Pooja",    "last_name": "Desai",     "sports": "cricket"},
+        {"first_name": "Rajesh",   "last_name": "Kulkarni",  "sports": "soccer,basketball"},
+        {"first_name": "Meera",    "last_name": "Chatterjee","sports": "badminton"},
+        {"first_name": "Sanjay",   "last_name": "Mishra",    "sports": "hockey,soccer"},
+        {"first_name": "Lakshmi",  "last_name": "Venkat",    "sports": "cricket,soccer"},
+        {"first_name": "Karthik",  "last_name": "Bhat",      "sports": "soccer"},
+        {"first_name": "Ritu",     "last_name": "Agarwal",   "sports": "badminton,basketball"},
+    ]
+
+    for i, user in enumerate(test_users, start=1):
+        phone = f"990000010{i}" if i < 10 else f"99000001{i}"
+        full_name = f"{user['first_name']} {user['last_name']}"
+        cursor = await db.execute(
+            """INSERT INTO users (first_name, last_name, name, phone, email, password_hash,
+               notification_preference, sports, locations, sport_positions)
+               VALUES (?, ?, ?, ?, ?, ?, 'whatsapp', ?, 'Bangalore', '')""",
+            (user["first_name"], user["last_name"], full_name,
+             phone, f"{user['first_name'].lower()}.{user['last_name'].lower()}@test.com",
+             password_hash, user["sports"])
+        )
+        uid = cursor.lastrowid
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'user')", (uid,))
+
+    # Create default location and ground for Bangalore
+    await db.execute(
+        "INSERT OR IGNORE INTO locations (name, created_by) VALUES ('Bangalore', 1)"
+    )
+    await db.execute(
+        "INSERT OR IGNORE INTO grounds (name, location, created_by) VALUES ('Whitefield United', 'Bangalore', 1)"
+    )
+
+    await db.commit()
