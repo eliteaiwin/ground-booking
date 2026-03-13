@@ -63,7 +63,7 @@ if STATIC_DIR and Path(STATIC_DIR).is_dir():
         if full_path and not full_path.startswith("api"):
             file_path = (_static / full_path).resolve()
             # Guard against path traversal (e.g. ../../../etc/passwd)
-            if str(file_path).startswith(str(_static.resolve())) and file_path.is_file():
+            if file_path.is_relative_to(_static.resolve()) and file_path.is_file():
                 return FileResponse(str(file_path))
         # Fall back to index.html for SPA routing
         return FileResponse(str(_index))
