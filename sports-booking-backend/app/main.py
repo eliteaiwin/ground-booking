@@ -60,8 +60,10 @@ if STATIC_DIR and Path(STATIC_DIR).is_dir():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         # Try to serve the exact file first (e.g. favicon.ico, manifest.json)
-        file_path = _static / full_path
-        if full_path and file_path.is_file() and not full_path.startswith("api"):
-            return FileResponse(str(file_path))
+        if full_path and not full_path.startswith("api"):
+            file_path = (_static / full_path).resolve()
+            # Guard against path traversal (e.g. ../../../etc/passwd)
+            if str(file_path).startswith(str(_static.resolve())) and file_path.is_file():
+                return FileResponse(str(file_path))
         # Fall back to index.html for SPA routing
         return FileResponse(str(_index))
