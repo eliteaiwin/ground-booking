@@ -3,7 +3,7 @@ import os
 import json as _json
 
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "/data/app.db")
-SEED_MODE = os.environ.get("SEED_MODE", "")  # "demo" or "production" or ""
+SEED_MODE = os.environ.get("SEED_MODE", "")  # "production" to seed admin+test users, "" for no auto-seed
 
 # Fallback for local development: if the parent directory doesn't exist, use a
 # path relative to this package.  os.path.dirname("app.db") returns "" which
