@@ -1,17 +1,27 @@
-// Parse API URL - extract Basic Auth credentials if embedded in the URL
+// Determine API URL.
+// When VITE_API_URL is empty (same-origin serving via STATIC_DIR), we use
+// window.location.origin so fetch() always gets a full absolute URL *without*
+// embedded credentials.  This prevents the browser security error
+// "Request cannot be constructed from a URL that includes credentials" that
+// occurs when the page was loaded through a Basic-Auth proxy
+// (e.g. https://user:pass@host/).
 const _rawApiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
-let API_URL = _rawApiUrl;
-let _basicAuth: string | null = null;
-try {
-  const parsed = new URL(_rawApiUrl);
-  if (parsed.username) {
-    _basicAuth = btoa(`${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`);
-    parsed.username = '';
-    parsed.password = '';
+let API_URL: string;
+if (!_rawApiUrl) {
+  // Same-origin mode: use the page's origin (always credential-free)
+  API_URL = typeof window !== 'undefined' ? window.location.origin : '';
+} else {
+  // External API URL - strip any embedded credentials
+  try {
+    const parsed = new URL(_rawApiUrl);
+    if (parsed.username) {
+      parsed.username = '';
+      parsed.password = '';
+    }
     API_URL = parsed.origin + parsed.pathname.replace(/\/$/, '');
+  } catch {
+    API_URL = _rawApiUrl;
   }
-} catch {
-  // Not a valid URL, use as-is
 }
 
 function getToken(): string | null {
@@ -26,9 +36,6 @@ async function request(path: string, options: RequestInit = {}) {
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
-  }
-  if (_basicAuth && !headers['Authorization']) {
-    headers['Authorization'] = `Basic ${_basicAuth}`;
   }
 
   const res = await fetch(`${API_URL}${path}`, {
