@@ -2,14 +2,15 @@ import jwt
 import os
 from datetime import datetime, timedelta, timezone
 import bcrypt as _bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import Optional
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "sports-booking-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 72
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -37,5 +38,29 @@ def decode_token(token: str) -> int:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
-async def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> int:
-    return decode_token(credentials.credentials)
+async def get_current_user_id(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> int:
+    """Extract JWT from Authorization header or X-Auth-Token header.
+
+    When the app is behind a Basic-Auth proxy (e.g. the Devin expose tunnel),
+    the proxy consumes the Authorization header.  The frontend can send the
+    JWT via the X-Auth-Token header instead so both auth layers coexist.
+    """
+    # 1. Standard Authorization: Bearer <token>
+    if credentials and credentials.credentials:
+        return decode_token(credentials.credentials)
+
+    # 2. Fallback: X-Auth-Token header
+    x_auth = request.headers.get("X-Auth-Token", "")
+    if x_auth:
+        token = x_auth.removeprefix("Bearer ").strip()
+        if token:
+            return decode_token(token)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )

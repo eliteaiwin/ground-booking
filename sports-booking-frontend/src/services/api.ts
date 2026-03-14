@@ -1,20 +1,37 @@
-// Determine API URL.
-// When VITE_API_URL is empty (same-origin serving via STATIC_DIR), we use
-// window.location.origin so fetch() always gets a full absolute URL *without*
-// embedded credentials.  This prevents the browser security error
-// "Request cannot be constructed from a URL that includes credentials" that
-// occurs when the page was loaded through a Basic-Auth proxy
-// (e.g. https://user:pass@host/).
+// Determine API URL and optional proxy Basic-Auth credentials.
+//
+// Proxy-auth mode (behind a Basic-Auth tunnel like the Devin expose tool):
+//   VITE_API_URL = ""            (same-origin, served via STATIC_DIR)
+//   VITE_PROXY_AUTH = "user:pass" (proxy credentials)
+// The frontend sends Authorization: Basic (for the proxy) on every request,
+// and X-Auth-Token: Bearer (for the backend JWT) on authenticated requests.
+//
+// Alternatively, VITE_API_URL can embed credentials (https://user:pass@host)
+// which are extracted and used the same way.
+//
+// Normal mode (no proxy):
+//   VITE_API_URL = "http://localhost:8000"  or a deployed backend URL
+//   JWT goes in Authorization: Bearer as usual.
 const _rawApiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 let API_URL: string;
+let _proxyBasicAuth: string | null = null;
+
+// Check for explicit proxy auth env var first
+const _proxyAuthEnv = import.meta.env.VITE_PROXY_AUTH ?? '';
+if (_proxyAuthEnv) {
+  _proxyBasicAuth = btoa(_proxyAuthEnv);
+}
+
 if (!_rawApiUrl) {
-  // Same-origin mode: use the page's origin (always credential-free)
+  // Same-origin mode
   API_URL = typeof window !== 'undefined' ? window.location.origin : '';
 } else {
-  // External API URL - strip any embedded credentials
   try {
     const parsed = new URL(_rawApiUrl);
     if (parsed.username) {
+      _proxyBasicAuth = btoa(
+        `${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password)}`,
+      );
       parsed.username = '';
       parsed.password = '';
     }
@@ -34,7 +51,15 @@ async function request(path: string, options: RequestInit = {}) {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
-  if (token) {
+
+  if (_proxyBasicAuth) {
+    // Proxy mode: Basic Auth goes in Authorization, JWT in X-Auth-Token
+    headers['Authorization'] = `Basic ${_proxyBasicAuth}`;
+    if (token) {
+      headers['X-Auth-Token'] = `Bearer ${token}`;
+    }
+  } else if (token) {
+    // Normal mode: JWT in Authorization
     headers['Authorization'] = `Bearer ${token}`;
   }
 
