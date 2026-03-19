@@ -23,8 +23,27 @@ if (_proxyAuthEnv) {
 }
 
 if (!_rawApiUrl) {
-  // Same-origin mode
-  API_URL = typeof window !== 'undefined' ? window.location.origin : '';
+  // Same-origin mode – strip any credentials the browser may expose in location
+  if (typeof window !== 'undefined') {
+    try {
+      const loc = new URL(window.location.href);
+      if (loc.username) {
+        // The page was loaded with credentials in the URL (e.g. Basic-Auth tunnel).
+        // Extract them so we can send them via Authorization header on fetch() calls,
+        // since fetch() does not allow URLs that contain credentials.
+        _proxyBasicAuth = _proxyBasicAuth || btoa(
+          `${decodeURIComponent(loc.username)}:${decodeURIComponent(loc.password)}`,
+        );
+      }
+      loc.username = '';
+      loc.password = '';
+      API_URL = loc.origin;
+    } catch {
+      API_URL = window.location.origin;
+    }
+  } else {
+    API_URL = '';
+  }
 } else {
   try {
     const parsed = new URL(_rawApiUrl);
