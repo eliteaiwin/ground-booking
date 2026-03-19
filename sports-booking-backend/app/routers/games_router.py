@@ -330,8 +330,8 @@ async def edit_game(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] in ("completed",):
-        raise HTTPException(status_code=400, detail="Cannot edit a completed game")
+    if game["status"] in ("completed", "cancelled"):
+        raise HTTPException(status_code=400, detail="Cannot edit a completed or cancelled game")
 
     updates: list[str] = []
     params: list = []
@@ -878,14 +878,15 @@ async def cancel_game(
     ground = game["ground_name"]
     game_player_ids = {p["user_id"] for p in all_players}
     cursor = await db.execute(
-        "SELECT id, sports FROM users WHERE notification_preference != 'none'"
+        "SELECT id, sports, locations FROM users WHERE notification_preference != 'none'"
     )
     all_users = await cursor.fetchall()
     for u in all_users:
         if u["id"] in game_player_ids:
             continue
         user_sports = u["sports"] or ""
-        if sport in user_sports or ground.lower() in user_sports.lower():
+        user_locations = (u["locations"] or "").lower()
+        if sport in user_sports or ground.lower() in user_locations:
             await create_notification(
                 db, u["id"], game_id, "game_cancelled",
                 f"A {sport} game at {ground} on {game['game_date']} has been cancelled."

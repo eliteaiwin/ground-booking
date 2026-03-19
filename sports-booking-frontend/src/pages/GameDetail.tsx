@@ -551,7 +551,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {/* Edit Game - for Admin/Moderator on non-completed games */}
-          {(isModerator || isAdmin) && game.status !== 'completed' && (
+          {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -610,7 +610,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
                           quit_penalty_hours: parseInt(editQuitPenalty) || 0,
                           payment_mode: editPaymentMode,
-                          cost_per_person: parseFloat(editCostPerPerson) || undefined,
+                          cost_per_person: editCostPerPerson !== '' ? parseFloat(editCostPerPerson) : undefined,
                         }));
                         setShowEditGame(false);
                       }}>
