@@ -1,0 +1,31 @@
+# Render.com deployment configuration for Ground Booking App
+# Deploy at: https://dashboard.render.com/select-repo?type=web
+#
+# This deploys the backend (FastAPI) with the frontend built and served
+# from the same origin via STATIC_DIR (no CORS issues).
+#
+# Environment variables to set in Render dashboard:
+#   SEED_MODE=production        (for production instance with 2 admins + 20 test users)
+#   JWT_SECRET=<your-secret>    (change from default for security)
+#   DATABASE_PATH=/data/app.db  (persistent disk, or /tmp/app.db for ephemeral)
+
+services:
+  - type: web
+    name: ground-booking
+    runtime: python
+    buildCommand: |
+      cd sports-booking-frontend && npm install && VITE_API_URL= npm run build && cd .. &&
+      cd sports-booking-backend && pip install poetry && poetry install --no-root
+    startCommand: |
+      cd sports-booking-backend && STATIC_DIR=../sports-booking-frontend/dist poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SEED_MODE
+        value: production
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: NODE_VERSION
+        value: "22"
+    disk:
+      name: ground-booking-data
+      mountPath: /data
+      sizeGB: 1
