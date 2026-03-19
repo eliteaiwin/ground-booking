@@ -14,8 +14,9 @@ import ModeratorScreens from './pages/ModeratorScreens';
 import AdminScreens from './pages/AdminScreens';
 import SearchGrounds from './pages/SearchGrounds';
 import BackendSettlement from './pages/BackendSettlement';
+import GameSearch from './pages/GameSearch';
 
-type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement';
+type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -88,6 +89,8 @@ function AppContent() {
       return <SearchGrounds onBack={goHome} />;
     case 'backend-settlement':
       return <BackendSettlement onBack={goHome} />;
+    case 'game-search':
+      return <GameSearch onBack={goHome} onViewGame={(gameId) => { setSelectedGameId(gameId); setCurrentPage('game-detail'); }} />;
     default:
       return <Dashboard onNavigate={navigate} />;
   }

@@ -153,6 +153,9 @@ export const api = {
   completeGame: (id: number) =>
     request(`/api/games/${id}/complete`, { method: 'POST' }),
 
+  cancelGamePreview: (id: number) =>
+    request(`/api/games/${id}/cancel-preview`),
+
   cancelGame: (id: number) =>
     request(`/api/games/${id}/cancel`, { method: 'POST' }),
 
@@ -287,4 +290,17 @@ export const api = {
   // Check first-time on ground
   checkFirstTimeOnGround: (gameId: number) =>
     request(`/api/games/${gameId}/check-first-time`),
+
+  // Game search
+  searchGames: (filters?: {
+    date?: string; ground?: string; status?: string; sport?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.date) params.append('date', filters.date);
+    if (filters?.ground) params.append('ground', filters.ground);
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.sport) params.append('sport', filters.sport);
+    const qs = params.toString();
+    return request(`/api/games/search/games${qs ? `?${qs}` : ''}`);
+  },
 };

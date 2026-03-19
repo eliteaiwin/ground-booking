@@ -154,6 +154,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [quitPenaltyInfo, setQuitPenaltyInfo] = useState<{has_penalty: boolean; must_pay: boolean; hours_until_game?: number; quit_penalty_hours?: number} | null>(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [firstTimeAlert, setFirstTimeAlert] = useState<string | null>(null);
+  const [showCancelPreview, setShowCancelPreview] = useState(false);
+  const [cancelPreview, setCancelPreview] = useState<{
+    confirmed_players: number; total_players: number; paid_players: number; refund_amount: number;
+    title: string; ground_name: string; game_date: string; game_time: string;
+  } | null>(null);
 
   const currency = user?.currency || 'Rs';
 
@@ -628,16 +633,69 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
           {/* Cancel Game - for Moderator/Admin on active games */}
           {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'draft') && (
-            <Button variant="outline" className="w-full border-red-400 text-red-600 hover:bg-red-50"
-              disabled={actionLoading === 'cancel'}
-              onClick={() => {
-                if (window.confirm('Are you sure you want to cancel this game? All players will be notified.')) {
-                  handleAction('cancel', () => api.cancelGame(game.id));
-                }
-              }}>
-              <XCircle size={16} className="mr-2" />
-              {actionLoading === 'cancel' ? 'Cancelling...' : 'Cancel Game'}
-            </Button>
+            <>
+              <Button variant="outline" className="w-full border-red-400 text-red-600 hover:bg-red-50"
+                disabled={actionLoading === 'cancel-preview' || actionLoading === 'cancel'}
+                onClick={async () => {
+                  setActionLoading('cancel-preview');
+                  try {
+                    const preview = await api.cancelGamePreview(game.id);
+                    setCancelPreview(preview);
+                    setShowCancelPreview(true);
+                  } catch (err: unknown) {
+                    setError(err instanceof Error ? err.message : 'Failed to load cancel preview');
+                  } finally {
+                    setActionLoading('');
+                  }
+                }}>
+                <XCircle size={16} className="mr-2" />
+                {actionLoading === 'cancel-preview' ? 'Loading...' : 'Cancel Game'}
+              </Button>
+
+              {showCancelPreview && cancelPreview && (
+                <Card className="border-red-300 bg-red-50">
+                  <CardContent className="p-4 space-y-3">
+                    <h4 className="font-semibold text-red-800 flex items-center gap-2">
+                      <AlertTriangle size={16} /> Cancel Game Confirmation
+                    </h4>
+                    <div className="text-sm text-red-700 space-y-1">
+                      <p><strong>Game:</strong> {cancelPreview.title}</p>
+                      <p><strong>Ground:</strong> {cancelPreview.ground_name}</p>
+                      <p><strong>Date/Time:</strong> {cancelPreview.game_date} at {cancelPreview.game_time}</p>
+                      <Separator className="my-2" />
+                      <p><strong>Confirmed Players:</strong> {cancelPreview.confirmed_players} of {cancelPreview.total_players} total</p>
+                      <p><strong>Players who Paid:</strong> {cancelPreview.paid_players}</p>
+                      {cancelPreview.refund_amount > 0 && (
+                        <p className="text-red-800 font-semibold">
+                          Refund Amount: {cancelPreview.refund_amount} {currency} (will be marked for refund)
+                        </p>
+                      )}
+                      <Separator className="my-2" />
+                      <p className="text-xs text-red-600">
+                        All players will receive a cancellation notification with game details.
+                        {cancelPreview.paid_players > 0 && ' Paid players will be notified about their refund.'}
+                        {' '}Users subscribed to this sport will also be notified.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1"
+                        onClick={() => { setShowCancelPreview(false); setCancelPreview(null); }}>
+                        Go Back
+                      </Button>
+                      <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                        disabled={actionLoading === 'cancel'}
+                        onClick={() => {
+                          handleAction('cancel', () => api.cancelGame(game.id));
+                          setShowCancelPreview(false);
+                          setCancelPreview(null);
+                        }}>
+                        {actionLoading === 'cancel' ? 'Cancelling...' : 'Confirm Cancel'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {(isModerator || isAdmin) && game.status === 'in_progress' && (

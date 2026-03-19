@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
@@ -773,13 +773,60 @@ async def complete_game(
     return await get_game_dict(db, game_id)
 
 
+@router.get("/{game_id}/cancel-preview")
+async def cancel_game_preview(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Preview cancel impact: confirmed player count, paid count, refund amount."""
+    await require_admin_or_moderator(user_id, db)
+
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'",
+        (game_id,)
+    )
+    confirmed = (await cursor.fetchone())["cnt"]
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ?",
+        (game_id,)
+    )
+    total_players = (await cursor.fetchone())["cnt"]
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE game_id = ? AND status = 'paid'",
+        (game_id,)
+    )
+    pay_row = await cursor.fetchone()
+    paid_count = pay_row["cnt"]
+    refund_amount = pay_row["total_paid"]
+
+    return {
+        "game_id": game_id,
+        "title": game["title"],
+        "ground_name": game["ground_name"],
+        "game_date": game["game_date"],
+        "game_time": game["game_time"],
+        "confirmed_players": confirmed,
+        "total_players": total_players,
+        "paid_players": paid_count,
+        "refund_amount": refund_amount,
+    }
+
+
 @router.post("/{game_id}/cancel")
 async def cancel_game(
     game_id: int,
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    """Cancel a game. Only admin or moderator can cancel."""
+    """Cancel a game. Refund paid players, notify all participants and subscribed users."""
     await require_admin_or_moderator(user_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
@@ -793,16 +840,56 @@ async def cancel_game(
 
     await db.execute("UPDATE games SET status = 'cancelled' WHERE id = ?", (game_id,))
 
-    # Notify all players
+    cancel_detail = (
+        f"Game '{game['title']}' on {game['game_date']} at {game['game_time']} "
+        f"at {game['ground_name']} has been cancelled."
+    )
+
+    # Refund paid players
+    cursor = await db.execute(
+        "SELECT user_id, amount FROM payments WHERE game_id = ? AND status = 'paid'",
+        (game_id,)
+    )
+    paid_players = await cursor.fetchall()
+    for pp in paid_players:
+        await db.execute(
+            "UPDATE payments SET status = 'pending' WHERE game_id = ? AND user_id = ?",
+            (game_id, pp["user_id"])
+        )
+        await create_notification(
+            db, pp["user_id"], game_id, "game_cancelled",
+            f"{cancel_detail} Your payment of {pp['amount']} has been marked for refund."
+        )
+
+    # Notify all game players (who haven't already been notified via refund)
+    paid_user_ids = {pp["user_id"] for pp in paid_players}
     cursor = await db.execute(
         "SELECT user_id FROM game_players WHERE game_id = ?", (game_id,)
     )
-    players = await cursor.fetchall()
-    for p in players:
-        await create_notification(
-            db, p["user_id"], game_id, "game_cancelled",
-            f"Game '{game['title']}' has been cancelled."
-        )
+    all_players = await cursor.fetchall()
+    for p in all_players:
+        if p["user_id"] not in paid_user_ids:
+            await create_notification(
+                db, p["user_id"], game_id, "game_cancelled", cancel_detail
+            )
+
+    # Notify other users who have notifications enabled and match the sport/ground
+    sport = game["sport_type"]
+    ground = game["ground_name"]
+    game_player_ids = {p["user_id"] for p in all_players}
+    cursor = await db.execute(
+        "SELECT id, sports FROM users WHERE notification_preference != 'none'"
+    )
+    all_users = await cursor.fetchall()
+    for u in all_users:
+        if u["id"] in game_player_ids:
+            continue
+        user_sports = u["sports"] or ""
+        if sport in user_sports or ground.lower() in user_sports.lower():
+            await create_notification(
+                db, u["id"], game_id, "game_cancelled",
+                f"A {sport} game at {ground} on {game['game_date']} has been cancelled."
+            )
 
     await db.commit()
     return await get_game_dict(db, game_id)
@@ -1152,3 +1239,41 @@ async def remind_unpaid_players(
         "reminded": reminded,
         "whatsapp_message": wa_msg
     }
+
+
+@router.get("/search/games")
+async def search_games(
+    date: Optional[str] = Query(None, description="Filter by game date (YYYY-MM-DD)"),
+    ground: Optional[str] = Query(None, description="Filter by ground name (partial match)"),
+    status: Optional[str] = Query(None, description="Filter by game status"),
+    sport: Optional[str] = Query(None, description="Filter by sport type"),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Search games by date, ground, status, sport. Any user can search."""
+    query = "SELECT id FROM games WHERE 1=1"
+    params: list[str] = []
+
+    if date:
+        query += " AND game_date = ?"
+        params.append(date)
+    if ground:
+        query += " AND LOWER(ground_name) LIKE LOWER(?)"
+        params.append(f"%{ground}%")
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if sport:
+        query += " AND LOWER(sport_type) LIKE LOWER(?)"
+        params.append(f"%{sport}%")
+
+    query += " ORDER BY game_date DESC, game_time DESC"
+
+    cursor = await db.execute(query, params)
+    games = await cursor.fetchall()
+
+    result = []
+    for g in games:
+        game_data = await get_game_dict(db, g["id"])
+        result.append(game_data)
+    return result
