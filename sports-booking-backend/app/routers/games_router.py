@@ -773,6 +773,41 @@ async def complete_game(
     return await get_game_dict(db, game_id)
 
 
+@router.post("/{game_id}/cancel")
+async def cancel_game(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Cancel a game. Only admin or moderator can cancel."""
+    await require_admin_or_moderator(user_id, db)
+
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] == "completed":
+        raise HTTPException(status_code=400, detail="Cannot cancel a completed game")
+    if game["status"] == "cancelled":
+        raise HTTPException(status_code=400, detail="Game is already cancelled")
+
+    await db.execute("UPDATE games SET status = 'cancelled' WHERE id = ?", (game_id,))
+
+    # Notify all players
+    cursor = await db.execute(
+        "SELECT user_id FROM game_players WHERE game_id = ?", (game_id,)
+    )
+    players = await cursor.fetchall()
+    for p in players:
+        await create_notification(
+            db, p["user_id"], game_id, "game_cancelled",
+            f"Game '{game['title']}' has been cancelled."
+        )
+
+    await db.commit()
+    return await get_game_dict(db, game_id)
+
+
 @router.post("/{game_id}/vote-potd")
 async def vote_player_of_the_day(
     game_id: int,

@@ -153,6 +153,9 @@ export const api = {
   completeGame: (id: number) =>
     request(`/api/games/${id}/complete`, { method: 'POST' }),
 
+  cancelGame: (id: number) =>
+    request(`/api/games/${id}/cancel`, { method: 'POST' }),
+
   votePOTD: (gameId: number, playerId: number) =>
     request(`/api/games/${gameId}/vote-potd`, { method: 'POST', body: JSON.stringify({ player_id: playerId }) }),
 

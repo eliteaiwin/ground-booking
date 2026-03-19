@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle } from 'lucide-react';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -108,6 +108,7 @@ const statusColor = (status: string) => {
     case 'voting_open': return 'bg-green-100 text-green-700';
     case 'in_progress': return 'bg-blue-100 text-blue-700';
     case 'completed': return 'bg-purple-100 text-purple-700';
+    case 'cancelled': return 'bg-red-100 text-red-700';
     default: return 'bg-gray-100 text-gray-700';
   }
 };
@@ -119,6 +120,7 @@ const statusLabel = (status: string, isArchived: boolean) => {
     case 'voting_open': return 'Voting Open';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
+    case 'cancelled': return 'Cancelled';
     default: return status;
   }
 };
@@ -621,6 +623,20 @@ export default function GameDetail({ gameId, onBack }: Props) {
               disabled={actionLoading === 'start'}
               onClick={() => handleAction('start', () => api.startGame(game.id))}>
               {actionLoading === 'start' ? 'Starting...' : 'Start Game'}
+            </Button>
+          )}
+
+          {/* Cancel Game - for Moderator/Admin on active games */}
+          {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'draft') && (
+            <Button variant="outline" className="w-full border-red-400 text-red-600 hover:bg-red-50"
+              disabled={actionLoading === 'cancel'}
+              onClick={() => {
+                if (window.confirm('Are you sure you want to cancel this game? All players will be notified.')) {
+                  handleAction('cancel', () => api.cancelGame(game.id));
+                }
+              }}>
+              <XCircle size={16} className="mr-2" />
+              {actionLoading === 'cancel' ? 'Cancelling...' : 'Cancel Game'}
             </Button>
           )}
 
