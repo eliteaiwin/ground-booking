@@ -8,14 +8,14 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil } from 'lucide-react';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
-  soccer: ['Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
-  cricket: ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
-  badminton: ['Singles', 'Doubles'],
-  basketball: ['Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
-  hockey: ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
+  soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
+  cricket: ['Anywhere', 'Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
+  badminton: ['Anywhere', 'Singles', 'Doubles'],
+  basketball: ['Anywhere', 'Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
+  hockey: ['Anywhere', 'Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
 };
 
 const sportIconSmall = (type: string) => {
@@ -37,6 +37,7 @@ interface Player {
   team_id: number | null;
   payment_confirmed: number;
   nominated_by: number | null;
+  nominated_by_info: string | null;
   joined_at: string;
 }
 
@@ -133,15 +134,18 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [nominateUserId, setNominateUserId] = useState('');
   const [nominatePosition, setNominatePosition] = useState('');
-  const [payeeUserId, setPayeeUserId] = useState('');
   const [potdPlayerId, setPotdPlayerId] = useState('');
   const [potdResults, setPotdResults] = useState<POTDResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [error, setError] = useState('');
   const [votePosition, setVotePosition] = useState('');
-  const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
-  const [paymentMode, setPaymentMode] = useState('postpaid');
+  const [showEditGame, setShowEditGame] = useState(false);
+  const [editPayeeUserId, setEditPayeeUserId] = useState('');
+  const [editQuitPenalty, setEditQuitPenalty] = useState('0');
+  const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
+  const [editCostPerPerson, setEditCostPerPerson] = useState('');
+  const [tooltipPlayerId, setTooltipPlayerId] = useState<number | null>(null);
   const [teamCount, setTeamCount] = useState('2');
   const [teamNames, setTeamNames] = useState<string[]>(['Team A', 'Team B']);
   const [dragPlayer, setDragPlayer] = useState<Player | null>(null);
@@ -305,13 +309,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `Confirmed:\n------------\n`;
     game!.selected_players.forEach((p, i) => {
       const paidMark = p.payment_confirmed === 1 ? ' \u2705' : '';
-      msg += `${i + 1}. ${p.name}${p.position ? ` (${p.position})` : ''}${paidMark}\n`;
+      msg += `${i + 1}. ${p.name}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}${paidMark}\n`;
     });
 
     if (game!.waiting_list.length > 0) {
       msg += `\nWaiting List:\n-------------\n`;
       game!.waiting_list.forEach((p, i) => {
-        msg += `${i + 1}. ${p.name}${p.position ? ` (${p.position})` : ''}\n`;
+        msg += `${i + 1}. ${p.name}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}\n`;
       });
     }
 
@@ -343,17 +347,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
       !game.waiting_list.some(p => p.user_id === u.id)
   );
 
-  const allPlayers = [...game.selected_players, ...game.waiting_list];
-  const payeeCandidates = allPlayers.length > 0
-    ? allUsers.filter(u => allPlayers.some(p => p.user_id === u.id) || u.roles.includes('moderator'))
-    : allUsers.filter(u => u.roles.includes('moderator'));
-
   const positions = SPORT_POSITIONS[game.sport_type] || [];
 
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.status === 'pending');
   const paidPlayers = (game.payment_details || []).filter(pd => pd.status === 'paid');
   const totalReceived = paidPlayers.reduce((sum, p) => sum + p.amount, 0);
-  const totalPending = unpaidPlayers.reduce((sum, p) => sum + p.amount, 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -545,49 +543,85 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Card>
           )}
 
-          {(isModerator || isAdmin) && game.status === 'voting_open' && (
+          {/* Edit Game - for Admin/Moderator on non-completed games */}
+          {(isModerator || isAdmin) && game.status !== 'completed' && (
             <Card>
               <CardContent className="p-4">
-                <h4 className="text-sm font-semibold mb-2">Start Game</h4>
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-xs text-gray-500">Select payee:</Label>
-                    <Select value={payeeUserId} onValueChange={setPayeeUserId}>
-                      <SelectTrigger><SelectValue placeholder="Select payee" /></SelectTrigger>
-                      <SelectContent>
-                        {payeeCandidates.map(u => (
-                          <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold flex items-center gap-1"><Pencil size={14} /> Edit Game Settings</h4>
+                  <Button size="sm" variant="outline" onClick={() => {
+                    setShowEditGame(!showEditGame);
+                    if (!showEditGame) {
+                      setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
+                      setEditQuitPenalty(String(game.quit_penalty_hours || 0));
+                      setEditPaymentMode(game.payment_timing === 'before' ? 'prepaid' : 'postpaid');
+                      setEditCostPerPerson(String(game.cost_per_person));
+                    }
+                  }}>
+                    {showEditGame ? 'Cancel' : 'Edit'}
+                  </Button>
+                </div>
+                {showEditGame && (
+                  <div className="space-y-3">
                     <div>
-                      <Label className="text-xs text-gray-500">Quit Penalty (hours before game)</Label>
-                      <Input type="number" min="0" max="72" value={quitPenaltyHours}
-                        onChange={e => setQuitPenaltyHours(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500">Payment Mode</Label>
-                      <Select value={paymentMode} onValueChange={setPaymentMode}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Label className="text-xs text-gray-500">Select Payee (who receives the money)</Label>
+                      <Select value={editPayeeUserId} onValueChange={setEditPayeeUserId}>
+                        <SelectTrigger><SelectValue placeholder="Select payee" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="postpaid">PostPaid</SelectItem>
-                          <SelectItem value="prepaid">PrePaid</SelectItem>
+                          {allUsers.map(u => (
+                            <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
+                    <div>
+                      <Label className="text-xs text-gray-500">Cost Per Person ({currency})</Label>
+                      <Input type="number" min="0" step="0.01" value={editCostPerPerson}
+                        onChange={e => setEditCostPerPerson(e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs text-gray-500">Quit Penalty (hours before game)</Label>
+                        <Input type="number" min="0" max="72" value={editQuitPenalty}
+                          onChange={e => setEditQuitPenalty(e.target.value)} />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-500">Payment Mode</Label>
+                        <Select value={editPaymentMode} onValueChange={setEditPaymentMode}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="postpaid">PostPaid</SelectItem>
+                            <SelectItem value="prepaid">PrePaid</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Button className="w-full bg-blue-600 hover:bg-blue-700"
+                      disabled={actionLoading === 'edit-game'}
+                      onClick={() => {
+                        handleAction('edit-game', () => api.editGame(game.id, {
+                          payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
+                          quit_penalty_hours: parseInt(editQuitPenalty) || 0,
+                          payment_mode: editPaymentMode,
+                          cost_per_person: parseFloat(editCostPerPerson) || undefined,
+                        }));
+                        setShowEditGame(false);
+                      }}>
+                      {actionLoading === 'edit-game' ? 'Saving...' : 'Save Changes'}
+                    </Button>
                   </div>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700"
-                    disabled={!payeeUserId || actionLoading === 'start'}
-                    onClick={() => handleAction('start', () =>
-                      api.startGame(game.id, Number(payeeUserId), parseInt(quitPenaltyHours), paymentMode)
-                    )}>
-                    {actionLoading === 'start' ? 'Starting...' : 'Start Game'}
-                  </Button>
-                </div>
+                )}
               </CardContent>
             </Card>
+          )}
+
+          {/* Start Game - simplified, payee/penalty/mode already set at create/edit time */}
+          {(isModerator || isAdmin) && game.status === 'voting_open' && (
+            <Button className="w-full bg-blue-600 hover:bg-blue-700"
+              disabled={actionLoading === 'start'}
+              onClick={() => handleAction('start', () => api.startGame(game.id))}>
+              {actionLoading === 'start' ? 'Starting...' : 'Start Game'}
+            </Button>
           )}
 
           {(isModerator || isAdmin) && game.status === 'in_progress' && (
@@ -756,12 +790,30 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {idx + 1}
                     </span>
                     <span className="flex-1">
-                      {player.name}{player.position ? ` (${player.position})` : ''}
+                      {player.name}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
-                    {player.nominated_by && <Badge variant="outline" className="text-xs">Nominated</Badge>}
-                    {player.payment_confirmed === 1 && (
-                      <span className="text-green-600 text-xs flex items-center gap-0.5" title="Payment Made">
-                        <CheckCircle size={14} /> Paid
+                    {/* Nomination info tooltip */}
+                    <button
+                      type="button"
+                      className="relative text-gray-400 hover:text-blue-500 transition-colors"
+                      onClick={() => setTooltipPlayerId(tooltipPlayerId === player.id ? null : player.id)}
+                      title={player.nominated_by_info || 'Self Nominated'}
+                    >
+                      <Info size={14} />
+                      {tooltipPlayerId === player.id && (
+                        <span className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg whitespace-nowrap z-10">
+                          {player.nominated_by_info || 'Self Nominated'}
+                        </span>
+                      )}
+                    </button>
+                    {/* Payment status icon */}
+                    {player.payment_confirmed === 1 ? (
+                      <span className="text-green-600" title="Paid">
+                        <Banknote size={16} />
+                      </span>
+                    ) : (
+                      <span className="text-gray-300" title="Unpaid">
+                        <Banknote size={16} />
                       </span>
                     )}
                     {player.user_id === user?.id && <Badge className="bg-green-100 text-green-700 text-xs">You</Badge>}
@@ -794,7 +846,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {idx + 1}
                     </span>
                     <span className="flex-1">
-                      {player.name}{player.position ? ` (${player.position})` : ''}
+                      {player.name}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
@@ -813,15 +865,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <CardContent className="p-4 pt-0">
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{totalReceived + totalPending} {currency}</p>
-                  <p className="text-xs text-gray-500">Total</p>
+                  <p className="text-lg font-bold text-gray-800">{game.cost_per_person * game.max_players} {currency}</p>
+                  <p className="text-xs text-gray-500">Total Outstanding</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-2">
                   <p className="text-lg font-bold text-green-600">{totalReceived} {currency}</p>
                   <p className="text-xs text-gray-500">Received</p>
                 </div>
                 <div className="bg-red-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-red-600">{totalPending} {currency}</p>
+                  <p className="text-lg font-bold text-red-600">{game.cost_per_person * game.max_players - totalReceived} {currency}</p>
                   <p className="text-xs text-gray-500">Pending</p>
                 </div>
               </div>

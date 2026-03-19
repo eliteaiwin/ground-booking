@@ -20,6 +20,23 @@ class CreateGameRequest(BaseModel):
     cost_per_person: float
     payment_timing: str  # before, after
     duration_minutes: int = 90
+    payee_user_id: Optional[int] = None
+    quit_penalty_hours: int = 0
+    payment_mode: str = "postpaid"  # prepaid, postpaid
+
+
+class EditGameRequest(BaseModel):
+    title: Optional[str] = None
+    sport_type: Optional[str] = None
+    ground_name: Optional[str] = None
+    game_date: Optional[str] = None
+    game_time: Optional[str] = None
+    max_players: Optional[int] = None
+    cost_per_person: Optional[float] = None
+    duration_minutes: Optional[int] = None
+    payee_user_id: Optional[int] = None
+    quit_penalty_hours: Optional[int] = None
+    payment_mode: Optional[str] = None  # prepaid, postpaid
 
 
 class NominateRequest(BaseModel):
@@ -28,9 +45,8 @@ class NominateRequest(BaseModel):
 
 
 class StartGameRequest(BaseModel):
-    payee_user_id: int
-    quit_penalty_hours: int = 0
-    payment_mode: str = "postpaid"  # prepaid, postpaid
+    """Start game no longer requires payee/penalty/mode — those are set at create/edit time."""
+    pass
 
 
 class VotePOTDRequest(BaseModel):
@@ -93,9 +109,30 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     )
     players_rows = await cursor.fetchall()
 
+    # Build lookup of nominator names/phones
+    nominator_ids = {p["nominated_by"] for p in players_rows if p["nominated_by"]}
+    nominator_map: dict[int, dict] = {}
+    for nid in nominator_ids:
+        ncursor = await db.execute("SELECT name, phone FROM users WHERE id = ?", (nid,))
+        nrow = await ncursor.fetchone()
+        if nrow:
+            nominator_map[nid] = {"name": nrow["name"], "phone": nrow["phone"]}
+
     selected = []
     waiting = []
     for p in players_rows:
+        nom_by = p["nominated_by"]
+        nom_info = None
+        if nom_by:
+            if nom_by == p["user_id"]:
+                nom_info = "Self Nominated"
+            elif nom_by in nominator_map:
+                n = nominator_map[nom_by]
+                nom_info = f"Nominated by {n['name']} {n['phone']}"
+            else:
+                nom_info = f"Nominated by user #{nom_by}"
+        else:
+            nom_info = "Self Nominated"
         player_data = {
             "id": p["id"],
             "user_id": p["user_id"],
@@ -106,6 +143,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "team_id": p["team_id"],
             "payment_confirmed": p["payment_confirmed"],
             "nominated_by": p["nominated_by"],
+            "nominated_by_info": nom_info,
             "joined_at": p["joined_at"]
         }
         if p["status"] == "selected":
@@ -233,12 +271,17 @@ async def create_game(
 ):
     await require_role(user_id, "admin", db)
 
+    # Derive payment_timing from payment_mode
+    payment_timing = "before" if req.payment_mode == "prepaid" else req.payment_timing
+
     cursor = await db.execute(
         """INSERT INTO games (title, sport_type, ground_name, game_date, game_time, 
-           max_players, cost_per_person, payment_timing, created_by, duration_minutes) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           max_players, cost_per_person, payment_timing, created_by, duration_minutes,
+           payee_user_id, quit_penalty_hours) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, req.sport_type, req.ground_name, req.game_date, req.game_time,
-         req.max_players, req.cost_per_person, req.payment_timing, user_id, req.duration_minutes)
+         req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
+         req.payee_user_id, req.quit_penalty_hours)
     )
     game_id = cursor.lastrowid
     await db.commit()
@@ -271,6 +314,60 @@ async def get_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    return await get_game_dict(db, game_id)
+
+
+@router.put("/{game_id}")
+async def edit_game(
+    game_id: int,
+    req: EditGameRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin_or_moderator(user_id, db)
+
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] in ("completed",):
+        raise HTTPException(status_code=400, detail="Cannot edit a completed game")
+
+    updates: list[str] = []
+    params: list = []
+
+    for field in ("title", "sport_type", "ground_name", "game_date", "game_time",
+                  "max_players", "cost_per_person", "duration_minutes",
+                  "payee_user_id", "quit_penalty_hours"):
+        val = getattr(req, field, None)
+        if val is not None:
+            updates.append(f"{field} = ?")
+            params.append(val)
+
+    if req.payment_mode is not None:
+        new_timing = "before" if req.payment_mode == "prepaid" else "after"
+        updates.append("payment_timing = ?")
+        params.append(new_timing)
+
+    if not updates:
+        return await get_game_dict(db, game_id)
+
+    params.append(game_id)
+    await db.execute(f"UPDATE games SET {', '.join(updates)} WHERE id = ?", params)
+
+    # Recalculate payment records for selected players when cost changes
+    if req.cost_per_person is not None:
+        cursor2 = await db.execute(
+            "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,)
+        )
+        selected = await cursor2.fetchall()
+        for p in selected:
+            await db.execute(
+                "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id = ?",
+                (req.cost_per_person, game_id, p["user_id"])
+            )
+
+    await db.commit()
     return await get_game_dict(db, game_id)
 
 
@@ -554,7 +651,8 @@ async def nominate_player(
         (game_id, req.user_id, player_status, user_id, req.position)
     )
 
-    if player_status == "selected" and game["payment_timing"] == "before":
+    # Always create a payment record for selected players (recalculates outstanding)
+    if player_status == "selected":
         await db.execute(
             "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
             (game_id, req.user_id, game["cost_per_person"])
@@ -573,10 +671,11 @@ async def nominate_player(
 @router.post("/{game_id}/start")
 async def start_game(
     game_id: int,
-    req: StartGameRequest,
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    """Start a game. Payee, quit_penalty, and payment_mode are already set
+    at create/edit time — this endpoint just transitions the status."""
     await require_admin_or_moderator(user_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
@@ -586,34 +685,28 @@ async def start_game(
     if game["status"] != "voting_open":
         raise HTTPException(status_code=400, detail="Can only start a game that has open voting")
 
-    # Validate payee is a player or moderator
-    cursor = await db.execute("SELECT id, name, phone FROM users WHERE id = ?", (req.payee_user_id,))
-    payee = await cursor.fetchone()
-    if not payee:
-        raise HTTPException(status_code=404, detail="Payee user not found")
+    await db.execute("UPDATE games SET status = 'in_progress' WHERE id = ?", (game_id,))
 
-    # Update game with payment mode and quit penalty
-    new_timing = "before" if req.payment_mode == "prepaid" else "after"
-    await db.execute(
-        "UPDATE games SET status = 'in_progress', payee_user_id = ?, quit_penalty_hours = ?, payment_timing = ? WHERE id = ?",
-        (req.payee_user_id, req.quit_penalty_hours, new_timing, game_id)
+    # Create payment records for all selected players
+    cursor = await db.execute(
+        "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'",
+        (game_id,)
     )
+    selected = await cursor.fetchall()
+    payee_info = None
+    if game["payee_user_id"]:
+        pcursor = await db.execute("SELECT name, phone FROM users WHERE id = ?", (game["payee_user_id"],))
+        payee_info = await pcursor.fetchone()
 
-    # If payment timing is 'before' (prepaid), notify selected players about payment
-    if new_timing == "before":
-        cursor = await db.execute(
-            "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'",
-            (game_id,)
+    for p in selected:
+        await db.execute(
+            "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
+            (game_id, p["user_id"], game["cost_per_person"])
         )
-        selected = await cursor.fetchall()
-        for p in selected:
-            await db.execute(
-                "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
-                (game_id, p["user_id"], game["cost_per_person"])
-            )
+        if game["payment_timing"] == "before" and payee_info:
             await create_notification(
                 db, p["user_id"], game_id, "payment_due",
-                f"Payment of ${game['cost_per_person']:.2f} is due for {game['title']}. Pay to {payee['name']} ({payee['phone']})"
+                f"Payment of {game['cost_per_person']} is due for {game['title']}. Pay to {payee_info['name']} ({payee_info['phone']})"
             )
 
     await db.commit()

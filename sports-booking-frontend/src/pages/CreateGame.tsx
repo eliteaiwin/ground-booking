@@ -6,7 +6,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { ArrowLeft } from 'lucide-react';
+
+interface UserItem {
+  id: number;
+  name: string;
+  phone: string;
+  roles: string[];
+}
 
 interface Ground {
   id: number;
@@ -44,6 +52,10 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [loading, setLoading] = useState(false);
   const [sportDefaults, setSportDefaults] = useState<Record<string, number>>({});
   const [grounds, setGrounds] = useState<Ground[]>([]);
+  const [payeeUserId, setPayeeUserId] = useState('');
+  const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
+  const [paymentMode, setPaymentMode] = useState('postpaid');
+  const [allUsers, setAllUsers] = useState<UserItem[]>([]);
 
   const currency = user?.currency || 'Rs';
 
@@ -60,6 +72,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         }
       }).catch(() => {}),
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
+      api.listUsers().then((u: UserItem[]) => setAllUsers(u)).catch(() => {}),
     ]);
   }, []);
 
@@ -101,6 +114,9 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         cost_per_person: parseFloat(costPerPerson),
         payment_timing: paymentTiming,
         duration_minutes: parseInt(durationMinutes) || 90,
+        payee_user_id: payeeUserId ? Number(payeeUserId) : undefined,
+        quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
+        payment_mode: paymentMode,
       });
       onCreated(game.id);
     } catch (err: unknown) {
@@ -194,6 +210,36 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                     <SelectContent>
                       <SelectItem value="before">Before the Game</SelectItem>
                       <SelectItem value="after">After the Game</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Separator className="my-2" />
+              <h3 className="text-sm font-semibold text-gray-700">Payment & Rules</h3>
+              <div className="space-y-2">
+                <Label>Select Payee (who receives the money)</Label>
+                <Select value={payeeUserId} onValueChange={setPayeeUserId}>
+                  <SelectTrigger><SelectValue placeholder="Select payee (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    {allUsers.map(u => (
+                      <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Quit Penalty (hours before game)</Label>
+                  <Input type="number" min="0" max="72" value={quitPenaltyHours}
+                    onChange={e => setQuitPenaltyHours(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Payment Mode</Label>
+                  <Select value={paymentMode} onValueChange={setPaymentMode}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="postpaid">PostPaid</SelectItem>
+                      <SelectItem value="prepaid">PrePaid</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

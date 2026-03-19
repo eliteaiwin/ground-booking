@@ -117,7 +117,15 @@ export const api = {
     title: string; sport_type: string; ground_name: string;
     game_date: string; game_time: string; max_players: number;
     cost_per_person: number; payment_timing: string; duration_minutes?: number;
+    payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
   }) => request('/api/games', { method: 'POST', body: JSON.stringify(data) }),
+
+  editGame: (gameId: number, data: {
+    title?: string; sport_type?: string; ground_name?: string;
+    game_date?: string; game_time?: string; max_players?: number;
+    cost_per_person?: number; duration_minutes?: number;
+    payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
+  }) => request(`/api/games/${gameId}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   listGames: (status?: string) =>
     request(`/api/games${status ? `?status=${status}` : ''}`),
@@ -139,15 +147,8 @@ export const api = {
   nominatePlayer: (gameId: number, userId: number, position?: string) =>
     request(`/api/games/${gameId}/nominate`, { method: 'POST', body: JSON.stringify({ user_id: userId, position: position || '' }) }),
 
-  startGame: (gameId: number, payeeUserId: number, quitPenaltyHours?: number, paymentMode?: string) =>
-    request(`/api/games/${gameId}/start`, {
-      method: 'POST',
-      body: JSON.stringify({
-        payee_user_id: payeeUserId,
-        quit_penalty_hours: quitPenaltyHours || 0,
-        payment_mode: paymentMode || 'postpaid',
-      }),
-    }),
+  startGame: (gameId: number) =>
+    request(`/api/games/${gameId}/start`, { method: 'POST' }),
 
   completeGame: (id: number) =>
     request(`/api/games/${id}/complete`, { method: 'POST' }),
