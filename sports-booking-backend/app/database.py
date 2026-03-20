@@ -186,6 +186,54 @@ async def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (moderator_id) REFERENCES users(id)
         );
+
+        CREATE TABLE IF NOT EXISTS discussion_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER,
+            user_id INTEGER NOT NULL,
+            message TEXT NOT NULL DEFAULT '',
+            parent_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (parent_id) REFERENCES discussion_messages(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS discussion_media (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            media_type TEXT NOT NULL CHECK(media_type IN ('photo', 'video')),
+            file_path TEXT NOT NULL,
+            file_name TEXT NOT NULL DEFAULT '',
+            caption TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS media_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            comment TEXT NOT NULL,
+            parent_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (media_id) REFERENCES discussion_media(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (parent_id) REFERENCES media_comments(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS emoji_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_type TEXT NOT NULL CHECK(target_type IN ('message', 'media', 'media_comment')),
+            target_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            emoji TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(target_type, target_id, user_id, emoji)
+        );
     """)
 
     # Migration: add columns if they don't exist (for existing databases)

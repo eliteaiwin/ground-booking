@@ -8,7 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award } from 'lucide-react';
+import Discussion from './Discussion';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -382,6 +383,33 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>}
+
+        {/* Player of the Day Honor Display - Prominent on completed games */}
+        {game.status === 'completed' && game.player_of_the_day && (
+          <Card className="border-2 border-yellow-400 bg-gradient-to-br from-yellow-50 via-amber-50 to-orange-50 shadow-lg">
+            <CardContent className="p-5 text-center">
+              <div className="flex justify-center mb-3">
+                <div className="relative">
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-white text-4xl font-bold shadow-xl ring-4 ring-yellow-300">
+                    {game.player_of_the_day.name.charAt(0)}
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-yellow-500 rounded-full p-1.5 shadow-md">
+                    <Award size={18} className="text-white" />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Badge className="bg-yellow-500 text-white px-3 py-1 text-xs">Player of the Day</Badge>
+                <h2 className="text-xl font-bold text-yellow-800 mt-2">{game.player_of_the_day.name}</h2>
+                <div className="flex items-center justify-center gap-1 text-yellow-600">
+                  <Trophy size={16} />
+                  <span className="text-sm font-medium">{game.player_of_the_day.votes} {game.player_of_the_day.votes === 1 ? 'vote' : 'votes'}</span>
+                </div>
+                <p className="text-xs text-yellow-600/70 mt-1">Honored as the best player of this game</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {firstTimeAlert && (
           <Card className="border-orange-300 bg-orange-50">
@@ -1054,6 +1082,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </CardContent>
           </Card>
         )}
+
+        {/* Discussion Section - Always active */}
+        <Discussion gameId={game.id} gameStatus={game.status} />
 
         <Separator />
         <p className="text-xs text-gray-400 text-center pb-4">Game ID: {game.id}</p>

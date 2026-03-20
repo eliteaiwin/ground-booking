@@ -322,4 +322,70 @@ export const api = {
     const qs = params.toString();
     return request(`/api/games/search/games${qs ? `?${qs}` : ''}`);
   },
+
+  // Discussion
+  getDiscussionMessages: (gameId?: number, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    if (gameId !== undefined) params.append('game_id', String(gameId));
+    if (limit) params.append('limit', String(limit));
+    if (offset) params.append('offset', String(offset));
+    const qs = params.toString();
+    return request(`/api/discussions/messages${qs ? `?${qs}` : ''}`);
+  },
+
+  postDiscussionMessage: (message: string, gameId?: number, parentId?: number) =>
+    request('/api/discussions/messages', {
+      method: 'POST',
+      body: JSON.stringify({ message, game_id: gameId ?? null, parent_id: parentId ?? null }),
+    }),
+
+  deleteDiscussionMessage: (messageId: number) =>
+    request(`/api/discussions/messages/${messageId}`, { method: 'DELETE' }),
+
+  getDiscussionMedia: (gameId: number) =>
+    request(`/api/discussions/media?game_id=${gameId}`),
+
+  uploadMedia: (gameId: number, file: File, mediaType: string, caption: string) => {
+    const formData = new FormData();
+    formData.append('game_id', String(gameId));
+    formData.append('file', file);
+    formData.append('media_type', mediaType);
+    formData.append('caption', caption);
+
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (_proxyBasicAuth) {
+      headers['Authorization'] = `Basic ${_proxyBasicAuth}`;
+      if (token) headers['X-Auth-Token'] = `Bearer ${token}`;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return fetch(`${API_URL}/api/discussions/media/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(err.detail || 'Upload failed');
+      }
+      return res.json();
+    });
+  },
+
+  getMediaComments: (mediaId: number) =>
+    request(`/api/discussions/media/${mediaId}/comments`),
+
+  postMediaComment: (mediaId: number, comment: string, parentId?: number) =>
+    request(`/api/discussions/media/${mediaId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ comment, parent_id: parentId ?? null }),
+    }),
+
+  toggleReaction: (targetType: string, targetId: number, emoji: string) =>
+    request('/api/discussions/reactions', {
+      method: 'POST',
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, emoji }),
+    }),
 };

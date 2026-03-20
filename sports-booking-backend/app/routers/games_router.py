@@ -201,7 +201,9 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     except Exception:
         pass
 
-    # Check if game is archived (completed > 7 days ago)
+    # Check if game is archived:
+    # 1) Completed more than 7 days ago, OR
+    # 2) Auto-archived because there are >10 completed games (oldest get archived)
     is_archived = False
     if game["status"] == "completed":
         try:
@@ -212,6 +214,19 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
                 is_archived = True
         except Exception:
             pass
+
+        # Auto-archive: check if this game is beyond the 10 most recent completed games
+        if not is_archived:
+            try:
+                cursor2 = await db.execute(
+                    "SELECT id FROM games WHERE status = 'completed' ORDER BY game_date DESC, game_time DESC LIMIT 10"
+                )
+                recent_10 = await cursor2.fetchall()
+                recent_10_ids = {r["id"] for r in recent_10}
+                if game["id"] not in recent_10_ids:
+                    is_archived = True
+            except Exception:
+                pass
 
     # Get per-player payment details
     cursor = await db.execute(
