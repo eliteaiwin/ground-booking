@@ -263,8 +263,7 @@ async def get_media_file(
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    content_type = "image/jpeg" if media["media_type"] == "photo" else "video/mp4"
-    return FileResponse(file_path, media_type=content_type, filename=media["file_name"])
+    return FileResponse(file_path, filename=media["file_name"])
 
 
 # --- Media Comments ---

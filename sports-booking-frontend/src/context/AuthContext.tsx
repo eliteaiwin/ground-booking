@@ -112,9 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStoredAccounts(updated);
         localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(profile.id));
       }
-    } catch {
+    } catch (err) {
       localStorage.removeItem('token');
       setUser(null);
+      throw err;
     }
   };
 
@@ -122,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStoredAccounts(getStoredAccounts());
     const token = localStorage.getItem('token');
     if (token) {
-      refreshUser().finally(() => setLoading(false));
+      refreshUser().catch(() => {}).finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
@@ -173,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (accounts.length > 0) {
         localStorage.setItem('token', accounts[0].token);
         localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(accounts[0].userId));
-        refreshUser();
+        refreshUser().catch(() => {});
         return;
       }
     }
