@@ -248,7 +248,6 @@ async def upload_media(
 @router.get("/media/file/{media_id}")
 async def get_media_file(
     media_id: int,
-    user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Serve a media file."""
