@@ -9,11 +9,12 @@ import { Phone, Lock, Smartphone, Chrome } from 'lucide-react';
 
 interface Props {
   onSwitchToRegister: () => void;
+  isAddUserMode?: boolean;
 }
 
 type LoginMode = 'password' | 'otp' | 'google';
 
-export default function LoginPage({ onSwitchToRegister }: Props) {
+export default function LoginPage({ onSwitchToRegister, isAddUserMode }: Props) {
   const { login, loginWithOTP, requestOTP } = useAuth();
   const [loginMode, setLoginMode] = useState<LoginMode>('password');
   const [phone, setPhone] = useState('');
@@ -67,16 +68,7 @@ export default function LoginPage({ onSwitchToRegister }: Props) {
   };
 
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
-            <span className="text-white text-2xl">&#9917;</span>
-          </div>
-          <CardTitle className="text-2xl font-bold">Ground Booking</CardTitle>
-          <p className="text-gray-500 mt-1">Sign in to your account</p>
-        </CardHeader>
+  const loginContent = (
         <CardContent className="space-y-4">
           {error && (
             <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>
@@ -232,15 +224,35 @@ export default function LoginPage({ onSwitchToRegister }: Props) {
             </div>
           )}
 
-          <Separator />
-
-          <p className="text-center text-sm text-gray-500">
-            Don't have an account?{' '}
-            <button type="button" onClick={onSwitchToRegister} className="text-green-600 hover:underline font-medium">
-              Register
-            </button>
-          </p>
+          {!isAddUserMode && (
+            <>
+              <Separator />
+              <p className="text-center text-sm text-gray-500">
+                Don't have an account?{' '}
+                <button type="button" onClick={onSwitchToRegister} className="text-green-600 hover:underline font-medium">
+                  Register
+                </button>
+              </p>
+            </>
+          )}
         </CardContent>
+  );
+
+  if (isAddUserMode) {
+    return loginContent;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
+            <span className="text-white text-2xl">&#9917;</span>
+          </div>
+          <CardTitle className="text-2xl font-bold">Ground Booking</CardTitle>
+          <p className="text-gray-500 mt-1">Sign in to your account</p>
+        </CardHeader>
+        {loginContent}
       </Card>
     </div>
   );

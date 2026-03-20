@@ -18,6 +18,14 @@ interface User {
   created_at: string;
 }
 
+export interface StoredAccount {
+  token: string;
+  userId: number;
+  name: string;
+  phone: string;
+  roles: string[];
+}
+
 interface RegisterData {
   first_name: string;
   last_name: string;
@@ -42,18 +50,68 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   isAdmin: boolean;
   isModerator: boolean;
+  // Multi-account support
+  storedAccounts: StoredAccount[];
+  switchAccount: (userId: number) => Promise<void>;
+  addAccount: (phone: string, password: string) => Promise<void>;
+  removeAccount: (userId: number) => void;
+  isAddingAccount: boolean;
+  setIsAddingAccount: (v: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const ACCOUNTS_KEY = 'stored_accounts';
+const ACTIVE_ACCOUNT_KEY = 'active_account_id';
+
+function getStoredAccounts(): StoredAccount[] {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredAccounts(accounts: StoredAccount[]) {
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+function upsertAccount(accounts: StoredAccount[], account: StoredAccount): StoredAccount[] {
+  const idx = accounts.findIndex(a => a.userId === account.userId);
+  if (idx >= 0) {
+    accounts[idx] = account;
+  } else {
+    accounts.push(account);
+  }
+  return [...accounts];
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [storedAccounts, setStoredAccounts] = useState<StoredAccount[]>([]);
+  const [isAddingAccount, setIsAddingAccount] = useState(false);
 
   const refreshUser = async () => {
     try {
       const profile = await api.getProfile();
       setUser(profile);
+
+      // Update stored account info for current user
+      const token = localStorage.getItem('token');
+      if (token && profile) {
+        const updated = upsertAccount(getStoredAccounts(), {
+          token,
+          userId: profile.id,
+          name: `${profile.first_name} ${profile.last_name}`,
+          phone: profile.phone,
+          roles: profile.roles,
+        });
+        saveStoredAccounts(updated);
+        setStoredAccounts(updated);
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(profile.id));
+      }
     } catch {
       localStorage.removeItem('token');
       setUser(null);
@@ -61,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    setStoredAccounts(getStoredAccounts());
     const token = localStorage.getItem('token');
     if (token) {
       refreshUser().finally(() => setLoading(false));
@@ -73,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.login({ phone, password });
     localStorage.setItem('token', res.token);
     await refreshUser();
+    setIsAddingAccount(false);
   };
 
   const requestOTP = async (phone: string) => {
@@ -84,23 +144,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.verifyOTP({ phone, otp });
     localStorage.setItem('token', res.token);
     await refreshUser();
+    setIsAddingAccount(false);
   };
 
   const loginWithGoogle = async (googleId: string, email: string, firstName: string, lastName: string) => {
     const res = await api.googleAuth({ google_id: googleId, email, first_name: firstName, last_name: lastName });
     localStorage.setItem('token', res.token);
     await refreshUser();
+    setIsAddingAccount(false);
   };
 
   const register = async (data: RegisterData) => {
     const res = await api.register(data);
     localStorage.setItem('token', res.token);
     await refreshUser();
+    setIsAddingAccount(false);
   };
 
   const logout = () => {
+    // Remove current account from stored accounts
+    const currentId = user?.id;
+    if (currentId) {
+      const accounts = getStoredAccounts().filter(a => a.userId !== currentId);
+      saveStoredAccounts(accounts);
+      setStoredAccounts(accounts);
+
+      // If there are other accounts, switch to the first one
+      if (accounts.length > 0) {
+        localStorage.setItem('token', accounts[0].token);
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(accounts[0].userId));
+        refreshUser();
+        return;
+      }
+    }
     localStorage.removeItem('token');
+    localStorage.removeItem(ACTIVE_ACCOUNT_KEY);
     setUser(null);
+  };
+
+  const switchAccount = async (userId: number) => {
+    const accounts = getStoredAccounts();
+    const target = accounts.find(a => a.userId === userId);
+    if (!target) return;
+
+    localStorage.setItem('token', target.token);
+    localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(userId));
+    setLoading(true);
+    try {
+      await refreshUser();
+    } catch {
+      // Token may be expired — remove the stale account
+      const updated = accounts.filter(a => a.userId !== userId);
+      saveStoredAccounts(updated);
+      setStoredAccounts(updated);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addAccount = async (phone: string, password: string) => {
+    const res = await api.login({ phone, password });
+    localStorage.setItem('token', res.token);
+    await refreshUser();
+    setIsAddingAccount(false);
+  };
+
+  const removeAccount = (userId: number) => {
+    const accounts = getStoredAccounts().filter(a => a.userId !== userId);
+    saveStoredAccounts(accounts);
+    setStoredAccounts(accounts);
   };
 
   const isAdmin = user?.roles.includes('admin') || false;
@@ -109,7 +221,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, loading, login, loginWithOTP, requestOTP, loginWithGoogle,
-      register, logout, refreshUser, isAdmin, isModerator
+      register, logout, refreshUser, isAdmin, isModerator,
+      storedAccounts, switchAccount, addAccount, removeAccount,
+      isAddingAccount, setIsAddingAccount,
     }}>
       {children}
     </AuthContext.Provider>

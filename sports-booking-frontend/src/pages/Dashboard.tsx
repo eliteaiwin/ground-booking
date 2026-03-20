@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, Settings, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut } from 'lucide-react';
 
 interface Game {
   id: number;
@@ -72,13 +72,16 @@ interface Props {
 }
 
 export default function Dashboard({ onNavigate }: Props) {
-  const { user, logout, isAdmin, isModerator } = useAuth();
+  const { user, logout, isAdmin, isModerator, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
   const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('games');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSwitchUser, setShowSwitchUser] = useState(false);
 
   const currency = user?.currency || 'Rs';
+  const otherAccounts = storedAccounts.filter(a => a.userId !== user?.id);
 
   useEffect(() => {
     loadData();
@@ -127,9 +130,121 @@ export default function Dashboard({ onNavigate }: Props) {
                 </span>
               )}
             </button>
-            <button onClick={() => onNavigate('profile')} className="p-2 rounded-full hover:bg-green-700">
-              <Settings size={20} />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => { setShowUserMenu(!showUserMenu); setShowSwitchUser(false); }}
+                className="flex items-center gap-1 p-1.5 rounded-full hover:bg-green-700"
+              >
+                <UserCircle size={22} />
+                <ChevronDown size={14} />
+              </button>
+
+              {/* User Menu Dropdown */}
+              {showUserMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => { setShowUserMenu(false); setShowSwitchUser(false); }} />
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-xl border z-50 overflow-hidden">
+                    {/* Current user header */}
+                    <div className="px-4 py-3 bg-gray-50 border-b">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center text-sm font-bold">
+                          {user?.first_name?.charAt(0).toUpperCase() || 'U'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{user?.first_name} {user?.last_name}</p>
+                          <p className="text-xs text-gray-500">{user?.phone}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 mt-1">
+                        {user?.roles.map(role => (
+                          <Badge key={role} variant="secondary" className="text-xs capitalize">{role}</Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Menu items */}
+                    <div className="py-1">
+                      <button
+                        onClick={() => { setShowUserMenu(false); onNavigate('profile'); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Pencil size={16} className="text-gray-400" />
+                        Edit Profile
+                      </button>
+
+                      {otherAccounts.length > 0 && (
+                        <button
+                          onClick={() => setShowSwitchUser(!showSwitchUser)}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <ArrowRightLeft size={16} className="text-gray-400" />
+                          Switch User
+                          <ChevronDown size={14} className={`ml-auto text-gray-400 transition-transform ${showSwitchUser ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+
+                      {/* Switch User submenu */}
+                      {showSwitchUser && otherAccounts.length > 0 && (
+                        <div className="bg-gray-50 border-y">
+                          {otherAccounts.map(account => (
+                            <button
+                              key={account.userId}
+                              onClick={async () => {
+                                setShowUserMenu(false);
+                                setShowSwitchUser(false);
+                                await switchAccount(account.userId);
+                              }}
+                              className="w-full flex items-center gap-3 px-6 py-2 text-sm hover:bg-gray-100 transition-colors"
+                            >
+                              <div className="w-7 h-7 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold">
+                                {account.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0 text-left">
+                                <p className="text-sm text-gray-800 truncate">{account.name}</p>
+                                <p className="text-xs text-gray-500">{account.phone}</p>
+                              </div>
+                              <div className="flex gap-0.5">
+                                {account.roles.map(r => (
+                                  <span key={r} className="text-xs bg-gray-200 px-1 rounded capitalize">{r}</span>
+                                ))}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setIsAddingAccount(true);
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <UserPlus size={16} className="text-gray-400" />
+                        Add User
+                      </button>
+
+                      <div className="border-t my-1" />
+
+                      <button
+                        onClick={() => { setShowUserMenu(false); logout(); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut size={16} />
+                        Logout
+                      </button>
+                    </div>
+
+                    {/* Account count indicator */}
+                    {storedAccounts.length > 1 && (
+                      <div className="px-4 py-2 bg-blue-50 border-t text-xs text-blue-600 text-center">
+                        {storedAccounts.length} accounts logged in
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -144,9 +259,9 @@ export default function Dashboard({ onNavigate }: Props) {
               ))}
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={logout} className="text-gray-500">
-            Logout
-          </Button>
+          {storedAccounts.length > 1 && (
+            <span className="text-xs text-gray-400">{storedAccounts.length} accounts</span>
+          )}
         </div>
 
         {/* Quick Actions */}

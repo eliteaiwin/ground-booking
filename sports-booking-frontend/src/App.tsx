@@ -19,7 +19,7 @@ import GameSearch from './pages/GameSearch';
 type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAddingAccount, setIsAddingAccount } = useAuth();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
@@ -42,6 +42,29 @@ function AppContent() {
       return <LoginPage onSwitchToRegister={() => setAuthMode('register')} />;
     }
     return <RegisterPage onSwitchToLogin={() => setAuthMode('login')} />;
+  }
+
+  // "Add User" mode — show login form as overlay so user can log in as another account
+  if (isAddingAccount) {
+    return (
+      <div className="relative">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsAddingAccount(false)}
+              className="absolute top-3 right-3 z-10 p-1 rounded-full hover:bg-gray-100 text-gray-500"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div className="p-4 border-b bg-blue-50 rounded-t-2xl">
+              <h3 className="text-lg font-bold text-blue-800">Add Another Account</h3>
+              <p className="text-sm text-blue-600">Log in with a different account to switch between users</p>
+            </div>
+            <LoginPage onSwitchToRegister={() => {}} isAddUserMode />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const navigate = (page: string, gameId?: number) => {
