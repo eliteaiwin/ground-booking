@@ -120,7 +120,7 @@ function ReactionBar({ reactions, targetType, targetId, userId, onReact }: {
   );
 }
 
-export default function Discussion({ gameId, gameStatus: _gameStatus }: Props) {
+export default function Discussion({ gameId, gameStatus }: Props) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
@@ -138,6 +138,7 @@ export default function Discussion({ gameId, gameStatus: _gameStatus }: Props) {
   const [commentReplyTo, setCommentReplyTo] = useState<{ id: number; name: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const canUploadMedia = Boolean(gameId) && gameStatus === 'completed';
 
   useEffect(() => {
     loadData();
@@ -334,31 +335,35 @@ export default function Discussion({ gameId, gameStatus: _gameStatus }: Props) {
         {activeTab === 'media' && gameId && (
           <div>
             {/* Upload button */}
-            <div className="mb-3">
-              <Button size="sm" variant="outline" onClick={() => setShowUpload(!showUpload)} className="text-xs w-full">
-                <Upload size={12} className="mr-1" /> Upload Photo / Video
-              </Button>
+            {canUploadMedia ? (
+              <div className="mb-3">
+                <Button size="sm" variant="outline" onClick={() => setShowUpload(!showUpload)} className="text-xs w-full">
+                  <Upload size={12} className="mr-1" /> Upload Photo / Video
+                </Button>
 
-              {showUpload && (
-                <div className="mt-2 p-3 bg-gray-50 rounded-lg space-y-2">
-                  <Input
-                    value={uploadCaption}
-                    onChange={(e) => setUploadCaption(e.target.value)}
-                    placeholder="Add a caption (optional)"
-                    className="text-sm h-8"
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={handleUpload}
-                    className="text-xs w-full"
-                    disabled={uploading}
-                  />
-                  {uploading && <p className="text-xs text-blue-600">Uploading...</p>}
-                </div>
-              )}
-            </div>
+                {showUpload && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg space-y-2">
+                    <Input
+                      value={uploadCaption}
+                      onChange={(e) => setUploadCaption(e.target.value)}
+                      placeholder="Add a caption (optional)"
+                      className="text-sm h-8"
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,video/*"
+                      onChange={handleUpload}
+                      className="text-xs w-full"
+                      disabled={uploading}
+                    />
+                    {uploading && <p className="text-xs text-blue-600">Uploading...</p>}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 mb-3">Media upload is available after the game is completed.</p>
+            )}
 
             {/* Media grid */}
             {media.length === 0 ? (

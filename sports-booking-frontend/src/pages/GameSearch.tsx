@@ -12,6 +12,7 @@ import { ArrowLeft, Search, Users, Trophy, Calendar, MapPin, Clock } from 'lucid
 interface Player {
   user_id: number;
   name: string;
+  phone: string;
   position: string;
   status: string;
   payment_confirmed: number;
@@ -33,6 +34,17 @@ interface GameResult {
   player_of_the_day: { player_id: number; name: string; votes: number } | null;
   payment_summary: { total: number; paid: number; pending: number };
 }
+
+const maskPhone = (phone?: string) => {
+  if (!phone || phone.length < 4) return phone || '';
+  return phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
+};
+
+const formatNamePhone = (name: string, phone?: string) => {
+  const firstName = (name || '').split(' ')[0];
+  const masked = maskPhone(phone);
+  return masked ? `${firstName} - ${masked}` : firstName;
+};
 
 const sportIcon = (type: string) => {
   if (type === 'soccer' || type === 'football') return '\u26BD';
@@ -57,7 +69,7 @@ const statusColor = (status: string) => {
 const statusLabel = (status: string) => {
   switch (status) {
     case 'draft': return 'Draft';
-    case 'voting_open': return 'Voting Open';
+    case 'voting_open': return 'Open for Voting';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
     case 'cancelled': return 'Cancelled';
@@ -137,7 +149,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                   <SelectTrigger><SelectValue placeholder="All statuses" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="voting_open">Voting Open</SelectItem>
+                    <SelectItem value="voting_open">Open for Voting</SelectItem>
                     <SelectItem value="in_progress">In Progress</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -186,7 +198,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                     <span className="text-2xl mt-1">{sportIcon(game.sport_type)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-gray-800 truncate">{game.title}</h3>
+                        <h3 className="font-semibold text-gray-800 truncate">{game.title || game.ground_name}</h3>
                         <Badge className={`${statusColor(game.status)} text-xs shrink-0`}>
                           {statusLabel(game.status)}
                         </Badge>
@@ -200,7 +212,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                         </p>
                         <p className="flex items-center gap-1">
                           <Users size={12} /> {game.selected_players.length}/{game.max_players} players
-                          {game.waiting_list.length > 0 && (
+                          {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
                             <span className="text-orange-500 ml-1">+{game.waiting_list.length} waiting</span>
                           )}
                           <span className="ml-2">{game.cost_per_person} {currency}/person</span>
@@ -222,20 +234,20 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                               <div className="flex flex-wrap gap-1">
                                 {game.selected_players.map(p => (
                                   <Badge key={p.user_id} variant="outline" className="text-xs">
-                                    {p.name}
+                                    {formatNamePhone(p.name, p.phone)}
                                     {p.position && p.position !== 'Anywhere' && ` (${p.position})`}
                                   </Badge>
                                 ))}
                               </div>
                             </div>
                           )}
-                          {game.waiting_list.length > 0 && (
+                          {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
                             <div>
                               <p className="text-xs font-semibold text-orange-600 mb-1">Waiting List:</p>
                               <div className="flex flex-wrap gap-1">
                                 {game.waiting_list.map(p => (
                                   <Badge key={p.user_id} variant="outline" className="text-xs border-orange-200">
-                                    {p.name}
+                                    {formatNamePhone(p.name, p.phone)}
                                     {p.position && p.position !== 'Anywhere' && ` (${p.position})`}
                                   </Badge>
                                 ))}

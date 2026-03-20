@@ -8,7 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, UserPlus, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award } from 'lucide-react';
 import Discussion from './Discussion';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
@@ -17,6 +17,13 @@ const SPORT_POSITIONS: Record<string, string[]> = {
   badminton: ['Anywhere', 'Singles', 'Doubles'],
   basketball: ['Anywhere', 'Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
   hockey: ['Anywhere', 'Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
+};
+
+const formatPlayerDisplay = (name: string, phone: string) => {
+  const firstName = name.split(' ')[0];
+  if (!phone || phone.length < 4) return firstName;
+  const masked = phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
+  return `${firstName} - ${masked}`;
 };
 
 const sportIconSmall = (type: string) => {
@@ -118,7 +125,7 @@ const statusLabel = (status: string, isArchived: boolean) => {
   if (isArchived) return 'Archived';
   switch (status) {
     case 'draft': return 'Draft';
-    case 'voting_open': return 'Voting Open';
+    case 'voting_open': return 'Open for Voting';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
     case 'cancelled': return 'Cancelled';
@@ -136,13 +143,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [game, setGame] = useState<Game | null>(null);
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [nominateUserId, setNominateUserId] = useState('');
-  const [nominatePosition, setNominatePosition] = useState('');
+  const [nominateMode, setNominateMode] = useState<'self' | 'others'>('self');
+  const [nominatePosition, setNominatePosition] = useState('Anywhere');
   const [potdPlayerId, setPotdPlayerId] = useState('');
   const [potdResults, setPotdResults] = useState<POTDResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [error, setError] = useState('');
-  const [votePosition, setVotePosition] = useState('');
+  const [votePosition, setVotePosition] = useState('Anywhere');
   const [showEditGame, setShowEditGame] = useState(false);
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
@@ -317,13 +325,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `Confirmed:\n------------\n`;
     game!.selected_players.forEach((p, i) => {
       const paidMark = p.payment_confirmed === 1 ? ' \u2705' : '';
-      msg += `${i + 1}. ${p.name}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}${paidMark}\n`;
+      msg += `${i + 1}. ${formatPlayerDisplay(p.name, p.phone)}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}${paidMark}\n`;
     });
 
     if (game!.waiting_list.length > 0) {
       msg += `\nWaiting List:\n-------------\n`;
       game!.waiting_list.forEach((p, i) => {
-        msg += `${i + 1}. ${p.name}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}\n`;
+        msg += `${i + 1}. ${formatPlayerDisplay(p.name, p.phone)}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}\n`;
       });
     }
 
@@ -371,7 +379,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
           <div className="flex items-center gap-3">
             {sportIcon(game.sport_type)}
             <div>
-              <h1 className="text-xl font-bold">{game.title}</h1>
+              <h1 className="text-xl font-bold">{game.ground_name}</h1>
+              {game.title && <p className="text-sm font-medium text-white/90">{game.title}</p>}
               <div className="flex gap-2 mt-1">
                 <Badge className={`${statusColor(game.status)} mt-1`}>{statusLabel(game.status, game.is_archived)}</Badge>
                 {game.is_archived && <Badge className="bg-gray-200 text-gray-700 mt-1"><Archive size={10} className="mr-1" /> Archived</Badge>}
@@ -474,7 +483,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             )}
             {game.payee && (
               <div className="flex items-center gap-2 text-gray-600">
-                <Phone size={16} /> <span>Pay to: {game.payee.name} ({game.payee.phone})</span>
+                <Phone size={16} /> <span>Payment Receiver: {formatPlayerDisplay(game.payee.name, game.payee.phone)}</span>
               </div>
             )}
             <p className="text-xs text-gray-400">Created by {game.created_by_name}</p>
@@ -486,28 +495,71 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <Button className="w-full bg-green-600 hover:bg-green-700"
               onClick={() => handleAction('open-voting', () => api.openVoting(game.id))}
               disabled={actionLoading === 'open-voting'}>
-              {actionLoading === 'open-voting' ? 'Opening...' : 'Open Voting'}
+              {actionLoading === 'open-voting' ? 'Opening...' : 'Open for Voting'}
             </Button>
           )}
 
-          {game.status === 'voting_open' && !isPlayerInGame && (
+          {game.status === 'voting_open' && (
             <Card className="border-green-200 bg-green-50">
               <CardContent className="p-4">
-                <h4 className="font-semibold text-green-800 mb-2">Join Game</h4>
+                {/* Radio buttons for Nominate Self / Nominate Others */}
+                <div className="flex gap-4 mb-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="nominate-mode" value="self" checked={nominateMode === 'self'}
+                      onChange={() => setNominateMode('self')}
+                      className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium text-gray-700">Nominate Self</span>
+                  </label>
+                  {(isModerator || isAdmin) && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="nominate-mode" value="others" checked={nominateMode === 'others'}
+                        onChange={() => setNominateMode('others')}
+                        className="w-4 h-4 text-green-600" />
+                      <span className="text-sm font-medium text-gray-700">Nominate Others</span>
+                    </label>
+                  )}
+                </div>
+
                 {game.payment_timing === 'before' && (
                   <p className="text-xs text-orange-600 mb-2 flex items-center gap-1">
                     <CreditCard size={12} /> PrePaid: Payment required to confirm your spot
                   </p>
                 )}
+
+                {/* Nominate Others: user dropdown */}
+                {nominateMode === 'others' && (isModerator || isAdmin) && availableForNomination.length > 0 && (
+                  <div className="mb-3">
+                    <Label className="text-sm text-gray-600 mb-1 block">Select Player</Label>
+                    <Select value={nominateUserId} onValueChange={setNominateUserId}>
+                      <SelectTrigger className="w-full"><SelectValue placeholder="Select user" /></SelectTrigger>
+                      <SelectContent>
+                        {availableForNomination.map(u => {
+                          const firstName = u.name.split(' ')[0];
+                          const ph = u.phone;
+                          const maskedPhone = ph.length >= 4 ? ph[0] + 'x'.repeat(ph.length - 4) + ph.slice(-2) : ph;
+                          return <SelectItem key={u.id} value={String(u.id)}>{firstName} - {maskedPhone}</SelectItem>;
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Shared position selector */}
                 {positions.length > 0 && (
                   <div className="mb-3">
-                    <Label className="text-sm text-gray-600 mb-1 block">Select Position (optional)</Label>
+                    <Label className="text-sm text-gray-600 mb-1 block">Select Position</Label>
                     <div className="flex flex-wrap gap-1.5">
                       {positions.map(pos => (
                         <button key={pos} type="button"
-                          onClick={() => setVotePosition(votePosition === pos ? '' : pos)}
+                          onClick={() => {
+                            if (nominateMode === 'self') {
+                              setVotePosition(votePosition === pos ? 'Anywhere' : pos);
+                            } else {
+                              setNominatePosition(nominatePosition === pos ? 'Anywhere' : pos);
+                            }
+                          }}
                           className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                            votePosition === pos
+                            (nominateMode === 'self' ? votePosition === pos : nominatePosition === pos)
                               ? 'bg-green-600 text-white border-green-600'
                               : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
                           }`}>{pos}</button>
@@ -515,25 +567,40 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     </div>
                   </div>
                 )}
-                <Button className="w-full bg-green-600 hover:bg-green-700"
-                  onClick={async () => {
-                    setActionLoading('vote');
-                    setError('');
-                    try {
-                      const result = await api.voteJoin(game.id, votePosition);
-                      if (result.is_first_time_on_ground) {
-                        setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
+
+                {nominateMode === 'self' && !isPlayerInGame && (
+                  <Button className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={async () => {
+                      setActionLoading('vote');
+                      setError('');
+                      try {
+                        const result = await api.voteJoin(game.id, votePosition);
+                        if (result.is_first_time_on_ground) {
+                          setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
+                        }
+                        await loadGame();
+                      } catch (err: unknown) {
+                        setError(err instanceof Error ? err.message : 'Action failed');
+                      } finally {
+                        setActionLoading('');
                       }
-                      await loadGame();
-                    } catch (err: unknown) {
-                      setError(err instanceof Error ? err.message : 'Action failed');
-                    } finally {
-                      setActionLoading('');
-                    }
-                  }}
-                  disabled={actionLoading === 'vote'}>
-                  {actionLoading === 'vote' ? 'Joining...' : `Join Game${votePosition ? ` as ${votePosition}` : ''}`}
-                </Button>
+                    }}
+                    disabled={actionLoading === 'vote'}>
+                    {actionLoading === 'vote' ? 'Nominating...' : `Nominate Self${votePosition && votePosition !== 'Anywhere' ? ` as ${votePosition}` : ''}`}
+                  </Button>
+                )}
+
+                {nominateMode === 'self' && isPlayerInGame && (
+                  <p className="text-sm text-green-700 font-medium">You are already in this game.</p>
+                )}
+
+                {nominateMode === 'others' && (isModerator || isAdmin) && (
+                  <Button className="w-full bg-green-600 hover:bg-green-700"
+                    disabled={!nominateUserId || actionLoading === 'nominate'}
+                    onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, Number(nominateUserId), nominatePosition))}>
+                    {actionLoading === 'nominate' ? 'Nominating...' : 'Nominate Player'}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -543,39 +610,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
               onClick={handleQuitClick} disabled={actionLoading === 'quit'}>
               {actionLoading === 'quit' ? 'Quitting...' : 'Quit Game'}
             </Button>
-          )}
-
-          {(isModerator || isAdmin) && game.status === 'voting_open' && availableForNomination.length > 0 && (
-            <Card>
-              <CardContent className="p-4">
-                <h4 className="text-sm font-semibold mb-2 flex items-center gap-1"><UserPlus size={14} /> Nominate Player</h4>
-                <div className="flex gap-2 mb-2">
-                  <Select value={nominateUserId} onValueChange={setNominateUserId}>
-                    <SelectTrigger className="flex-1"><SelectValue placeholder="Select user" /></SelectTrigger>
-                    <SelectContent>
-                      {availableForNomination.map(u => (
-                        <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" disabled={!nominateUserId || actionLoading === 'nominate'}
-                    onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, Number(nominateUserId), nominatePosition))}>
-                    Add
-                  </Button>
-                </div>
-                {positions.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {positions.map(pos => (
-                      <button key={pos} type="button"
-                        onClick={() => setNominatePosition(nominatePosition === pos ? '' : pos)}
-                        className={`px-2 py-0.5 rounded-full text-xs border ${
-                          nominatePosition === pos ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-300'
-                        }`}>{pos}</button>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
           )}
 
           {/* Edit Game - for Admin/Moderator on non-completed games */}
@@ -599,12 +633,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 {showEditGame && (
                   <div className="space-y-3">
                     <div>
-                      <Label className="text-xs text-gray-500">Select Payee (who receives the money)</Label>
+                      <Label className="text-xs text-gray-500">Payment Receiver (who receives the money)</Label>
                       <Select value={editPayeeUserId} onValueChange={setEditPayeeUserId}>
-                        <SelectTrigger><SelectValue placeholder="Select payee" /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
                         <SelectContent>
                           {allUsers.map(u => (
-                            <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
+                            <SelectItem key={u.id} value={String(u.id)}>{formatPlayerDisplay(u.name, u.phone)}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -842,7 +876,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         onDragStart={() => handleDragStart(player)}
                         className={`flex items-center gap-2 text-sm p-1.5 bg-white rounded ${(isAdmin || isModerator) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                         {(isAdmin || isModerator) && <GripVertical size={12} className="text-gray-400" />}
-                        <span className="flex-1">{player.name}</span>
+                        <span className="flex-1">{formatPlayerDisplay(player.name, player.phone)}</span>
                         {player.payment_confirmed === 1 && <CheckCircle size={14} className="text-green-600" />}
                       </div>
                     ))}
@@ -865,7 +899,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         onDragStart={() => handleDragStart(player)}
                         className={`flex items-center gap-2 text-sm p-1.5 bg-white rounded ${(isAdmin || isModerator) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                         {(isAdmin || isModerator) && <GripVertical size={12} className="text-gray-400" />}
-                        <span className="flex-1">{player.name}</span>
+                        <span className="flex-1">{formatPlayerDisplay(player.name, player.phone)}</span>
                       </div>
                     ))}
                   </div>
@@ -892,7 +926,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {idx + 1}
                     </span>
                     <span className="flex-1">
-                      {player.name}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
                     {/* Nomination info tooltip */}
                     <button
@@ -933,7 +967,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </CardContent>
         </Card>
 
-        {game.waiting_list.length > 0 && (
+        {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2 text-orange-600">
@@ -948,7 +982,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {idx + 1}
                     </span>
                     <span className="flex-1">
-                      {player.name}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
@@ -1023,7 +1057,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <SelectTrigger className="flex-1"><SelectValue placeholder="Select best player" /></SelectTrigger>
                   <SelectContent>
                     {game.selected_players.filter(p => p.user_id !== user?.id).map(p => (
-                      <SelectItem key={p.user_id} value={String(p.user_id)}>{p.name}</SelectItem>
+                      <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

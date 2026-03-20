@@ -36,6 +36,17 @@ interface Notification {
   sport_type: string;
 }
 
+const maskPhone = (phone?: string) => {
+  if (!phone || phone.length < 4) return phone || '';
+  return phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
+};
+
+const formatNamePhone = (name: string, phone?: string) => {
+  const firstName = (name || '').split(' ')[0];
+  const masked = maskPhone(phone);
+  return masked ? `${firstName} - ${masked}` : firstName;
+};
+
 const sportIcon = (type: string) => {
   if (type === 'soccer' || type === 'football') return <span className="text-2xl">&#9917;</span>;
   if (type === 'cricket') return <span className="text-2xl">&#127951;</span>;
@@ -60,7 +71,7 @@ const statusLabel = (status: string, isArchived?: boolean) => {
   if (isArchived) return 'Archived';
   switch (status) {
     case 'draft': return 'Draft';
-    case 'voting_open': return 'Voting Open';
+    case 'voting_open': return 'Open for Voting';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
     default: return status;
@@ -151,8 +162,7 @@ export default function Dashboard({ onNavigate }: Props) {
                           {user?.first_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{user?.first_name} {user?.last_name}</p>
-                          <p className="text-xs text-gray-500">{user?.phone}</p>
+                          <p className="text-sm font-semibold text-gray-800 truncate">{formatNamePhone(`${user?.first_name || ''} ${user?.last_name || ''}`.trim(), user?.phone)}</p>
                         </div>
                       </div>
                       <div className="flex gap-1 mt-1">
@@ -200,8 +210,7 @@ export default function Dashboard({ onNavigate }: Props) {
                                 {account.name.charAt(0).toUpperCase()}
                               </div>
                               <div className="flex-1 min-w-0 text-left">
-                                <p className="text-sm text-gray-800 truncate">{account.name}</p>
-                                <p className="text-xs text-gray-500">{account.phone}</p>
+                                <p className="text-sm text-gray-800 truncate">{formatNamePhone(account.name, account.phone)}</p>
                               </div>
                               <div className="flex gap-0.5">
                                 {account.roles.map(r => (
@@ -403,12 +412,12 @@ export default function Dashboard({ onNavigate }: Props) {
                     <div className="mt-1">{sportIcon(game.sport_type)}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-gray-800 truncate">{game.title}</h3>
+                        <h3 className="font-semibold text-gray-800 truncate">{game.ground_name}</h3>
                         <Badge className={`${statusColor(game.status)} text-xs shrink-0`}>
                           {statusLabel(game.status)}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-500">{game.ground_name}</p>
+                      {game.title && <p className="text-sm text-gray-600 font-medium truncate">{game.title}</p>}
                       <p className="text-sm text-gray-500">
                         {game.game_date} at {game.game_time}
                         {game.duration_minutes > 0 && ` (${game.duration_minutes} mins)`}
@@ -418,7 +427,7 @@ export default function Dashboard({ onNavigate }: Props) {
                           <Users size={12} className="inline mr-1" />
                           {game.selected_players.length}/{game.max_players} players
                         </span>
-                        {game.waiting_list.length > 0 && (
+                        {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
                           <span className="text-orange-500">
                             +{game.waiting_list.length} waiting
                           </span>
@@ -458,12 +467,12 @@ export default function Dashboard({ onNavigate }: Props) {
                     <div className="mt-1">{sportIcon(game.sport_type)}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-gray-800 truncate">{game.title}</h3>
+                        <h3 className="font-semibold text-gray-800 truncate">{game.ground_name}</h3>
                         <Badge className={`${statusColor(game.status, true)} text-xs shrink-0`}>
                           <Archive size={10} className="mr-1" /> Archived
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-500">{game.ground_name}</p>
+                      {game.title && <p className="text-sm text-gray-600 font-medium truncate">{game.title}</p>}
                       <p className="text-sm text-gray-500">{game.game_date}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                         <span>{game.selected_players.length} players</span>

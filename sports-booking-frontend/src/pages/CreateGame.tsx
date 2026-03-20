@@ -23,6 +23,13 @@ interface Ground {
   display_name: string;
 }
 
+const formatUserOption = (name: string, phone: string) => {
+  const firstName = name.split(' ')[0];
+  if (!phone || phone.length < 4) return firstName;
+  const masked = phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
+  return `${firstName} - ${masked}`;
+};
+
 const SPORT_DURATIONS: Record<string, number> = {
   soccer: 90,
   cricket: 180,
@@ -38,6 +45,7 @@ interface Props {
 
 export default function CreateGame({ onBack, onCreated }: Props) {
   const { user } = useAuth();
+  const [titleType, setTitleType] = useState('regular');
   const [title, setTitle] = useState('');
   const [sportType, setSportType] = useState('soccer');
   const [groundName, setGroundName] = useState('');
@@ -143,8 +151,17 @@ export default function CreateGame({ onBack, onCreated }: Props) {
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>}
               <div className="space-y-2">
-                <Label htmlFor="title">Game Title</Label>
-                <Input id="title" placeholder="e.g. Wednesday Football" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                <Label>Game Title</Label>
+                <Select value={titleType} onValueChange={(val) => { setTitleType(val); if (val === 'regular') setTitle(''); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="regular">Regular Games</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                {titleType === 'other' && (
+                  <Input id="title" placeholder="Enter game title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Sport Type</Label>
@@ -217,12 +234,12 @@ export default function CreateGame({ onBack, onCreated }: Props) {
               <Separator className="my-2" />
               <h3 className="text-sm font-semibold text-gray-700">Payment & Rules</h3>
               <div className="space-y-2">
-                <Label>Select Payee (who receives the money)</Label>
+                <Label>Payment Receiver (who receives the money)</Label>
                 <Select value={payeeUserId} onValueChange={setPayeeUserId}>
-                  <SelectTrigger><SelectValue placeholder="Select payee (optional)" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
                   <SelectContent>
                     {allUsers.map(u => (
-                      <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
+                      <SelectItem key={u.id} value={String(u.id)}>{formatUserOption(u.name, u.phone)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

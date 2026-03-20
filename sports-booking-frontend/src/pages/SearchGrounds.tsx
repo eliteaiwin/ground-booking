@@ -62,12 +62,14 @@ const sportIconChar = (type: string) => {
 
 const statusLabel = (status: string) => {
   switch (status) {
-    case 'voting_open': return 'Voting Open';
+    case 'voting_open': return 'Open for Voting';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
     default: return status;
   }
 };
+
+const formatPlayerName = (name: string) => (name || '').split(' ')[0];
 
 const statusColor = (status: string) => {
   switch (status) {
@@ -261,14 +263,14 @@ export default function SearchGrounds({ onBack }: Props) {
                             <div key={game.game_id} className="p-2 bg-gray-50 rounded-lg">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-sm">{sportIconChar(game.sport_type)}</span>
-                                <span className="text-sm font-medium">{game.title}</span>
+                                {game.title && <span className="text-sm font-medium">{game.title}</span>}
                                 <Badge className={`${statusColor(game.status)} text-xs`}>{statusLabel(game.status)}</Badge>
                               </div>
                               <p className="text-xs text-gray-500 mb-1">{game.game_date} at {game.game_time}</p>
                               <div className="flex flex-wrap gap-1">
                                 {game.players.map(p => (
                                   <Badge key={p.user_id} variant="outline" className="text-xs">
-                                    {p.name}{p.position ? ` (${p.position})` : ''}
+                                    {formatPlayerName(p.name)}{p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}
                                     {p.status === 'waiting' && <span className="text-orange-500 ml-1">WL</span>}
                                   </Badge>
                                 ))}
