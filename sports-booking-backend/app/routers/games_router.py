@@ -886,7 +886,7 @@ async def cancel_game(
             continue
         user_sports = u["sports"] or ""
         user_locations = (u["locations"] or "").lower()
-        if sport in user_sports or ground.lower() in user_locations:
+        if sport in user_sports or any(loc.strip() in ground.lower() for loc in user_locations.split(',') if loc.strip()):
             await create_notification(
                 db, u["id"], game_id, "game_cancelled",
                 f"A {sport} game at {ground} on {game['game_date']} has been cancelled."
