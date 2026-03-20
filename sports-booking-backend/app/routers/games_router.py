@@ -890,7 +890,7 @@ async def cancel_game(
     )
     pending_payments = await cursor.fetchall()
     for pp in pending_payments:
-        if pp["user_id"] not in game_player_user_ids:
+        if pp["user_id"] not in game_player_user_ids and pp["user_id"] not in paid_user_ids:
             await db.execute(
                 "DELETE FROM payments WHERE game_id = ? AND user_id = ?",
                 (game_id, pp["user_id"])
