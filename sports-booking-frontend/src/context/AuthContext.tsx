@@ -187,16 +187,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const target = accounts.find(a => a.userId === userId);
     if (!target) return;
 
+    const previousToken = localStorage.getItem('token');
     localStorage.setItem('token', target.token);
     localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(userId));
     setLoading(true);
     try {
       await refreshUser();
     } catch {
-      // Token may be expired — remove the stale account
+      // Token may be expired — remove the stale account and restore previous token
       const updated = accounts.filter(a => a.userId !== userId);
       saveStoredAccounts(updated);
       setStoredAccounts(updated);
+      if (previousToken) {
+        localStorage.setItem('token', previousToken);
+        await refreshUser();
+      }
     } finally {
       setLoading(false);
     }
