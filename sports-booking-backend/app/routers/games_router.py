@@ -876,12 +876,31 @@ async def cancel_game(
             f"{cancel_detail} Your payment of {pp['amount']} has been marked for refund."
         )
 
-    # Notify all game players (who haven't already been notified via refund)
+    # Clear pending payments for players who quit with penalty (no longer in game_players)
     paid_user_ids = {pp["user_id"] for pp in paid_players}
     cursor = await db.execute(
         "SELECT user_id FROM game_players WHERE game_id = ?", (game_id,)
     )
     all_players = await cursor.fetchall()
+    game_player_user_ids = {p["user_id"] for p in all_players}
+
+    cursor = await db.execute(
+        "SELECT user_id, amount FROM payments WHERE game_id = ? AND status = 'pending'",
+        (game_id,)
+    )
+    pending_payments = await cursor.fetchall()
+    for pp in pending_payments:
+        if pp["user_id"] not in game_player_user_ids:
+            await db.execute(
+                "DELETE FROM payments WHERE game_id = ? AND user_id = ?",
+                (game_id, pp["user_id"])
+            )
+            await create_notification(
+                db, pp["user_id"], game_id, "game_cancelled",
+                f"{cancel_detail} Your pending payment obligation has been cancelled."
+            )
+
+    # Notify all game players (who haven't already been notified via refund)
     for p in all_players:
         if p["user_id"] not in paid_user_ids:
             await create_notification(
