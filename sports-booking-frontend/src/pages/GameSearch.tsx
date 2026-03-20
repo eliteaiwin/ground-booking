@@ -212,7 +212,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                         </p>
                         <p className="flex items-center gap-1">
                           <Users size={12} /> {game.selected_players.length}/{game.max_players} players
-                          {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
+                          {game.waiting_list.length > 0 && (
                             <span className="text-orange-500 ml-1">+{game.waiting_list.length} waiting</span>
                           )}
                           <span className="ml-2">{game.cost_per_person} {currency}/person</span>
@@ -241,7 +241,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                               </div>
                             </div>
                           )}
-                          {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
+                          {game.waiting_list.length > 0 && (
                             <div>
                               <p className="text-xs font-semibold text-orange-600 mb-1">Waiting List:</p>
                               <div className="flex flex-wrap gap-1">

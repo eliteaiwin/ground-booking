@@ -427,7 +427,7 @@ export default function Dashboard({ onNavigate }: Props) {
                           <Users size={12} className="inline mr-1" />
                           {game.selected_players.length}/{game.max_players} players
                         </span>
-                        {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
+                        {game.waiting_list.length > 0 && (
                           <span className="text-orange-500">
                             +{game.waiting_list.length} waiting
                           </span>

@@ -967,7 +967,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </CardContent>
         </Card>
 
-        {game.selected_players.length >= game.max_players && game.waiting_list.length > 0 && (
+        {game.waiting_list.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2 text-orange-600">
