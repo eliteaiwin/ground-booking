@@ -201,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStoredAccounts(updated);
       if (previousToken) {
         localStorage.setItem('token', previousToken);
-        await refreshUser();
+        await refreshUser().catch(() => {});
       }
     } finally {
       setLoading(false);
