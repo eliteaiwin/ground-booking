@@ -897,7 +897,7 @@ async def cancel_game(
     )
     all_users = await cursor.fetchall()
     for u in all_users:
-        if u["id"] in game_player_ids:
+        if u["id"] in game_player_ids or u["id"] in paid_user_ids:
             continue
         user_sports = u["sports"] or ""
         user_locations = (u["locations"] or "").lower()
