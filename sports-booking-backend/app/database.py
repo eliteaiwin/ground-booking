@@ -234,6 +234,30 @@ async def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(target_type, target_id, user_id, emoji)
         );
+
+        CREATE TABLE IF NOT EXISTS game_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL UNIQUE,
+            team_a_id INTEGER,
+            team_a_score INTEGER NOT NULL DEFAULT 0,
+            team_b_id INTEGER,
+            team_b_score INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (team_a_id) REFERENCES game_teams(id),
+            FOREIGN KEY (team_b_id) REFERENCES game_teams(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS goal_scorers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            goals INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(game_id, user_id)
+        );
     """)
 
     # Migration: add columns if they don't exist (for existing databases)

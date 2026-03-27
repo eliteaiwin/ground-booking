@@ -169,8 +169,14 @@ export const api = {
   startGame: (gameId: number) =>
     request(`/api/games/${gameId}/start`, { method: 'POST' }),
 
-  completeGame: (id: number) =>
-    request(`/api/games/${id}/complete`, { method: 'POST' }),
+  completeGame: (id: number, scores?: {
+    team_a_score?: number; team_b_score?: number;
+    goal_scorers?: { user_id: number; goals: number }[];
+  }) =>
+    request(`/api/games/${id}/complete`, {
+      method: 'POST',
+      body: scores ? JSON.stringify(scores) : JSON.stringify({}),
+    }),
 
   cancelGamePreview: (id: number) =>
     request(`/api/games/${id}/cancel-preview`),

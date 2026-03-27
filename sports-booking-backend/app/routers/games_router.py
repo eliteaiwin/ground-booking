@@ -66,6 +66,12 @@ class MovePlayerRequest(BaseModel):
     team_id: Optional[int] = None  # null to unassign
 
 
+class CompleteGameRequest(BaseModel):
+    team_a_score: Optional[int] = None
+    team_b_score: Optional[int] = None
+    goal_scorers: Optional[List[dict]] = None  # [{"user_id": int, "goals": int}]
+
+
 class MarkPaymentRequest(BaseModel):
     user_id: int
     game_id: int
@@ -274,8 +280,57 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "pending": (pay_summary["total"] or 0) - (pay_summary["paid"] or 0)
         },
         "payment_details": payment_details,
-        "player_of_the_day": potd_info
+        "player_of_the_day": potd_info,
+        "game_score": None,
+        "goal_scorers": []
     }
+
+    # Add score data if available
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM game_scores WHERE game_id = ?", (game_id,)
+        )
+        score_row = await cursor.fetchone()
+        if score_row:
+            # Get team names
+            team_a_name = "Team A"
+            team_b_name = "Team B"
+            if score_row["team_a_id"]:
+                tc = await db.execute("SELECT team_name FROM game_teams WHERE id = ?", (score_row["team_a_id"],))
+                tr = await tc.fetchone()
+                if tr:
+                    team_a_name = tr["team_name"]
+            if score_row["team_b_id"]:
+                tc = await db.execute("SELECT team_name FROM game_teams WHERE id = ?", (score_row["team_b_id"],))
+                tr = await tc.fetchone()
+                if tr:
+                    team_b_name = tr["team_name"]
+
+            result["game_score"] = {
+                "team_a_id": score_row["team_a_id"],
+                "team_a_name": team_a_name,
+                "team_a_score": score_row["team_a_score"],
+                "team_b_id": score_row["team_b_id"],
+                "team_b_name": team_b_name,
+                "team_b_score": score_row["team_b_score"],
+            }
+
+        # Get goal scorers
+        cursor = await db.execute(
+            """SELECT gs.user_id, gs.goals, u.name, u.phone
+               FROM goal_scorers gs JOIN users u ON gs.user_id = u.id
+               WHERE gs.game_id = ? ORDER BY gs.goals DESC""",
+            (game_id,)
+        )
+        scorer_rows = await cursor.fetchall()
+        result["goal_scorers"] = [
+            {"user_id": s["user_id"], "name": s["name"], "phone": s["phone"], "goals": s["goals"]}
+            for s in scorer_rows
+        ]
+    except Exception:
+        pass
+
+    return result
 
 
 @router.post("")
@@ -731,6 +786,7 @@ async def start_game(
 @router.post("/{game_id}/complete")
 async def complete_game(
     game_id: int,
+    req: CompleteGameRequest = CompleteGameRequest(),
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
@@ -742,6 +798,44 @@ async def complete_game(
         raise HTTPException(status_code=404, detail="Game not found")
     if game["status"] != "in_progress":
         raise HTTPException(status_code=400, detail="Can only complete an in-progress game")
+
+    # For soccer games, validate and store scores
+    if game["sport_type"] == "soccer" and req.team_a_score is not None and req.team_b_score is not None:
+        total_goals = req.team_a_score + req.team_b_score
+
+        # Validate goal scorers if provided
+        if req.goal_scorers:
+            total_attributed = sum(gs["goals"] for gs in req.goal_scorers)
+            if total_attributed > total_goals:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Total attributed goals ({total_attributed}) cannot exceed total game goals ({total_goals})"
+                )
+
+        # Get team info
+        cursor = await db.execute(
+            "SELECT * FROM game_teams WHERE game_id = ? ORDER BY team_order", (game_id,)
+        )
+        teams = await cursor.fetchall()
+        team_a_id = teams[0]["id"] if len(teams) > 0 else None
+        team_b_id = teams[1]["id"] if len(teams) > 1 else None
+
+        # Store game score
+        await db.execute(
+            """INSERT OR REPLACE INTO game_scores (game_id, team_a_id, team_a_score, team_b_id, team_b_score)
+               VALUES (?, ?, ?, ?, ?)""",
+            (game_id, team_a_id, req.team_a_score, team_b_id, req.team_b_score)
+        )
+
+        # Store goal scorers
+        if req.goal_scorers:
+            await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
+            for gs in req.goal_scorers:
+                if gs["goals"] > 0:
+                    await db.execute(
+                        "INSERT INTO goal_scorers (game_id, user_id, goals) VALUES (?, ?, ?)",
+                        (game_id, gs["user_id"], gs["goals"])
+                    )
 
     await db.execute("UPDATE games SET status = 'completed' WHERE id = ?", (game_id,))
 

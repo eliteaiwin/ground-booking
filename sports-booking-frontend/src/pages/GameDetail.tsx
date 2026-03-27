@@ -86,6 +86,11 @@ interface Game {
   payment_summary: { total: number; paid: number; pending: number };
   payment_details: PaymentDetail[];
   player_of_the_day: { player_id: number; name: string; votes: number } | null;
+  game_score: {
+    team_a_id: number | null; team_a_name: string; team_a_score: number;
+    team_b_id: number | null; team_b_name: string; team_b_score: number;
+  } | null;
+  goal_scorers: { user_id: number; name: string; phone: string; goals: number }[];
 }
 
 interface UserItem {
@@ -168,6 +173,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
     confirmed_players: number; total_players: number; paid_players: number; refund_amount: number;
     title: string; ground_name: string; game_date: string; game_time: string;
   } | null>(null);
+  const [showScoreDialog, setShowScoreDialog] = useState(false);
+  const [teamAScore, setTeamAScore] = useState(0);
+  const [teamBScore, setTeamBScore] = useState(0);
+  const [goalScorers, setGoalScorers] = useState<Record<number, number>>({});
+  const [scoreStep, setScoreStep] = useState<'scores' | 'scorers'>('scores');
 
   const currency = user?.currency || 'Rs';
 
@@ -416,6 +426,43 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 </div>
                 <p className="text-xs text-yellow-600/70 mt-1">Honored as the best player of this game</p>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Game Score Display - for completed soccer games */}
+        {game.status === 'completed' && game.game_score && (
+          <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
+            <CardContent className="p-4">
+              <h4 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
+                <Trophy size={16} /> Final Score
+              </h4>
+              <div className="flex items-center justify-center gap-4 mb-3">
+                <div className="text-center">
+                  <p className="text-sm font-medium text-green-700">{game.game_score.team_a_name}</p>
+                  <p className="text-3xl font-bold text-green-800">{game.game_score.team_a_score}</p>
+                </div>
+                <span className="text-2xl font-bold text-green-400">-</span>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-green-700">{game.game_score.team_b_name}</p>
+                  <p className="text-3xl font-bold text-green-800">{game.game_score.team_b_score}</p>
+                </div>
+              </div>
+              {game.goal_scorers.length > 0 && (
+                <div className="border-t border-green-200 pt-2 mt-2">
+                  <p className="text-xs font-semibold text-green-700 mb-1">Goal Scorers:</p>
+                  <div className="space-y-1">
+                    {game.goal_scorers.map(s => (
+                      <div key={s.user_id} className="flex justify-between text-sm">
+                        <span className="text-green-800">{formatPlayerDisplay(s.name, s.phone)}</span>
+                        <span className="font-semibold text-green-700">
+                          {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -761,11 +808,134 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {(isModerator || isAdmin) && game.status === 'in_progress' && (
-            <Button className="w-full bg-purple-600 hover:bg-purple-700"
-              onClick={() => handleAction('complete', () => api.completeGame(game.id))}
-              disabled={actionLoading === 'complete'}>
-              {actionLoading === 'complete' ? 'Completing...' : 'Mark Game as Completed'}
-            </Button>
+            <>
+              <Button className="w-full bg-purple-600 hover:bg-purple-700"
+                onClick={() => {
+                  if (game.sport_type === 'soccer' && game.teams.length >= 2) {
+                    setTeamAScore(0);
+                    setTeamBScore(0);
+                    setGoalScorers({});
+                    setScoreStep('scores');
+                    setShowScoreDialog(true);
+                  } else {
+                    handleAction('complete', () => api.completeGame(game.id));
+                  }
+                }}
+                disabled={actionLoading === 'complete'}>
+                {actionLoading === 'complete' ? 'Completing...' : 'Mark Game as Completed'}
+              </Button>
+
+              {/* Soccer Score Dialog */}
+              {showScoreDialog && game.sport_type === 'soccer' && (
+                <Card className="border-purple-200 bg-purple-50 mt-3">
+                  <CardContent className="p-4">
+                    {scoreStep === 'scores' ? (
+                      <>
+                        <h4 className="font-semibold text-purple-800 mb-3 flex items-center gap-2">
+                          <Trophy size={16} /> Enter Final Score
+                        </h4>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3">
+                            <Label className="w-24 text-sm font-medium">{game.teams[0]?.team_name || 'Team A'}</Label>
+                            <div className="flex items-center gap-2">
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                                onClick={() => setTeamAScore(Math.max(0, teamAScore - 1))}>-</Button>
+                              <span className="w-8 text-center font-bold text-lg">{teamAScore}</span>
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                                onClick={() => setTeamAScore(teamAScore + 1)}>+</Button>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Label className="w-24 text-sm font-medium">{game.teams[1]?.team_name || 'Team B'}</Label>
+                            <div className="flex items-center gap-2">
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                                onClick={() => setTeamBScore(Math.max(0, teamBScore - 1))}>-</Button>
+                              <span className="w-8 text-center font-bold text-lg">{teamBScore}</span>
+                              <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                                onClick={() => setTeamBScore(teamBScore + 1)}>+</Button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-purple-600">Total goals: {teamAScore + teamBScore}</p>
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <Button variant="outline" className="flex-1" onClick={() => setShowScoreDialog(false)}>Cancel</Button>
+                          {teamAScore + teamBScore > 0 ? (
+                            <Button className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={() => {
+                              setGoalScorers({});
+                              setScoreStep('scorers');
+                            }}>Next: Goal Scorers</Button>
+                          ) : (
+                            <Button className="flex-1 bg-purple-600 hover:bg-purple-700"
+                              disabled={actionLoading === 'complete'}
+                              onClick={() => {
+                                handleAction('complete', () => api.completeGame(game.id, {
+                                  team_a_score: teamAScore, team_b_score: teamBScore, goal_scorers: []
+                                }));
+                                setShowScoreDialog(false);
+                              }}>
+                              {actionLoading === 'complete' ? 'Completing...' : 'Complete Game (0-0)'}
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="font-semibold text-purple-800 mb-1 flex items-center gap-2">
+                          <Trophy size={16} /> Who Scored?
+                        </h4>
+                        <p className="text-xs text-purple-600 mb-3">
+                          Total goals: {teamAScore + teamBScore} | Attributed: {Object.values(goalScorers).reduce((a, b) => a + b, 0)} of {teamAScore + teamBScore}
+                          {Object.values(goalScorers).reduce((a, b) => a + b, 0) < teamAScore + teamBScore && 
+                            ` (${teamAScore + teamBScore - Object.values(goalScorers).reduce((a, b) => a + b, 0)} unattributed — may include self-goals)`}
+                        </p>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {game.selected_players.map(player => {
+                            const currentGoals = goalScorers[player.user_id] || 0;
+                            const totalAttributed = Object.values(goalScorers).reduce((a, b) => a + b, 0);
+                            const totalGoals = teamAScore + teamBScore;
+                            const canAdd = totalAttributed < totalGoals;
+                            return (
+                              <div key={player.user_id} className="flex items-center justify-between bg-white rounded p-2">
+                                <span className="text-sm">{formatPlayerDisplay(player.name, player.phone)}</span>
+                                <div className="flex items-center gap-2">
+                                  <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-xs"
+                                    disabled={currentGoals === 0}
+                                    onClick={() => setGoalScorers(prev => ({
+                                      ...prev, [player.user_id]: Math.max(0, (prev[player.user_id] || 0) - 1)
+                                    }))}>-</Button>
+                                  <span className="w-6 text-center font-semibold text-sm">{currentGoals}</span>
+                                  <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-xs"
+                                    disabled={!canAdd}
+                                    onClick={() => setGoalScorers(prev => ({
+                                      ...prev, [player.user_id]: (prev[player.user_id] || 0) + 1
+                                    }))}>+</Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <Button variant="outline" className="flex-1" onClick={() => setScoreStep('scores')}>Back</Button>
+                          <Button className="flex-1 bg-purple-600 hover:bg-purple-700"
+                            disabled={actionLoading === 'complete'}
+                            onClick={() => {
+                              const scorersList = Object.entries(goalScorers)
+                                .filter(([, goals]) => goals > 0)
+                                .map(([userId, goals]) => ({ user_id: Number(userId), goals }));
+                              handleAction('complete', () => api.completeGame(game.id, {
+                                team_a_score: teamAScore, team_b_score: teamBScore, goal_scorers: scorersList
+                              }));
+                              setShowScoreDialog(false);
+                            }}>
+                            {actionLoading === 'complete' ? 'Completing...' : 'Complete Game'}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {/* Payment for current user - PrePaid */}
