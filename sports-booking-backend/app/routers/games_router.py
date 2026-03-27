@@ -253,7 +253,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         for pr in payment_rows
     ]
 
-    return {
+    result = {
         "id": game["id"],
         "title": game["title"],
         "sport_type": game["sport_type"],
