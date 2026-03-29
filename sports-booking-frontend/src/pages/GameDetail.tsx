@@ -8,7 +8,9 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet } from 'lucide-react';
 import Discussion from './Discussion';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
@@ -65,6 +67,7 @@ interface PaymentDetail {
 
 interface Game {
   id: number;
+  game_code: string;
   title: string;
   sport_type: string;
   ground_name: string;
@@ -197,6 +200,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [teamBScore, setTeamBScore] = useState(0);
   const [goalScorers, setGoalScorers] = useState<Record<number, number>>({});
   const [scoreStep, setScoreStep] = useState<'scores' | 'scorers'>('scores');
+  const [showPaymentDetails, setShowPaymentDetails] = useState(false);
+  const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
+  const [markPaidComment, setMarkPaidComment] = useState('');
 
   const currency = user?.currency || 'Rs';
 
@@ -422,6 +428,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <div>
               <h1 className="text-xl font-bold">{game.ground_name}</h1>
               {game.title && <p className="text-sm font-medium text-white/90">{game.title}</p>}
+              {game.game_code && <p className="text-xs font-mono text-white/70">{game.game_code}</p>}
               <div className="flex gap-2 mt-1">
                 <Badge className={`${statusColor(game.status)} mt-1`}>{statusLabel(game.status, game.is_archived)}</Badge>
                 {game.is_archived && <Badge className="bg-gray-200 text-gray-700 mt-1"><Archive size={10} className="mr-1" /> Archived</Badge>}
@@ -1118,63 +1125,142 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Users size={16} /> Confirmed Players ({game.selected_players.length}/{game.max_players})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            {game.selected_players.length === 0 ? (
-              <p className="text-sm text-gray-400">No players yet</p>
-            ) : (
-              <div className="space-y-2">
-                {game.selected_players.map((player, idx) => (
-                  <div key={player.id} className="flex items-center gap-2 text-sm">
-                    <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold">
-                      {idx + 1}
-                    </span>
-                    <span className="flex-1">
-                      {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
-                    </span>
-                    {/* Nomination info tooltip */}
-                    <button
-                      type="button"
-                      className="relative text-gray-400 hover:text-blue-500 transition-colors"
-                      onClick={() => setTooltipPlayerId(tooltipPlayerId === player.id ? null : player.id)}
-                      title={player.nominated_by_info || 'Self Nominated'}
-                    >
-                      <Info size={14} />
-                      {tooltipPlayerId === player.id && (
-                        <span className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg whitespace-nowrap z-10">
-                          {player.nominated_by_info || 'Self Nominated'}
-                        </span>
-                      )}
-                    </button>
-                    {/* Payment status icon */}
-                    {player.payment_confirmed === 1 ? (
-                      <span className="text-green-600" title="Paid">
-                        <Banknote size={16} />
-                      </span>
-                    ) : (
-                      <span className="text-gray-300" title="Unpaid">
-                        <Banknote size={16} />
-                      </span>
-                    )}
-                    {player.user_id === user?.id && <Badge className="bg-green-100 text-green-700 text-xs">You</Badge>}
-                    {(isModerator || isAdmin) && player.payment_confirmed !== 1 && (game.status === 'completed' || game.status === 'in_progress') && (
-                      <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-green-600 border-green-300"
-                        onClick={() => handleAction(`mark-paid-${player.user_id}`, () => api.markPaymentMade(game.id, player.user_id))}
-                        disabled={actionLoading === `mark-paid-${player.user_id}`}>
-                        {actionLoading === `mark-paid-${player.user_id}` ? '...' : 'Mark Paid'}
-                      </Button>
-                    )}
-                  </div>
-                ))}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users size={16} /> Confirmed Players ({game.selected_players.length}/{game.max_players})
+                </CardTitle>
+                {game.status === 'completed' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox checked={showPaymentDetails} onCheckedChange={(v) => setShowPaymentDetails(!!v)} />
+                    <span className="text-xs text-gray-600">Payment Details</span>
+                  </label>
+                )}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              {game.selected_players.length === 0 ? (
+                <p className="text-sm text-gray-400">No players yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {game.selected_players.map((player, idx) => {
+                    const playerVotes = potdResults.find(r => r.player_id === player.user_id);
+                    return (
+                    <div key={player.id}>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold">
+                          {idx + 1}
+                        </span>
+                        <span className="flex-1">
+                          {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                        </span>
+                        {/* Nomination info tooltip */}
+                        <button
+                          type="button"
+                          className="relative text-gray-400 hover:text-blue-500 transition-colors"
+                          onClick={() => setTooltipPlayerId(tooltipPlayerId === player.id ? null : player.id)}
+                          title={player.nominated_by_info || 'Self Nominated'}
+                        >
+                          <Info size={14} />
+                          {tooltipPlayerId === player.id && (
+                            <span className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg whitespace-nowrap z-10">
+                              {player.nominated_by_info || 'Self Nominated'}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
+                        {!showPaymentDetails && (
+                          <>
+                            {player.payment_confirmed === 1 ? (
+                              <span className="text-green-600" title="Paid"><Banknote size={16} /></span>
+                            ) : (
+                              <span className="text-gray-300" title="Unpaid"><Banknote size={16} /></span>
+                            )}
+                            {game.status === 'completed' && playerVotes && playerVotes.points > 0 && (
+                              <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300">
+                                <Star size={10} className="mr-0.5" />{playerVotes.points} pts
+                              </Badge>
+                            )}
+                          </>
+                        )}
+
+                        {/* When Payment Details checkbox IS checked: show Mark as Paid + Pay columns */}
+                        {showPaymentDetails && player.payment_confirmed !== 1 && (isModerator || isAdmin) && (
+                          <>
+                            <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-green-600 border-green-300"
+                              onClick={() => {
+                                const now = new Date();
+                                const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+                                const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                                setMarkPaidComment(`Payment Marked as Paid by ${user?.user_code || 'Moderator'} on ${dateStr} ${timeStr}`);
+                                setMarkPaidPlayerId(player.user_id);
+                              }}>
+                              Mark as Paid
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-blue-600 border-blue-300"
+                              onClick={() => alert('Pay feature — Yet to come')}>
+                              <Wallet size={12} className="mr-0.5" /> Pay
+                            </Button>
+                          </>
+                        )}
+                        {showPaymentDetails && player.payment_confirmed === 1 && (
+                          <Badge className="bg-green-100 text-green-700 text-xs">Paid</Badge>
+                        )}
+
+                        {player.user_id === user?.id && <Badge className="bg-green-100 text-green-700 text-xs">You</Badge>}
+
+                        {/* Fallback: non-completed games still show old mark paid button */}
+                        {!showPaymentDetails && (isModerator || isAdmin) && player.payment_confirmed !== 1 && (game.status === 'in_progress') && (
+                          <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-green-600 border-green-300"
+                            onClick={() => handleAction(`mark-paid-${player.user_id}`, () => api.markPaymentMade(game.id, player.user_id))}
+                            disabled={actionLoading === `mark-paid-${player.user_id}`}>
+                            {actionLoading === `mark-paid-${player.user_id}` ? '...' : 'Mark Paid'}
+                          </Button>
+                        )}
+                      </div>
+
+                      {/* Mark as Paid comment dialog (inline) */}
+                      {markPaidPlayerId === player.user_id && (
+                        <div className="ml-8 mt-2 p-3 bg-green-50 rounded-lg border border-green-200 space-y-2">
+                          <Label className="text-xs font-medium text-green-800">Reference / Comment</Label>
+                          <Textarea
+                            value={markPaidComment}
+                            onChange={e => setMarkPaidComment(e.target.value)}
+                            rows={2}
+                            className="text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-xs"
+                              disabled={actionLoading === `mark-paid-${player.user_id}`}
+                              onClick={async () => {
+                                setActionLoading(`mark-paid-${player.user_id}`);
+                                try {
+                                  await api.markPaidWithComment(game.id, player.user_id, markPaidComment);
+                                  setMarkPaidPlayerId(null);
+                                  setMarkPaidComment('');
+                                  await loadGame();
+                                } catch (err) {
+                                  setError(err instanceof Error ? err.message : 'Failed');
+                                } finally {
+                                  setActionLoading('');
+                                }
+                              }}>
+                              {actionLoading === `mark-paid-${player.user_id}` ? 'Saving...' : 'Confirm Payment'}
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-xs"
+                              onClick={() => { setMarkPaidPlayerId(null); setMarkPaidComment(''); }}>Cancel</Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
         {game.waiting_list.length > 0 && (
           <Card>

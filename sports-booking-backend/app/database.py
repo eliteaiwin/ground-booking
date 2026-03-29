@@ -36,6 +36,7 @@ async def init_db():
     await db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_code TEXT NOT NULL DEFAULT '',
             first_name TEXT NOT NULL DEFAULT '',
             last_name TEXT NOT NULL DEFAULT '',
             name TEXT NOT NULL DEFAULT '',
@@ -46,6 +47,7 @@ async def init_db():
             sports TEXT NOT NULL DEFAULT '',
             locations TEXT NOT NULL DEFAULT '',
             sport_positions TEXT NOT NULL DEFAULT '',
+            profile_pic TEXT NOT NULL DEFAULT '',
             google_id TEXT,
             otp_code TEXT,
             otp_expires_at TIMESTAMP,
@@ -63,6 +65,7 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS games (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
+            game_code TEXT NOT NULL DEFAULT '',
             sport_type TEXT NOT NULL,
             ground_name TEXT NOT NULL,
             game_date TEXT NOT NULL,
@@ -159,6 +162,7 @@ async def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             location TEXT NOT NULL,
+            ground_code TEXT NOT NULL DEFAULT '',
             created_by INTEGER,
             is_approved INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -271,6 +275,36 @@ async def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(game_id, user_id)
         );
+
+        CREATE TABLE IF NOT EXISTS ground_join_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            sports TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+            assigned_role TEXT NOT NULL DEFAULT 'user' CHECK(assigned_role IN ('user', 'readonly')),
+            reviewed_by INTEGER,
+            reviewed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (reviewed_by) REFERENCES users(id),
+            UNIQUE(user_id, ground_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS ground_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'readonly')),
+            added_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (added_by) REFERENCES users(id),
+            UNIQUE(user_id, ground_id)
+        );
     """)
 
     # Migration: add columns if they don't exist (for existing databases)
@@ -292,12 +326,57 @@ async def init_db():
         "ALTER TABLE games ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 90",
         "ALTER TABLE moderator_locations ADD COLUMN sport_type TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE potd_votes ADD COLUMN preference INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE grounds ADD COLUMN ground_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE games ADD COLUMN game_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''",
     ]
     for migration in migrations:
         try:
             await db.execute(migration)
         except Exception:
             pass
+
+    # Migrate user_roles CHECK constraint to support new roles (existing DBs)
+    try:
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS user_roles_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin', 'ground_management', 'moderator', 'user', 'readonly')),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, role)
+            );
+            INSERT OR IGNORE INTO user_roles_new (id, user_id, role)
+                SELECT id, user_id, role FROM user_roles;
+            DROP TABLE user_roles;
+            ALTER TABLE user_roles_new RENAME TO user_roles;
+        """)
+    except Exception:
+        pass
+
+    # Migrate potd_votes UNIQUE constraint for ranked voting (existing DBs)
+    try:
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS potd_votes_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game_id INTEGER NOT NULL,
+                voter_id INTEGER NOT NULL,
+                player_id INTEGER NOT NULL,
+                preference INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (game_id) REFERENCES games(id),
+                FOREIGN KEY (voter_id) REFERENCES users(id),
+                FOREIGN KEY (player_id) REFERENCES users(id),
+                UNIQUE(game_id, voter_id, preference)
+            );
+            INSERT OR IGNORE INTO potd_votes_new (id, game_id, voter_id, player_id, preference, created_at)
+                SELECT id, game_id, voter_id, player_id, preference, created_at FROM potd_votes;
+            DROP TABLE potd_votes;
+            ALTER TABLE potd_votes_new RENAME TO potd_votes;
+        """)
+    except Exception:
+        pass
 
     # Seed default moderator preferences
     defaults = [
@@ -454,7 +533,7 @@ async def _seed_production_data(db: aiosqlite.Connection):
         "INSERT OR IGNORE INTO locations (name, created_by) VALUES ('Bangalore', 1)"
     )
     await db.execute(
-        "INSERT OR IGNORE INTO grounds (name, location, created_by) VALUES ('Whitefield United', 'Bangalore', 1)"
+        "INSERT OR IGNORE INTO grounds (name, location, created_by, ground_code) VALUES ('Whitefield United', 'Bangalore', 1, 'G001')"
     )
 
     await db.commit()

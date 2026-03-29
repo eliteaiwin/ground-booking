@@ -3,6 +3,7 @@ import { api } from '../services/api';
 
 interface User {
   id: number;
+  user_code: string;
   first_name: string;
   last_name: string;
   name: string;
@@ -14,6 +15,7 @@ interface User {
   sport_positions: Record<string, string[]>;
   currency: string;
   phone_verified: number;
+  profile_pic: string;
   roles: string[];
   created_at: string;
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award } from 'lucide-react';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin', 'Pune'];
@@ -38,6 +38,19 @@ interface Props {
   onBack: () => void;
 }
 
+interface PersonaData {
+  id: number;
+  user_code: string;
+  first_name: string;
+  last_name: string;
+  name: string;
+  profile_pic: string;
+  sport_rankings: { sport: string; points: number; rank: number; games_played: number }[];
+  goal_stats: { sport: string; total_goals: number }[];
+  grounds_played: { ground_id: number; ground_name: string; location: string }[];
+  total_games_played: number;
+}
+
 export default function ProfilePage({ onBack }: Props) {
   const { user, refreshUser, logout } = useAuth();
   const [firstName, setFirstName] = useState(user?.first_name || '');
@@ -52,6 +65,39 @@ export default function ProfilePage({ onBack }: Props) {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState('');
+  const [uploadingPic, setUploadingPic] = useState(false);
+  const [profilePic, setProfilePic] = useState(user?.profile_pic || '');
+  const [persona, setPersona] = useState<PersonaData | null>(null);
+  const [showPersona, setShowPersona] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadPic = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('Only image files allowed'); return; }
+    if (file.size > 5 * 1024 * 1024) { alert('Max 5MB file size'); return; }
+    setUploadingPic(true);
+    try {
+      const result = await api.uploadProfilePic(file);
+      setProfilePic(result.filename);
+      await refreshUser();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUploadingPic(false);
+    }
+  };
+
+  const loadPersona = async () => {
+    if (!user?.id) return;
+    try {
+      const data = await api.getUserPersona(user.id);
+      setPersona(data);
+      setShowPersona(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const toggleSport = (sport: string) => {
     setSports(prev => {
@@ -124,11 +170,28 @@ export default function ProfilePage({ onBack }: Props) {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                <User size={32} className="text-green-600" />
+              <div className="relative">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center overflow-hidden">
+                  {profilePic ? (
+                    <img src={api.getProfilePicUrl(profilePic)} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={32} className="text-green-600" />
+                  )}
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 w-7 h-7 bg-green-600 rounded-full flex items-center justify-center text-white shadow-md hover:bg-green-700"
+                  disabled={uploadingPic}
+                >
+                  <Camera size={14} />
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadPic} />
               </div>
               <div>
                 <CardTitle className="text-lg">{user?.first_name} {user?.last_name}</CardTitle>
+                {user?.user_code && (
+                  <p className="text-xs text-gray-500 font-mono">{user.user_code}</p>
+                )}
                 <div className="flex gap-1 mt-1">
                   {user?.roles.map(role => (
                     <Badge key={role} variant="secondary" className="text-xs capitalize">{role}</Badge>
@@ -296,6 +359,69 @@ export default function ProfilePage({ onBack }: Props) {
             </Button>
           </CardContent>
         </Card>
+        {/* Player Persona */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Award size={18} className="text-yellow-500" /> Player Persona
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!showPersona ? (
+              <Button onClick={loadPersona} variant="outline" className="w-full">
+                <Trophy size={14} className="mr-2" /> View My Persona
+              </Button>
+            ) : persona ? (
+              <div className="space-y-3">
+                <div className="text-sm text-gray-600">Total Games: <span className="font-bold text-gray-800">{persona.total_games_played}</span></div>
+
+                {persona.sport_rankings.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1"><Trophy size={14} className="text-yellow-500" /> POTD Rankings</p>
+                    <div className="space-y-1">
+                      {persona.sport_rankings.map(r => (
+                        <div key={r.sport} className="flex items-center gap-2 p-2 bg-yellow-50 rounded-lg">
+                          <Badge className="bg-yellow-200 text-yellow-800 text-xs">Rank #{r.rank}</Badge>
+                          <span className="text-sm font-medium capitalize">{r.sport}</span>
+                          <span className="text-xs text-gray-500 ml-auto">{r.points} pts ({r.games_played} games)</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {persona.goal_stats.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1"><Target size={14} className="text-green-600" /> Goal Stats</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {persona.goal_stats.map(g => (
+                        <Badge key={g.sport} variant="outline" className="text-xs capitalize">
+                          {g.sport}: {g.total_goals} goals
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {persona.grounds_played.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1"><MapPin size={14} className="text-blue-600" /> Grounds Played</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {persona.grounds_played.map(g => (
+                        <Badge key={g.ground_id} variant="outline" className="text-xs">
+                          {g.location} - {g.ground_name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Loading...</p>
+            )}
+          </CardContent>
+        </Card>
+
         <Button variant="outline" className="w-full border-red-300 text-red-600 hover:bg-red-50" onClick={logout}>Logout</Button>
       </div>
     </div>

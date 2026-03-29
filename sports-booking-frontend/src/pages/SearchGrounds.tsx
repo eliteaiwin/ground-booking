@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp, UserPlus } from 'lucide-react';
 
 interface Moderator {
   user_id: number;
@@ -21,6 +22,7 @@ interface GroundResult {
   name: string;
   location: string;
   display_name: string;
+  ground_code_display: string;
   is_approved: number;
   moderators: Moderator[];
 }
@@ -92,6 +94,28 @@ export default function SearchGrounds({ onBack }: Props) {
   const [groundGames, setGroundGames] = useState<GameInfo[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [selectedSport, setSelectedSport] = useState('');
+  const [joinGroundId, setJoinGroundId] = useState<number | null>(null);
+  const [joinSports, setJoinSports] = useState('');
+  const [joinMessage, setJoinMessage] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinSuccess, setJoinSuccess] = useState('');
+
+  const handleJoinRequest = async (groundId: number) => {
+    if (!joinSports.trim()) { alert('Please specify your sport interests'); return; }
+    setJoinLoading(true);
+    try {
+      await api.requestJoinGround(groundId, joinSports, joinMessage);
+      setJoinSuccess('Join request submitted! A moderator will review it.');
+      setJoinGroundId(null);
+      setJoinSports('');
+      setJoinMessage('');
+      setTimeout(() => setJoinSuccess(''), 4000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to submit request');
+    } finally {
+      setJoinLoading(false);
+    }
+  };
 
   // User's sport interests
   const userSports: string[] = user?.sports ? (typeof user.sports === 'string' ? (user.sports as string).split(',').filter(Boolean) : user.sports) : [];
@@ -192,12 +216,18 @@ export default function SearchGrounds({ onBack }: Props) {
                 </CardContent>
               </Card>
             )}
+            {joinSuccess && (
+              <div className="bg-green-50 text-green-700 p-3 rounded-md text-sm">{joinSuccess}</div>
+            )}
             {results.map(ground => (
               <Card key={ground.id}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <MapPin size={16} className="text-green-600" />
                     {ground.display_name}
+                    {ground.ground_code_display && (
+                      <Badge variant="outline" className="text-xs font-mono ml-auto">{ground.ground_code_display}</Badge>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
@@ -230,8 +260,40 @@ export default function SearchGrounds({ onBack }: Props) {
                     <p className="text-sm text-gray-400">No moderators assigned yet</p>
                   )}
 
-                  {/* View Players section */}
+                  {/* Join Request */}
                   <div className="mt-3 border-t pt-3">
+                    {joinGroundId === ground.id ? (
+                      <div className="space-y-2 mb-3">
+                        <Label className="text-sm">Your Sport Interests</Label>
+                        <Input
+                          placeholder="e.g. Soccer, Cricket"
+                          value={joinSports}
+                          onChange={e => setJoinSports(e.target.value)}
+                        />
+                        <Label className="text-sm">Message (optional)</Label>
+                        <Textarea
+                          placeholder="Hi, I'd like to join..."
+                          value={joinMessage}
+                          onChange={e => setJoinMessage(e.target.value)}
+                          rows={2}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" disabled={joinLoading}
+                            onClick={() => handleJoinRequest(ground.id)}>
+                            {joinLoading ? 'Submitting...' : 'Submit Request'}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setJoinGroundId(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button size="sm" variant="outline" className="mb-3 text-xs" onClick={() => setJoinGroundId(ground.id)}>
+                        <UserPlus size={12} className="mr-1" /> Request to Join
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* View Players section */}
+                  <div className="border-t pt-3">
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
                       {userSports.length > 0 && (
                         <div className="flex gap-1 flex-wrap">

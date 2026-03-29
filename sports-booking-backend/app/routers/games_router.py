@@ -2,10 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
+import hashlib
 from datetime import datetime, timezone
 
 from ..database import get_db
 from ..auth import get_current_user_id
+
+VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
 router = APIRouter(prefix="/api/games", tags=["games"])
 
@@ -255,8 +258,16 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         for pr in payment_rows
     ]
 
+    # Get game_code safely
+    game_code = ""
+    try:
+        game_code = game["game_code"] or ""
+    except Exception:
+        pass
+
     result = {
         "id": game["id"],
+        "game_code": game_code,
         "title": game["title"],
         "sport_type": game["sport_type"],
         "ground_name": game["ground_name"],
@@ -341,17 +352,25 @@ async def create_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_role(user_id, "admin", db)
+    await require_admin_or_moderator(user_id, db)
 
     # Derive payment_timing from payment_mode
     payment_timing = "before" if req.payment_mode == "prepaid" else req.payment_timing
 
+    # Generate unique game code
+    from .locations_router import generate_game_code
+    game_code = await generate_game_code(db, req.sport_type)
+
+    # Build display code: SC01-Location-Ground
+    ground_parts = req.ground_name.replace(' - ', '-').replace(' ', '')
+    game_code_display = f"{game_code}-{ground_parts}"
+
     cursor = await db.execute(
-        """INSERT INTO games (title, sport_type, ground_name, game_date, game_time, 
+        """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time, 
            max_players, cost_per_person, payment_timing, created_by, duration_minutes,
            payee_user_id, quit_penalty_hours) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (req.title, req.sport_type, req.ground_name, req.game_date, req.game_time,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
          req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
          req.payee_user_id, req.quit_penalty_hours)
     )
@@ -449,7 +468,7 @@ async def open_voting(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_role(user_id, "admin", db)
+    await require_admin_or_moderator(user_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1033,12 +1052,20 @@ async def vote_player_of_the_day(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    # Check if user has readonly role as active (we check all roles, readonly users cannot vote)
+    # Check if user has readonly role - readonly users cannot vote
     cursor = await db.execute(
         "SELECT role FROM user_roles WHERE user_id = ? AND role = 'readonly'", (user_id,)
     )
-    is_readonly = await cursor.fetchone() is not None
-    # Note: actual enforcement of active role is frontend-side; backend checks role existence
+    if await cursor.fetchone():
+        raise HTTPException(status_code=403, detail="Read-only users cannot vote")
+
+    # Check voter was a player in this game
+    cursor = await db.execute(
+        "SELECT id FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",
+        (game_id, user_id)
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=403, detail="Only selected players can vote")
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1673,6 +1700,56 @@ async def get_player_stats(
             for r in games_by_sport
         ],
     }
+
+
+@router.get("/{game_id}/voting-link")
+async def get_voting_link(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Generate a shareable direct voting link for a game."""
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    # Generate a token based on game_id
+    token = hashlib.sha256(f"{game_id}-{VOTING_LINK_SECRET}".encode()).hexdigest()[:16]
+
+    game_code = ""
+    try:
+        game_code = game["game_code"] or ""
+    except Exception:
+        pass
+
+    return {
+        "game_id": game_id,
+        "game_code": game_code,
+        "voting_token": token,
+        "voting_open": game["status"] == "voting_open",
+        "status": game["status"],
+    }
+
+
+@router.get("/vote/{voting_token}")
+async def access_voting_page(
+    voting_token: str,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Resolve a voting token to a game and check if voting is open."""
+    # Find the game by checking all game IDs against the token
+    cursor = await db.execute("SELECT id, status FROM games ORDER BY id DESC")
+    games = await cursor.fetchall()
+    for game in games:
+        expected_token = hashlib.sha256(f"{game['id']}-{VOTING_LINK_SECRET}".encode()).hexdigest()[:16]
+        if expected_token == voting_token:
+            return {
+                "game_id": game["id"],
+                "voting_open": game["status"] == "voting_open",
+                "status": game["status"],
+            }
+    raise HTTPException(status_code=404, detail="Invalid voting link")
 
 
 @router.get("/search/games")

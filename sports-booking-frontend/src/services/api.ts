@@ -440,4 +440,71 @@ export const api = {
   // Player Stats
   getPlayerStats: (playerId: number) =>
     request(`/api/games/player/${playerId}/stats`),
+
+  // Profile Picture Upload
+  uploadProfilePic: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = localStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (_proxyBasicAuth) {
+      headers['Authorization'] = `Basic ${_proxyBasicAuth}`;
+      if (token) headers['X-Auth-Token'] = `Bearer ${token}`;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return fetch(`${API_URL}/api/auth/me/profile-pic`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(err.detail || 'Upload failed');
+      }
+      return res.json();
+    });
+  },
+
+  getProfilePicUrl: (filename: string) =>
+    `${API_URL}/api/auth/profile-pic/${filename}`,
+
+  // User Persona
+  getUserPersona: (userId: number) =>
+    request(`/api/auth/user/${userId}/persona`),
+
+  // Ground Join Requests
+  requestJoinGround: (groundId: number, sports: string, message: string) =>
+    request(`/api/locations/grounds/${groundId}/join-request`, {
+      method: 'POST',
+      body: JSON.stringify({ ground_id: groundId, sports, message }),
+    }),
+
+  listJoinRequests: (groundId: number, statusFilter?: string) => {
+    const qs = statusFilter ? `?status_filter=${statusFilter}` : '';
+    return request(`/api/locations/grounds/${groundId}/join-requests${qs}`);
+  },
+
+  approveJoinRequest: (groundId: number, requestId: number, assignedRole: string) =>
+    request(`/api/locations/grounds/${groundId}/join-request/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ assigned_role: assignedRole }),
+    }),
+
+  rejectJoinRequest: (groundId: number, requestId: number) =>
+    request(`/api/locations/grounds/${groundId}/join-request/${requestId}/reject`, {
+      method: 'POST',
+    }),
+
+  listGroundMembers: (groundId: number) =>
+    request(`/api/locations/grounds/${groundId}/members`),
+
+  // Direct Voting Link
+  getVotingLink: (gameId: number) =>
+    request(`/api/games/${gameId}/voting-link`),
+
+  resolveVotingToken: (token: string) =>
+    request(`/api/games/vote/${token}`),
 };

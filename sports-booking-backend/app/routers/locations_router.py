@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..database import get_db
 from ..auth import get_current_user_id
@@ -58,6 +58,59 @@ class RenameLocationRequest(BaseModel):
 
 class RenameGroundRequest(BaseModel):
     new_name: str
+
+
+class JoinGroundRequest(BaseModel):
+    ground_id: int
+    sports: str = ""
+    message: str = ""
+
+
+class ReviewJoinRequest(BaseModel):
+    assigned_role: str = "user"  # 'user' or 'readonly'
+
+
+SPORT_CODE_MAP = {
+    "soccer": "SC",
+    "football": "SC",
+    "cricket": "CC",
+    "badminton": "BD",
+    "basketball": "BK",
+    "hockey": "HK",
+}
+
+
+async def generate_ground_code(db: aiosqlite.Connection) -> str:
+    """Generate next ground code like G001, G002, etc."""
+    cursor = await db.execute(
+        "SELECT ground_code FROM grounds WHERE ground_code != '' ORDER BY ground_code DESC LIMIT 1"
+    )
+    row = await cursor.fetchone()
+    if row and row["ground_code"]:
+        # Extract number from G001
+        code = row["ground_code"]
+        num_part = ''.join(c for c in code if c.isdigit())
+        next_num = int(num_part) + 1 if num_part else 1
+    else:
+        next_num = 1
+    return f"G{next_num:03d}"
+
+
+async def generate_game_code(db: aiosqlite.Connection, sport_type: str) -> str:
+    """Generate next game code like SC01, CC05, etc."""
+    prefix = SPORT_CODE_MAP.get(sport_type.lower(), "GM")
+    cursor = await db.execute(
+        "SELECT game_code FROM games WHERE game_code LIKE ? ORDER BY game_code DESC LIMIT 1",
+        (f"{prefix}%",)
+    )
+    row = await cursor.fetchone()
+    if row and row["game_code"]:
+        code = row["game_code"]
+        num_part = ''.join(c for c in code[len(prefix):] if c.isdigit())
+        next_num = int(num_part) + 1 if num_part else 1
+    else:
+        next_num = 1
+    return f"{prefix}{next_num:02d}"
 
 
 # --- Locations ---
@@ -133,10 +186,17 @@ async def search_grounds_public(
             }
             for m in mod_rows
         ]
+        ground_code = ""
+        try:
+            ground_code = g["ground_code"] or ""
+        except Exception:
+            pass
         results.append({
             "id": g["id"],
             "name": g["name"],
             "location": g["location"],
+            "ground_code": ground_code,
+            "ground_code_display": f"{ground_code}-{g['location']}-{g['name']}".replace(' ', '') if ground_code else "",
             "display_name": f"{g['location']} - {g['name']}",
             "is_approved": g["is_approved"],
             "moderators": moderators,
@@ -157,17 +217,24 @@ async def list_grounds(
     else:
         cursor = await db.execute("SELECT * FROM grounds ORDER BY location, name")
     rows = await cursor.fetchall()
-    return [
-        {
+    result = []
+    for r in rows:
+        ground_code = ""
+        try:
+            ground_code = r["ground_code"] or ""
+        except Exception:
+            pass
+        result.append({
             "id": r["id"],
             "name": r["name"],
             "location": r["location"],
+            "ground_code": ground_code,
+            "ground_code_display": f"{ground_code}-{r['location']}-{r['name']}".replace(' ', '') if ground_code else "",
             "display_name": f"{r['location']} - {r['name']}",
             "is_approved": r["is_approved"],
             "created_at": r["created_at"],
-        }
-        for r in rows
-    ]
+        })
+    return result
 
 
 @router.post("/grounds")
@@ -183,10 +250,13 @@ async def add_ground(
     is_admin = await cursor.fetchone() is not None
     approved = 1 if is_admin else 1  # auto-approve for now
 
+    # Generate unique ground code
+    ground_code = await generate_ground_code(db)
+
     try:
         cursor = await db.execute(
-            "INSERT INTO grounds (name, location, created_by, is_approved) VALUES (?, ?, ?, ?)",
-            (req.name, req.location, user_id, approved)
+            "INSERT INTO grounds (name, location, created_by, is_approved, ground_code) VALUES (?, ?, ?, ?, ?)",
+            (req.name, req.location, user_id, approved, ground_code)
         )
         await db.commit()
 
@@ -207,7 +277,9 @@ async def add_ground(
             "id": cursor.lastrowid,
             "name": req.name,
             "location": req.location,
+            "ground_code": ground_code,
             "display_name": f"{req.location} - {req.name}",
+            "ground_code_display": f"{ground_code}-{req.location}-{req.name}".replace(' ', ''),
             "message": "Ground added"
         }
     except Exception:
@@ -683,6 +755,232 @@ async def my_managed_grounds(
             "location": r["location"],
             "display_name": f"{r['location']} - {r['name']}",
             "assigned_at": r["assigned_at"],
+        }
+        for r in rows
+    ]
+
+
+# --- Ground Join Requests ---
+
+@router.post("/grounds/{ground_id}/join-request")
+async def request_join_ground(
+    ground_id: int,
+    req: JoinGroundRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """User requests to join a ground. Moderator/Admin approves later."""
+    # Check ground exists
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    # Check if already requested
+    cursor = await db.execute(
+        "SELECT id, status FROM ground_join_requests WHERE user_id = ? AND ground_id = ?",
+        (user_id, ground_id)
+    )
+    existing = await cursor.fetchone()
+    if existing:
+        if existing["status"] == "approved":
+            raise HTTPException(status_code=400, detail="You are already a member of this ground")
+        if existing["status"] == "pending":
+            raise HTTPException(status_code=400, detail="You already have a pending request for this ground")
+        # If rejected, allow re-request by updating
+        await db.execute(
+            "UPDATE ground_join_requests SET status = 'pending', sports = ?, message = ?, created_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (req.sports, req.message, existing["id"])
+        )
+        await db.commit()
+    else:
+        await db.execute(
+            "INSERT INTO ground_join_requests (user_id, ground_id, sports, message) VALUES (?, ?, ?, ?)",
+            (user_id, ground_id, req.sports, req.message)
+        )
+        await db.commit()
+
+    # Notify moderators of this ground
+    display_name = f"{ground['location']} - {ground['name']}"
+    mod_cursor = await db.execute(
+        "SELECT user_id FROM moderator_locations WHERE location = ? AND (ground_name = ? OR ground_name = '')",
+        (ground["location"], ground["name"])
+    )
+    mod_rows = await mod_cursor.fetchall()
+    user_cursor = await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+    user_row = await user_cursor.fetchone()
+    user_name = user_row["name"] if user_row else "A user"
+    for mod in mod_rows:
+        await db.execute(
+            "INSERT INTO notifications (user_id, type, message) VALUES (?, 'join_request', ?)",
+            (mod["user_id"], f"{user_name} wants to join {display_name}")
+        )
+    await db.commit()
+
+    return {"message": "Join request submitted successfully"}
+
+
+@router.get("/grounds/{ground_id}/join-requests")
+async def list_join_requests(
+    ground_id: int,
+    status_filter: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator/Admin lists join requests for a ground."""
+    await require_admin_or_moderator(user_id, db)
+
+    query = """SELECT jr.*, u.name as user_name, u.phone as user_phone, u.sports as user_sports
+               FROM ground_join_requests jr
+               JOIN users u ON jr.user_id = u.id
+               WHERE jr.ground_id = ?"""
+    params: list = [ground_id]
+    if status_filter:
+        query += " AND jr.status = ?"
+        params.append(status_filter)
+    query += " ORDER BY jr.created_at DESC"
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "user_phone": r["user_phone"],
+            "user_sports": r["user_sports"],
+            "ground_id": r["ground_id"],
+            "sports": r["sports"],
+            "message": r["message"],
+            "status": r["status"],
+            "assigned_role": r["assigned_role"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+@router.post("/grounds/{ground_id}/join-request/{request_id}/approve")
+async def approve_join_request(
+    ground_id: int,
+    request_id: int,
+    req: ReviewJoinRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator/Admin approves a join request and assigns Normal or ReadOnly role."""
+    await require_admin_or_moderator(user_id, db)
+
+    cursor = await db.execute(
+        "SELECT * FROM ground_join_requests WHERE id = ? AND ground_id = ?",
+        (request_id, ground_id)
+    )
+    join_req = await cursor.fetchone()
+    if not join_req:
+        raise HTTPException(status_code=404, detail="Join request not found")
+    if join_req["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Request already processed")
+
+    assigned_role = req.assigned_role if req.assigned_role in ("user", "readonly") else "user"
+
+    await db.execute(
+        """UPDATE ground_join_requests SET status = 'approved', assigned_role = ?,
+           reviewed_by = ?, reviewed_at = ? WHERE id = ?""",
+        (assigned_role, user_id, datetime.now(timezone.utc).isoformat(), request_id)
+    )
+
+    # Add to ground_members
+    await db.execute(
+        "INSERT OR IGNORE INTO ground_members (user_id, ground_id, role, added_by) VALUES (?, ?, ?, ?)",
+        (join_req["user_id"], ground_id, assigned_role, user_id)
+    )
+
+    # If readonly, add readonly role to user_roles
+    if assigned_role == "readonly":
+        await db.execute(
+            "INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'readonly')",
+            (join_req["user_id"],)
+        )
+
+    await db.commit()
+
+    # Notify the user
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    display_name = f"{ground['location']} - {ground['name']}" if ground else "a ground"
+    role_text = "Normal User" if assigned_role == "user" else "Read-Only User"
+    await db.execute(
+        "INSERT INTO notifications (user_id, type, message) VALUES (?, 'join_approved', ?)",
+        (join_req["user_id"], f"Your request to join {display_name} was approved as {role_text}")
+    )
+    await db.commit()
+
+    return {"message": f"Join request approved as {role_text}"}
+
+
+@router.post("/grounds/{ground_id}/join-request/{request_id}/reject")
+async def reject_join_request(
+    ground_id: int,
+    request_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator/Admin rejects a join request."""
+    await require_admin_or_moderator(user_id, db)
+
+    cursor = await db.execute(
+        "SELECT * FROM ground_join_requests WHERE id = ? AND ground_id = ?",
+        (request_id, ground_id)
+    )
+    join_req = await cursor.fetchone()
+    if not join_req:
+        raise HTTPException(status_code=404, detail="Join request not found")
+    if join_req["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Request already processed")
+
+    await db.execute(
+        """UPDATE ground_join_requests SET status = 'rejected',
+           reviewed_by = ?, reviewed_at = ? WHERE id = ?""",
+        (user_id, datetime.now(timezone.utc).isoformat(), request_id)
+    )
+    await db.commit()
+
+    # Notify the user
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    display_name = f"{ground['location']} - {ground['name']}" if ground else "a ground"
+    await db.execute(
+        "INSERT INTO notifications (user_id, type, message) VALUES (?, 'join_rejected', ?)",
+        (join_req["user_id"], f"Your request to join {display_name} was declined")
+    )
+    await db.commit()
+
+    return {"message": "Join request rejected"}
+
+
+@router.get("/grounds/{ground_id}/members")
+async def list_ground_members(
+    ground_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """List members of a ground."""
+    cursor = await db.execute(
+        """SELECT gm.*, u.name as user_name, u.phone as user_phone
+           FROM ground_members gm
+           JOIN users u ON gm.user_id = u.id
+           WHERE gm.ground_id = ?
+           ORDER BY u.name""",
+        (ground_id,)
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "user_phone": r["user_phone"],
+            "role": r["role"],
         }
         for r in rows
     ]
