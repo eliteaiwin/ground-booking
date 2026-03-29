@@ -187,17 +187,21 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     )
     pay_summary = await cursor.fetchone()
 
-    # Get POTD
+    # Get POTD using weighted points (1st pref=3pts, 2nd=2pts, 3rd=1pt) consistent with get_potd_results
     cursor = await db.execute(
-        """SELECT p.player_id, u.name, COUNT(*) as votes 
+        """SELECT p.player_id, u.name,
+                  SUM(CASE WHEN p.preference = 1 THEN 3
+                           WHEN p.preference = 2 THEN 2
+                           WHEN p.preference = 3 THEN 1 ELSE 0 END) as points,
+                  COUNT(*) as total_votes
            FROM potd_votes p JOIN users u ON p.player_id = u.id 
-           WHERE p.game_id = ? GROUP BY p.player_id ORDER BY votes DESC LIMIT 1""",
+           WHERE p.game_id = ? GROUP BY p.player_id ORDER BY points DESC, total_votes DESC LIMIT 1""",
         (game_id,)
     )
     potd = await cursor.fetchone()
     potd_info = None
     if potd:
-        potd_info = {"player_id": potd["player_id"], "name": potd["name"], "votes": potd["votes"]}
+        potd_info = {"player_id": potd["player_id"], "name": potd["name"], "votes": potd["points"] or potd["total_votes"]}
 
     # Get creator info
     cursor = await db.execute("SELECT name FROM users WHERE id = ?", (game["created_by"],))
