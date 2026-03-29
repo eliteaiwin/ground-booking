@@ -4,7 +4,10 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Ground {
   id: number;
@@ -102,6 +105,10 @@ export default function GroundManagement({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [_allGrounds, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'schedule' | 'requests'>('schedule');
+  const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
 
   useEffect(() => {
     loadGrounds();
@@ -166,8 +173,40 @@ export default function GroundManagement({ onBack }: Props) {
   useEffect(() => {
     if (selectedGround) {
       loadSchedule(selectedGround.id);
+      loadJoinRequests(selectedGround.id);
     }
   }, [selectedGround, viewMode, currentDate]);
+
+  const loadJoinRequests = async (groundId: number) => {
+    setRequestsLoading(true);
+    try {
+      const data = await api.listJoinRequests(groundId, 'pending');
+      setJoinRequests(data);
+    } catch (err) {
+      console.error('Failed to load join requests:', err);
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
+  const handleApproveRequest = async (groundId: number, requestId: number) => {
+    const data = approveData[requestId] || { role: 'user', maxNominations: 0 };
+    try {
+      await api.approveJoinRequest(groundId, requestId, data.role, data.maxNominations);
+      setJoinRequests(prev => prev.filter(r => r.id !== requestId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to approve');
+    }
+  };
+
+  const handleRejectRequest = async (groundId: number, requestId: number) => {
+    try {
+      await api.rejectJoinRequest(groundId, requestId);
+      setJoinRequests(prev => prev.filter(r => r.id !== requestId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to reject');
+    }
+  };
 
   const navigateDate = (direction: number) => {
     if (viewMode === 'day') {
@@ -488,6 +527,100 @@ export default function GroundManagement({ onBack }: Props) {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-4">
+        {/* Tab selector */}
+        <div className="flex bg-white rounded-lg shadow-sm border overflow-hidden mb-4">
+          <button
+            onClick={() => setActiveTab('schedule')}
+            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'schedule' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Calendar size={14} className="inline mr-1" /> Schedule
+          </button>
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={`flex-1 px-4 py-2 text-sm font-medium relative ${activeTab === 'requests' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Bell size={14} className="inline mr-1" /> Join Requests
+            {joinRequests.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-red-500 text-white">{joinRequests.length}</span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'requests' && (
+          <div className="space-y-3">
+            {requestsLoading ? (
+              <p className="text-gray-500 text-center py-8">Loading requests...</p>
+            ) : joinRequests.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-gray-500">
+                  <UserCheck size={24} className="mx-auto mb-2 text-gray-400" />
+                  No pending join requests
+                </CardContent>
+              </Card>
+            ) : (
+              joinRequests.map(req => {
+                const ad = approveData[req.id] || { role: 'user', maxNominations: 0 };
+                return (
+                  <Card key={req.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-sm">
+                          {(req.user_name || '?')[0]}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">{req.user_name}</p>
+                          <p className="text-xs text-gray-500">{req.user_phone}</p>
+                          {req.sport_interests && <p className="text-xs text-green-600 mt-1">Sports: {req.sport_interests}</p>}
+                          {req.message && <p className="text-xs text-gray-400 mt-1 italic">"{req.message}"</p>}
+                          <p className="text-xs text-gray-400 mt-1">{req.created_at}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 space-y-2 border-t pt-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs">User Role</Label>
+                            <Select
+                              value={ad.role}
+                              onValueChange={(val) => setApproveData(prev => ({ ...prev, [req.id]: { ...ad, role: val } }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="user">Normal User</SelectItem>
+                                <SelectItem value="readonly">Read-Only User</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Max Nominations</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-8 text-xs"
+                              placeholder="0 = unlimited"
+                              value={ad.maxNominations || ''}
+                              onChange={e => setApproveData(prev => ({ ...prev, [req.id]: { ...ad, maxNominations: parseInt(e.target.value) || 0 } }))}
+                            />
+                            <p className="text-xs text-gray-400 mt-0.5">0 = unlimited, includes self</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700 text-xs flex-1" onClick={() => selectedGround && handleApproveRequest(selectedGround.id, req.id)}>
+                            <UserCheck size={14} className="mr-1" /> Approve
+                          </Button>
+                          <Button size="sm" variant="destructive" className="text-xs flex-1" onClick={() => selectedGround && handleRejectRequest(selectedGround.id, req.id)}>
+                            <UserX size={14} className="mr-1" /> Reject
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {activeTab === 'schedule' && <>
         {/* Controls */}
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           {/* View mode selector */}
@@ -571,6 +704,8 @@ export default function GroundManagement({ onBack }: Props) {
             {viewMode === 'month' && renderMonthView()}
           </CardContent>
         </Card>
+
+        </>}
 
         {/* Tooltip */}
         {hoveredGame && (
