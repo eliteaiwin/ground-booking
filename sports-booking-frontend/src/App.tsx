@@ -17,8 +17,9 @@ import BackendSettlement from './pages/BackendSettlement';
 import GameSearch from './pages/GameSearch';
 import GroundManagement from './pages/GroundManagement';
 import HallOfFame from './pages/HallOfFame';
+import NotificationSettings from './pages/NotificationSettings';
 
-type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame';
+type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
 
 function AppContent() {
   const { user, loading, isAddingAccount, setIsAddingAccount } = useAuth();
@@ -120,6 +121,8 @@ function AppContent() {
       return <GroundManagement onBack={goHome} />;
     case 'hall-of-fame':
       return <HallOfFame onBack={goHome} />;
+    case 'notification-settings':
+      return <NotificationSettings onBack={goHome} />;
     default:
       return <Dashboard onNavigate={navigate} />;
   }

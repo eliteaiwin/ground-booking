@@ -415,6 +415,16 @@ export default function Dashboard({ onNavigate }: Props) {
             </div>
             <span className="text-xs font-medium text-gray-700">Hall of Fame</span>
           </button>
+          {/* Notification Settings - visible to all */}
+          <button
+            onClick={() => onNavigate('notification-settings')}
+            className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+              <Bell size={20} className="text-indigo-600" />
+            </div>
+            <span className="text-xs font-medium text-gray-700">Alert Settings</span>
+          </button>
           <button
             onClick={() => onNavigate('search-grounds')}
             className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"

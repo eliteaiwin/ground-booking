@@ -507,4 +507,44 @@ export const api = {
 
   resolveVotingToken: (token: string) =>
     request(`/api/games/vote/${token}`),
+
+  // Notification Settings
+  getNotificationSettings: () =>
+    request('/api/notifications/settings'),
+
+  updateNotificationSettings: (settings: Record<string, unknown>) =>
+    request('/api/notifications/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+
+  getGroundAlertPauses: () =>
+    request('/api/notifications/ground-pauses'),
+
+  setGroundAlertPause: (groundId: number, sportType: string, paused: boolean) =>
+    request('/api/notifications/ground-pauses', {
+      method: 'POST',
+      body: JSON.stringify({ ground_id: groundId, sport_type: sportType, paused }),
+    }),
+
+  removeGroundAlertPause: (pauseId: number) =>
+    request(`/api/notifications/ground-pauses/${pauseId}`, { method: 'DELETE' }),
+
+  getMyGroundsForNotifications: () =>
+    request('/api/notifications/my-grounds'),
+
+  getModeratorOverrides: (groundId: number) =>
+    request(`/api/notifications/moderator-overrides/${groundId}`),
+
+  setModeratorAlertOverride: (userId: number, groundId: number, overrides: Record<string, boolean>) =>
+    request('/api/notifications/moderator-overrides', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, ground_id: groundId, ...overrides }),
+    }),
+
+  trackPaymentReminder: (gameId: number, targetUserId: number) =>
+    request(`/api/notifications/payment-reminder/${gameId}/${targetUserId}`, { method: 'POST' }),
+
+  getPaymentReminders: (gameId: number) =>
+    request(`/api/notifications/payment-reminders/${gameId}`),
 };

@@ -306,6 +306,61 @@ async def init_db():
             FOREIGN KEY (added_by) REFERENCES users(id),
             UNIQUE(user_id, ground_id)
         );
+
+        CREATE TABLE IF NOT EXISTS notification_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            voting_started INTEGER NOT NULL DEFAULT 1,
+            game_cancelled INTEGER NOT NULL DEFAULT 1,
+            game_completed_vote INTEGER NOT NULL DEFAULT 1,
+            potd_announced INTEGER NOT NULL DEFAULT 1,
+            potd_congrats_delay_hours INTEGER NOT NULL DEFAULT 24,
+            vacation_start TEXT,
+            vacation_end TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS ground_alert_pauses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            sport_type TEXT NOT NULL DEFAULT '',
+            paused INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            UNIQUE(user_id, ground_id, sport_type)
+        );
+
+        CREATE TABLE IF NOT EXISTS moderator_alert_overrides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            set_by INTEGER NOT NULL,
+            payment_overdue_enabled INTEGER NOT NULL DEFAULT 1,
+            payment_reminder_enabled INTEGER NOT NULL DEFAULT 1,
+            nomination_payment_alert INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (set_by) REFERENCES users(id),
+            UNIQUE(user_id, ground_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS payment_reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            game_id INTEGER NOT NULL,
+            reminder_count INTEGER NOT NULL DEFAULT 0,
+            last_reminded_at TIMESTAMP,
+            moderator_alerted INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            UNIQUE(user_id, game_id)
+        );
     """)
 
     # Migration: add columns if they don't exist (for existing databases)
