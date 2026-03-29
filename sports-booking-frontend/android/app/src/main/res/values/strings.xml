@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ground Booking</string>
+    <string name="title_activity_main">Ground Booking</string>
+    <string name="package_name">com.groundbooking.app</string>
+    <string name="custom_url_scheme">com.groundbooking.app</string>
+</resources>
