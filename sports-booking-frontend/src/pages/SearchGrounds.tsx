@@ -24,6 +24,7 @@ interface GroundResult {
   display_name: string;
   ground_code_display: string;
   is_approved: number;
+  sport_types: string[];
   moderators: Moderator[];
 }
 
@@ -223,7 +224,11 @@ export default function SearchGrounds({ onBack }: Props) {
               <Card key={ground.id}>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <MapPin size={16} className="text-green-600" />
+                    {ground.sport_types && ground.sport_types.length > 0 ? (
+                      <span className="flex gap-0.5">{ground.sport_types.map(s => <span key={s} title={s}>{sportIconChar(s)}</span>)}</span>
+                    ) : (
+                      <MapPin size={16} className="text-green-600" />
+                    )}
                     {ground.display_name}
                     {ground.ground_code_display && (
                       <Badge variant="outline" className="text-xs font-mono ml-auto">{ground.ground_code_display}</Badge>

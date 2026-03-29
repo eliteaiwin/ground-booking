@@ -191,6 +191,18 @@ async def search_grounds_public(
             ground_code = g["ground_code"] or ""
         except Exception:
             pass
+        # Get distinct sport types played on this ground
+        sport_cursor = await db.execute(
+            "SELECT DISTINCT sport_type FROM games WHERE ground_id = ? AND sport_type != '' ORDER BY sport_type",
+            (g["id"],)
+        )
+        sport_rows = await sport_cursor.fetchall()
+        sport_types = [s["sport_type"] for s in sport_rows]
+        # Also include sport types from moderator assignments
+        for m in mod_rows:
+            st = m["sport_type"] or ""
+            if st and st.lower() not in [x.lower() for x in sport_types] and st.lower() != "all sports":
+                sport_types.append(st)
         results.append({
             "id": g["id"],
             "name": g["name"],
@@ -199,6 +211,7 @@ async def search_grounds_public(
             "ground_code_display": f"{ground_code}-{g['location']}-{g['name']}".replace(' ', '') if ground_code else "",
             "display_name": f"{g['location']} - {g['name']}",
             "is_approved": g["is_approved"],
+            "sport_types": sport_types,
             "moderators": moderators,
         })
     return results
