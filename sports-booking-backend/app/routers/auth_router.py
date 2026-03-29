@@ -467,12 +467,12 @@ async def get_user_persona(
     roles_rows = await cursor.fetchall()
     roles = [r["role"] for r in roles_rows]
 
-    # Get POTD points per sport (5 for 1st pref, 3 for 2nd, 1 for 3rd)
+    # Get POTD points per sport (3 for 1st pref, 2 for 2nd, 1 for 3rd)
     sport_rankings = []
     try:
         cursor = await db.execute(
             """SELECT g.sport_type,
-                SUM(CASE WHEN pv.preference = 1 THEN 5 WHEN pv.preference = 2 THEN 3 WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points,
+                SUM(CASE WHEN pv.preference = 1 THEN 3 WHEN pv.preference = 2 THEN 2 WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points,
                 COUNT(DISTINCT pv.game_id) as games_voted
             FROM potd_votes pv
             JOIN games g ON pv.game_id = g.id
@@ -485,7 +485,7 @@ async def get_user_persona(
         for row in rows:
             # Get rank for this sport
             rank_cursor = await db.execute(
-                """SELECT player_id, SUM(CASE WHEN pv2.preference = 1 THEN 5 WHEN pv2.preference = 2 THEN 3 WHEN pv2.preference = 3 THEN 1 ELSE 0 END) as pts
+                """SELECT player_id, SUM(CASE WHEN pv2.preference = 1 THEN 3 WHEN pv2.preference = 2 THEN 2 WHEN pv2.preference = 3 THEN 1 ELSE 0 END) as pts
                 FROM potd_votes pv2
                 JOIN games g2 ON pv2.game_id = g2.id
                 WHERE g2.sport_type = ?
