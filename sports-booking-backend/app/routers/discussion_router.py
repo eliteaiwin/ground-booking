@@ -13,7 +13,7 @@ from ..auth import get_current_user_id
 router = APIRouter(prefix="/api/discussions", tags=["discussions"])
 
 # Directory for uploaded media files
-UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 

@@ -261,7 +261,7 @@ async def get_moderator_overrides(
         # Check moderator assignment
         cursor = await db.execute(
             """SELECT id FROM moderator_locations ml
-               JOIN grounds g ON g.location = ml.location_name
+               JOIN grounds g ON g.location = ml.location
                WHERE ml.user_id = ? AND g.id = ?""",
             (user_id, ground_id)
         )
@@ -306,7 +306,7 @@ async def set_moderator_alert_override(
     if "admin" not in roles:
         cursor = await db.execute(
             """SELECT id FROM moderator_locations ml
-               JOIN grounds g ON g.location = ml.location_name
+               JOIN grounds g ON g.location = ml.location
                WHERE ml.user_id = ? AND g.id = ?""",
             (user_id, req.ground_id)
         )
@@ -425,7 +425,7 @@ async def track_payment_reminder(
             if len(parts) == 2:
                 cursor4 = await db.execute(
                     """SELECT ml.user_id FROM moderator_locations ml
-                       WHERE ml.location_name = ?""",
+                       WHERE ml.location = ?""",
                     (parts[0].strip(),)
                 )
                 mod_rows = await cursor4.fetchall()
