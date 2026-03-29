@@ -55,7 +55,7 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS user_roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'moderator', 'user')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'ground_management', 'moderator', 'user', 'readonly')),
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, role)
         );
@@ -113,11 +113,12 @@ async def init_db():
             game_id INTEGER NOT NULL,
             voter_id INTEGER NOT NULL,
             player_id INTEGER NOT NULL,
+            preference INTEGER NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (game_id) REFERENCES games(id),
             FOREIGN KEY (voter_id) REFERENCES users(id),
             FOREIGN KEY (player_id) REFERENCES users(id),
-            UNIQUE(game_id, voter_id)
+            UNIQUE(game_id, voter_id, preference)
         );
 
         CREATE TABLE IF NOT EXISTS notifications (
@@ -235,6 +236,18 @@ async def init_db():
             UNIQUE(target_type, target_id, user_id, emoji)
         );
 
+        CREATE TABLE IF NOT EXISTS ground_management_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            assigned_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (assigned_by) REFERENCES users(id),
+            UNIQUE(user_id, ground_id)
+        );
+
         CREATE TABLE IF NOT EXISTS game_scores (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             game_id INTEGER NOT NULL UNIQUE,
@@ -278,6 +291,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 90",
         "ALTER TABLE moderator_locations ADD COLUMN sport_type TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE potd_votes ADD COLUMN preference INTEGER NOT NULL DEFAULT 1",
     ]
     for migration in migrations:
         try:
@@ -393,6 +407,7 @@ async def _seed_production_data(db: aiosqlite.Connection):
         )
         uid = cursor.lastrowid
         await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'admin')", (uid,))
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'ground_management')", (uid,))
         await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')", (uid,))
         await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'user')", (uid,))
 

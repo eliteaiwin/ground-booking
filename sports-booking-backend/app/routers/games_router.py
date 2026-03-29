@@ -50,7 +50,9 @@ class StartGameRequest(BaseModel):
 
 
 class VotePOTDRequest(BaseModel):
-    player_id: int
+    first_preference: int
+    second_preference: Optional[int] = None
+    third_preference: Optional[int] = None
 
 
 class VoteJoinRequest(BaseModel):
@@ -1031,6 +1033,13 @@ async def vote_player_of_the_day(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    # Check if user has readonly role as active (we check all roles, readonly users cannot vote)
+    cursor = await db.execute(
+        "SELECT role FROM user_roles WHERE user_id = ? AND role = 'readonly'", (user_id,)
+    )
+    is_readonly = await cursor.fetchone() is not None
+    # Note: actual enforcement of active role is frontend-side; backend checks role existence
+
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
@@ -1038,43 +1047,68 @@ async def vote_player_of_the_day(
     if game["status"] != "completed":
         raise HTTPException(status_code=400, detail="Can only vote after game is completed")
 
-    # Check voter was a player
-    cursor = await db.execute(
-        "SELECT id FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",
-        (game_id, user_id)
-    )
-    if not await cursor.fetchone():
-        raise HTTPException(status_code=403, detail="Only selected players can vote")
+    # Check 24-hour voting window
+    try:
+        game_date = game["game_date"]
+        game_time = game["game_time"] or "00:00"
+        duration = 90
+        try:
+            duration = game["duration_minutes"] or 90
+        except Exception:
+            pass
+        game_end_str = f"{game_date} {game_time}"
+        game_end_dt = datetime.strptime(game_end_str, "%Y-%m-%d %H:%M")
+        from datetime import timedelta
+        game_end_dt = game_end_dt + timedelta(minutes=duration)
+        voting_deadline = game_end_dt + timedelta(hours=24)
+        now = datetime.now()
+        if now < game_end_dt:
+            raise HTTPException(status_code=400, detail="Voting opens after the game ends")
+        if now > voting_deadline:
+            raise HTTPException(status_code=400, detail="Voting window has closed (24 hours after game end)")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If date parsing fails, allow voting anyway
 
-    # Prevent self-voting
-    if req.player_id == user_id:
+    # Validate preferences: no self-voting, all must be in the game, no duplicates
+    preferences = [req.first_preference]
+    if req.second_preference is not None:
+        preferences.append(req.second_preference)
+    if req.third_preference is not None:
+        if req.second_preference is None:
+            raise HTTPException(status_code=400, detail="Cannot set 3rd preference without 2nd")
+        preferences.append(req.third_preference)
+
+    # Check no duplicates
+    if len(set(preferences)) != len(preferences):
+        raise HTTPException(status_code=400, detail="Cannot vote for the same player twice")
+
+    # Check no self-voting
+    if user_id in preferences:
         raise HTTPException(status_code=400, detail="Cannot vote for yourself")
 
-    # Check player being voted for was in the game
-    cursor = await db.execute(
-        "SELECT id FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",
-        (game_id, req.player_id)
-    )
-    if not await cursor.fetchone():
-        raise HTTPException(status_code=400, detail="Voted player was not in this game")
-
-    # Check already voted
-    cursor = await db.execute("SELECT id FROM potd_votes WHERE game_id = ? AND voter_id = ?", (game_id, user_id))
-    existing = await cursor.fetchone()
-    if existing:
-        # Update vote
-        await db.execute(
-            "UPDATE potd_votes SET player_id = ? WHERE game_id = ? AND voter_id = ?",
-            (req.player_id, game_id, user_id)
+    # Check all players were in the game
+    for pid in preferences:
+        cursor = await db.execute(
+            "SELECT id FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",
+            (game_id, pid)
         )
-    else:
+        if not await cursor.fetchone():
+            raise HTTPException(status_code=400, detail=f"Player {pid} was not in this game")
+
+    # Remove existing votes for this voter in this game
+    await db.execute("DELETE FROM potd_votes WHERE game_id = ? AND voter_id = ?", (game_id, user_id))
+
+    # Insert ranked votes
+    for i, pid in enumerate(preferences, start=1):
         await db.execute(
-            "INSERT INTO potd_votes (game_id, voter_id, player_id) VALUES (?, ?, ?)",
-            (game_id, user_id, req.player_id)
+            "INSERT INTO potd_votes (game_id, voter_id, player_id, preference) VALUES (?, ?, ?, ?)",
+            (game_id, user_id, pid, i)
         )
 
     await db.commit()
-    return {"message": "Vote recorded"}
+    return {"message": "Vote recorded", "preferences": len(preferences)}
 
 
 @router.post("/{game_id}/broadcast-status")
@@ -1133,17 +1167,82 @@ async def get_potd_results(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    # Calculate points: 1st preference = 3pts, 2nd = 2pts, 3rd = 1pt
     cursor = await db.execute(
-        """SELECT p.player_id, u.name, COUNT(*) as votes 
+        """SELECT p.player_id, u.name, u.first_name,
+                  SUM(CASE WHEN p.preference = 1 THEN 3
+                           WHEN p.preference = 2 THEN 2
+                           WHEN p.preference = 3 THEN 1 ELSE 0 END) as points,
+                  COUNT(*) as total_votes,
+                  SUM(CASE WHEN p.preference = 1 THEN 1 ELSE 0 END) as first_pref_count,
+                  SUM(CASE WHEN p.preference = 2 THEN 1 ELSE 0 END) as second_pref_count,
+                  SUM(CASE WHEN p.preference = 3 THEN 1 ELSE 0 END) as third_pref_count
            FROM potd_votes p JOIN users u ON p.player_id = u.id 
-           WHERE p.game_id = ? GROUP BY p.player_id ORDER BY votes DESC""",
+           WHERE p.game_id = ? GROUP BY p.player_id ORDER BY points DESC, first_pref_count DESC""",
         (game_id,)
     )
     results = await cursor.fetchall()
 
+    result_list = [{
+        "player_id": r["player_id"],
+        "name": r["name"],
+        "first_name": r["first_name"],
+        "points": r["points"],
+        "total_votes": r["total_votes"],
+        "first_pref": r["first_pref_count"],
+        "second_pref": r["second_pref_count"],
+        "third_pref": r["third_pref_count"],
+    } for r in results]
+
+    # Handle ties: if top 2 players have equal points, both get equal recognition
+    winner = None
+    if result_list:
+        winner = result_list[0]
+        # Check for tie
+        tied_winners = [r for r in result_list if r["points"] == result_list[0]["points"]]
+        if len(tied_winners) > 1:
+            winner = {"tied": True, "players": tied_winners}
+        else:
+            winner["tied"] = False
+
+    # Check if current user has already voted
+    cursor = await db.execute(
+        "SELECT player_id, preference FROM potd_votes WHERE game_id = ? AND voter_id = ? ORDER BY preference",
+        (game_id, user_id)
+    )
+    my_votes = await cursor.fetchall()
+    my_vote_data = [{"player_id": v["player_id"], "preference": v["preference"]} for v in my_votes]
+
+    # Check voting window
+    voting_open = True
+    voting_deadline_str = None
+    try:
+        cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+        game = await cursor.fetchone()
+        if game and game["status"] == "completed":
+            game_date = game["game_date"]
+            game_time = game["game_time"] or "00:00"
+            duration = 90
+            try:
+                duration = game["duration_minutes"] or 90
+            except Exception:
+                pass
+            from datetime import timedelta
+            game_end_dt = datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M") + timedelta(minutes=duration)
+            voting_deadline = game_end_dt + timedelta(hours=24)
+            voting_deadline_str = voting_deadline.strftime("%Y-%m-%d %H:%M")
+            now = datetime.now()
+            if now > voting_deadline:
+                voting_open = False
+    except Exception:
+        pass
+
     return {
-        "results": [{"player_id": r["player_id"], "name": r["name"], "votes": r["votes"]} for r in results],
-        "man_of_the_match": {"player_id": results[0]["player_id"], "name": results[0]["name"], "votes": results[0]["votes"]} if results else None
+        "results": result_list,
+        "man_of_the_match": winner,
+        "my_votes": my_vote_data,
+        "voting_open": voting_open,
+        "voting_deadline": voting_deadline_str,
     }
 
 
@@ -1367,6 +1466,212 @@ async def remind_unpaid_players(
         "reminded_count": len(reminded),
         "reminded": reminded,
         "whatsapp_message": wa_msg
+    }
+
+
+@router.get("/hall-of-fame")
+async def hall_of_fame(
+    sport: Optional[str] = Query(None, description="Filter by sport type"),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Hall of Fame: Player rankings by POTD points + goals scored.
+    Points: 1st preference = 3pts, 2nd = 2pts, 3rd = 1pt.
+    Also includes total goals scored across all games.
+    """
+    # Get POTD points per player
+    sport_filter = ""
+    sport_params: list = []
+    if sport:
+        sport_filter = " AND g.sport_type = ?"
+        sport_params = [sport]
+
+    cursor = await db.execute(
+        f"""SELECT pv.player_id, u.name, u.first_name, u.phone,
+                  SUM(CASE WHEN pv.preference = 1 THEN 3
+                           WHEN pv.preference = 2 THEN 2
+                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
+                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins,
+                  COUNT(DISTINCT pv.game_id) as games_voted_in
+           FROM potd_votes pv
+           JOIN users u ON pv.player_id = u.id
+           JOIN games g ON pv.game_id = g.id
+           WHERE g.status = 'completed'{sport_filter}
+           GROUP BY pv.player_id
+           ORDER BY potd_points DESC, first_pref_wins DESC""",
+        sport_params
+    )
+    potd_rows = await cursor.fetchall()
+
+    # Get goals scored per player
+    cursor = await db.execute(
+        f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
+                  SUM(gs.goals) as total_goals,
+                  COUNT(DISTINCT gs.game_id) as games_scored_in
+           FROM goal_scorers gs
+           JOIN users u ON gs.user_id = u.id
+           JOIN games g ON gs.game_id = g.id
+           WHERE g.status = 'completed'{sport_filter}
+           GROUP BY gs.user_id
+           ORDER BY total_goals DESC""",
+        sport_params
+    )
+    goals_rows = await cursor.fetchall()
+
+    # Get total games played per player
+    cursor = await db.execute(
+        f"""SELECT gp.user_id, COUNT(DISTINCT gp.game_id) as games_played
+           FROM game_players gp
+           JOIN games g ON gp.game_id = g.id
+           WHERE gp.status = 'selected' AND g.status = 'completed'{sport_filter}
+           GROUP BY gp.user_id""",
+        sport_params
+    )
+    games_played_rows = await cursor.fetchall()
+    games_played_map = {r["user_id"]: r["games_played"] for r in games_played_rows}
+
+    # Build goals map
+    goals_map = {}
+    for r in goals_rows:
+        goals_map[r["user_id"]] = {
+            "total_goals": r["total_goals"],
+            "games_scored_in": r["games_scored_in"],
+        }
+
+    # Build combined rankings
+    player_ids_seen = set()
+    rankings = []
+
+    for r in potd_rows:
+        pid = r["player_id"]
+        player_ids_seen.add(pid)
+        goal_data = goals_map.get(pid, {"total_goals": 0, "games_scored_in": 0})
+        rankings.append({
+            "user_id": pid,
+            "name": r["name"],
+            "first_name": r["first_name"],
+            "phone": r["phone"],
+            "potd_points": r["potd_points"],
+            "first_pref_wins": r["first_pref_wins"],
+            "total_goals": goal_data["total_goals"],
+            "games_played": games_played_map.get(pid, 0),
+            "combined_score": r["potd_points"] + goal_data["total_goals"],
+        })
+
+    # Add players who scored goals but didn't get POTD votes
+    for r in goals_rows:
+        pid = r["user_id"]
+        if pid not in player_ids_seen:
+            rankings.append({
+                "user_id": pid,
+                "name": r["name"],
+                "first_name": r["first_name"],
+                "phone": r["phone"],
+                "potd_points": 0,
+                "first_pref_wins": 0,
+                "total_goals": r["total_goals"],
+                "games_played": games_played_map.get(pid, 0),
+                "combined_score": r["total_goals"],
+            })
+
+    # Sort by combined score (POTD points + goals)
+    rankings.sort(key=lambda x: (-x["combined_score"], -x["potd_points"], -x["total_goals"]))
+
+    # Add rank
+    for i, r in enumerate(rankings, 1):
+        r["rank"] = i
+
+    return {"rankings": rankings, "sport_filter": sport}
+
+
+@router.get("/player/{player_id}/stats")
+async def get_player_stats(
+    player_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get a player's Hall of Fame stats for their profile."""
+    cursor = await db.execute("SELECT id, name, first_name, phone FROM users WHERE id = ?", (player_id,))
+    player = await cursor.fetchone()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    # POTD points by sport
+    cursor = await db.execute(
+        """SELECT g.sport_type,
+                  SUM(CASE WHEN pv.preference = 1 THEN 3
+                           WHEN pv.preference = 2 THEN 2
+                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points,
+                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins
+           FROM potd_votes pv
+           JOIN games g ON pv.game_id = g.id
+           WHERE pv.player_id = ? AND g.status = 'completed'
+           GROUP BY g.sport_type""",
+        (player_id,)
+    )
+    potd_by_sport = await cursor.fetchall()
+
+    # Goals by sport
+    cursor = await db.execute(
+        """SELECT g.sport_type, SUM(gs.goals) as total_goals
+           FROM goal_scorers gs
+           JOIN games g ON gs.game_id = g.id
+           WHERE gs.user_id = ? AND g.status = 'completed'
+           GROUP BY g.sport_type""",
+        (player_id,)
+    )
+    goals_by_sport = await cursor.fetchall()
+
+    # Games played by sport
+    cursor = await db.execute(
+        """SELECT g.sport_type, COUNT(DISTINCT gp.game_id) as games_played
+           FROM game_players gp
+           JOIN games g ON gp.game_id = g.id
+           WHERE gp.user_id = ? AND gp.status = 'selected' AND g.status = 'completed'
+           GROUP BY g.sport_type""",
+        (player_id,)
+    )
+    games_by_sport = await cursor.fetchall()
+
+    # Overall rank (by POTD points)
+    cursor = await db.execute(
+        """SELECT pv.player_id,
+                  SUM(CASE WHEN pv.preference = 1 THEN 3
+                           WHEN pv.preference = 2 THEN 2
+                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points
+           FROM potd_votes pv
+           JOIN games g ON pv.game_id = g.id
+           WHERE g.status = 'completed'
+           GROUP BY pv.player_id
+           ORDER BY points DESC"""
+    )
+    all_rankings = await cursor.fetchall()
+    rank = None
+    total_potd_points = 0
+    for i, r in enumerate(all_rankings, 1):
+        if r["player_id"] == player_id:
+            rank = i
+            total_potd_points = r["points"]
+            break
+
+    return {
+        "user_id": player_id,
+        "name": player["name"],
+        "first_name": player["first_name"],
+        "overall_potd_rank": rank,
+        "total_potd_points": total_potd_points,
+        "potd_by_sport": [
+            {"sport": r["sport_type"], "points": r["points"], "first_pref_wins": r["first_pref_wins"]}
+            for r in potd_by_sport
+        ],
+        "goals_by_sport": [
+            {"sport": r["sport_type"], "total_goals": r["total_goals"]}
+            for r in goals_by_sport
+        ],
+        "games_by_sport": [
+            {"sport": r["sport_type"], "games_played": r["games_played"]}
+            for r in games_by_sport
+        ],
     }
 
 

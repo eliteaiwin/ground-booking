@@ -15,8 +15,10 @@ import AdminScreens from './pages/AdminScreens';
 import SearchGrounds from './pages/SearchGrounds';
 import BackendSettlement from './pages/BackendSettlement';
 import GameSearch from './pages/GameSearch';
+import GroundManagement from './pages/GroundManagement';
+import HallOfFame from './pages/HallOfFame';
 
-type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search';
+type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame';
 
 function AppContent() {
   const { user, loading, isAddingAccount, setIsAddingAccount } = useAuth();
@@ -114,6 +116,10 @@ function AppContent() {
       return <BackendSettlement onBack={goHome} />;
     case 'game-search':
       return <GameSearch onBack={goHome} onViewGame={(gameId) => { setSelectedGameId(gameId); setCurrentPage('game-detail'); }} />;
+    case 'ground-management':
+      return <GroundManagement onBack={goHome} />;
+    case 'hall-of-fame':
+      return <HallOfFame onBack={goHome} />;
     default:
       return <Dashboard onNavigate={navigate} />;
   }

@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, BarChart3, RefreshCw } from 'lucide-react';
 
 interface Game {
   id: number;
@@ -82,14 +82,23 @@ interface Props {
   onNavigate: (page: string, gameId?: number) => void;
 }
 
+const roleDisplayNames: Record<string, string> = {
+  admin: 'Admin',
+  ground_management: 'Ground Management',
+  moderator: 'Moderator',
+  user: 'User',
+  readonly: 'User (Read Only)',
+};
+
 export default function Dashboard({ onNavigate }: Props) {
-  const { user, logout, isAdmin, isModerator, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
+  const { user, logout, isAdmin, isModerator, isGroundManagement, isReadOnly, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
   const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('games');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
+  const [showSwitchRole, setShowSwitchRole] = useState(false);
 
   const currency = user?.currency || 'Rs';
   const otherAccounts = storedAccounts.filter(a => a.userId !== user?.id);
@@ -153,7 +162,7 @@ export default function Dashboard({ onNavigate }: Props) {
               {/* User Menu Dropdown */}
               {showUserMenu && (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => { setShowUserMenu(false); setShowSwitchUser(false); }} />
+                  <div className="fixed inset-0 z-40" onClick={() => { setShowUserMenu(false); setShowSwitchUser(false); setShowSwitchRole(false); }} />
                   <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-xl shadow-xl border z-50 overflow-hidden">
                     {/* Current user header */}
                     <div className="px-4 py-3 bg-gray-50 border-b">
@@ -165,9 +174,9 @@ export default function Dashboard({ onNavigate }: Props) {
                           <p className="text-sm font-semibold text-gray-800 truncate">{formatNamePhone(`${user?.first_name || ''} ${user?.last_name || ''}`.trim(), user?.phone)}</p>
                         </div>
                       </div>
-                      <div className="flex gap-1 mt-1">
+                      <div className="flex gap-1 mt-1 flex-wrap">
                         {user?.roles.map(role => (
-                          <Badge key={role} variant="secondary" className="text-xs capitalize">{role}</Badge>
+                          <Badge key={role} variant={role === activeRole ? "default" : "secondary"} className={`text-xs ${role === activeRole ? 'bg-green-600' : ''}`}>{roleDisplayNames[role] || role}</Badge>
                         ))}
                       </div>
                     </div>
@@ -182,9 +191,42 @@ export default function Dashboard({ onNavigate }: Props) {
                         Edit Profile
                       </button>
 
+                      {/* Switch Role option */}
+                      {user && user.roles.length > 1 && (
+                        <button
+                          onClick={() => { setShowSwitchRole(!showSwitchRole); setShowSwitchUser(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <RefreshCw size={16} className="text-gray-400" />
+                          Switch Role
+                          <ChevronDown size={14} className={`ml-auto text-gray-400 transition-transform ${showSwitchRole ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+
+                      {/* Switch Role submenu */}
+                      {showSwitchRole && user && user.roles.length > 1 && (
+                        <div className="bg-gray-50 border-y">
+                          {user.roles.map(role => (
+                            <button
+                              key={role}
+                              onClick={() => {
+                                switchRole(role);
+                                setShowSwitchRole(false);
+                                setShowUserMenu(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-6 py-2 text-sm transition-colors ${role === activeRole ? 'bg-green-50 text-green-700 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}
+                            >
+                              <div className={`w-2 h-2 rounded-full ${role === activeRole ? 'bg-green-500' : 'bg-gray-300'}`} />
+                              {roleDisplayNames[role] || role}
+                              {role === activeRole && <span className="ml-auto text-xs text-green-600">(Active)</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {otherAccounts.length > 0 && (
                         <button
-                          onClick={() => setShowSwitchUser(!showSwitchUser)}
+                          onClick={() => { setShowSwitchUser(!showSwitchUser); setShowSwitchRole(false); }}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                         >
                           <ArrowRightLeft size={16} className="text-gray-400" />
@@ -263,9 +305,7 @@ export default function Dashboard({ onNavigate }: Props) {
           <div>
             <h2 className="text-xl font-bold text-gray-800">Hey, {user?.first_name || user?.name}!</h2>
             <div className="flex gap-1 mt-1">
-              {user?.roles.map(role => (
-                <Badge key={role} variant="secondary" className="text-xs capitalize">{role}</Badge>
-              ))}
+              <Badge variant="default" className="text-xs bg-green-600">{roleDisplayNames[activeRole] || activeRole}</Badge>
             </div>
           </div>
           {storedAccounts.length > 1 && (
@@ -275,6 +315,7 @@ export default function Dashboard({ onNavigate }: Props) {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-3 gap-3 mb-4">
+          {/* Admin-only actions */}
           {isAdmin && (
             <button
               onClick={() => onNavigate('create-game')}
@@ -286,15 +327,17 @@ export default function Dashboard({ onNavigate }: Props) {
               <span className="text-xs font-medium text-gray-700">New Game</span>
             </button>
           )}
-          <button
-            onClick={() => onNavigate('my-payments')}
-            className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
-          >
-            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-              <CreditCard size={20} className="text-blue-600" />
-            </div>
-            <span className="text-xs font-medium text-gray-700">Payments</span>
-          </button>
+          {!isReadOnly && (
+            <button
+              onClick={() => onNavigate('my-payments')}
+              className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                <CreditCard size={20} className="text-blue-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-700">Payments</span>
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={() => onNavigate('admin-summary')}
@@ -350,6 +393,28 @@ export default function Dashboard({ onNavigate }: Props) {
               <span className="text-xs font-medium text-gray-700">Admin</span>
             </button>
           )}
+          {/* Ground Management */}
+          {isGroundManagement && (
+            <button
+              onClick={() => onNavigate('ground-management')}
+              className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                <BarChart3 size={20} className="text-amber-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-700">Ground Mgmt</span>
+            </button>
+          )}
+          {/* Hall of Fame - visible to all */}
+          <button
+            onClick={() => onNavigate('hall-of-fame')}
+            className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+              <Trophy size={20} className="text-yellow-600" />
+            </div>
+            <span className="text-xs font-medium text-gray-700">Hall of Fame</span>
+          </button>
           <button
             onClick={() => onNavigate('search-grounds')}
             className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"

@@ -103,7 +103,21 @@ interface UserItem {
 interface POTDResult {
   player_id: number;
   name: string;
-  votes: number;
+  first_name: string;
+  points: number;
+  total_votes: number;
+  first_pref: number;
+  second_pref: number;
+  third_pref: number;
+  tied?: boolean;
+}
+
+interface POTDData {
+  results: POTDResult[];
+  man_of_the_match: { player_id: number; name: string; points: number; tied: boolean; players?: POTDResult[] } | null;
+  my_votes: { player_id: number; preference: number }[];
+  voting_open: boolean;
+  voting_deadline: string | null;
 }
 
 const sportIcon = (type: string) => {
@@ -144,14 +158,19 @@ interface Props {
 }
 
 export default function GameDetail({ gameId, onBack }: Props) {
-  const { user, isAdmin, isModerator } = useAuth();
+  const { user, isAdmin, isModerator, isReadOnly } = useAuth();
   const [game, setGame] = useState<Game | null>(null);
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [nominateUserId, setNominateUserId] = useState('');
   const [nominateMode, setNominateMode] = useState<'self' | 'others'>('self');
   const [nominatePosition, setNominatePosition] = useState('Anywhere');
-  const [potdPlayerId, setPotdPlayerId] = useState('');
+  const [potdFirstPref, setPotdFirstPref] = useState('');
+  const [potdSecondPref, setPotdSecondPref] = useState('');
+  const [potdThirdPref, setPotdThirdPref] = useState('');
   const [potdResults, setPotdResults] = useState<POTDResult[]>([]);
+  const [potdMyVotes, setPotdMyVotes] = useState<{ player_id: number; preference: number }[]>([]);
+  const [potdVotingOpen, setPotdVotingOpen] = useState(true);
+  const [potdDeadline, setPotdDeadline] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [error, setError] = useState('');
@@ -195,8 +214,20 @@ export default function GameDetail({ gameId, onBack }: Props) {
       setAllUsers(usersData);
       if (gameData.status === 'completed') {
         try {
-          const potd = await api.getPOTD(gameId);
+          const potd: POTDData = await api.getPOTD(gameId);
           setPotdResults(potd.results || []);
+          setPotdMyVotes(potd.my_votes || []);
+          setPotdVotingOpen(potd.voting_open !== false);
+          setPotdDeadline(potd.voting_deadline || null);
+          // Pre-fill existing votes
+          if (potd.my_votes && potd.my_votes.length > 0) {
+            const v1 = potd.my_votes.find(v => v.preference === 1);
+            const v2 = potd.my_votes.find(v => v.preference === 2);
+            const v3 = potd.my_votes.find(v => v.preference === 3);
+            if (v1) setPotdFirstPref(String(v1.player_id));
+            if (v2) setPotdSecondPref(String(v2.player_id));
+            if (v3) setPotdThirdPref(String(v3.player_id));
+          }
         } catch { /* ignore */ }
       }
     } catch (err) {
@@ -546,7 +577,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Button>
           )}
 
-          {game.status === 'voting_open' && (
+          {game.status === 'voting_open' && !isReadOnly && (
             <Card className="border-green-200 bg-green-50">
               <CardContent className="p-4">
                 {/* Radio buttons for Nominate Self / Nominate Others */}
@@ -652,11 +683,19 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Card>
           )}
 
-          {(game.status === 'voting_open' || game.status === 'in_progress') && isPlayerInGame && (
+          {(game.status === 'voting_open' || game.status === 'in_progress') && isPlayerInGame && !isReadOnly && (
             <Button variant="outline" className="w-full border-red-300 text-red-600 hover:bg-red-50"
               onClick={handleQuitClick} disabled={actionLoading === 'quit'}>
               {actionLoading === 'quit' ? 'Quitting...' : 'Quit Game'}
             </Button>
+          )}
+
+          {isReadOnly && game.status === 'voting_open' && (
+            <Card className="border-gray-200 bg-gray-50">
+              <CardContent className="p-3 text-center text-sm text-gray-500">
+                You are in Read-Only mode. Switch to User role to nominate or vote.
+              </CardContent>
+            </Card>
           )}
 
           {/* Edit Game - for Admin/Moderator on non-completed games */}
@@ -1216,27 +1255,87 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-        {game.status === 'completed' && isSelectedPlayer && (
+        {game.status === 'completed' && isSelectedPlayer && !isReadOnly && potdVotingOpen && (
           <Card className="border-yellow-200 bg-yellow-50">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2 text-yellow-700"><Star size={16} /> Vote Player of the Day</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2 text-yellow-700">
+                <Star size={16} /> Vote Player of the Day
+              </CardTitle>
+              {potdDeadline && (
+                <p className="text-xs text-yellow-600">Voting closes: {potdDeadline}</p>
+              )}
+              {potdMyVotes.length > 0 && (
+                <p className="text-xs text-green-600 font-medium">You have already voted. You can update your votes below.</p>
+              )}
             </CardHeader>
-            <CardContent className="p-4 pt-0">
-              <div className="flex gap-2">
-                <Select value={potdPlayerId} onValueChange={setPotdPlayerId}>
-                  <SelectTrigger className="flex-1"><SelectValue placeholder="Select best player" /></SelectTrigger>
+            <CardContent className="p-4 pt-0 space-y-3">
+              {/* 1st Preference (Required) */}
+              <div>
+                <Label className="text-xs font-semibold text-yellow-800">1st Preference (3 pts) *</Label>
+                <Select value={potdFirstPref} onValueChange={(v) => {
+                  setPotdFirstPref(v);
+                  if (v === potdSecondPref) setPotdSecondPref('');
+                  if (v === potdThirdPref) setPotdThirdPref('');
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Select best player" /></SelectTrigger>
                   <SelectContent>
                     {game.selected_players.filter(p => p.user_id !== user?.id).map(p => (
                       <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Button size="sm" className="bg-yellow-600 hover:bg-yellow-700"
-                  disabled={!potdPlayerId || actionLoading === 'potd'}
-                  onClick={() => handleAction('potd', () => api.votePOTD(game.id, Number(potdPlayerId)))}>
-                  Vote
-                </Button>
               </div>
+              {/* 2nd Preference (Optional) */}
+              <div>
+                <Label className="text-xs font-semibold text-yellow-700">2nd Preference (2 pts)</Label>
+                <Select value={potdSecondPref} onValueChange={(v) => {
+                  setPotdSecondPref(v);
+                  if (v === potdThirdPref) setPotdThirdPref('');
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Optional - 2nd best" /></SelectTrigger>
+                  <SelectContent>
+                    {game.selected_players
+                      .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref)
+                      .map(p => (
+                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* 3rd Preference (Optional, requires 2nd) */}
+              <div>
+                <Label className="text-xs font-semibold text-yellow-700">3rd Preference (1 pt)</Label>
+                <Select value={potdThirdPref} onValueChange={setPotdThirdPref} disabled={!potdSecondPref}>
+                  <SelectTrigger><SelectValue placeholder={potdSecondPref ? 'Optional - 3rd best' : 'Select 2nd first'} /></SelectTrigger>
+                  <SelectContent>
+                    {game.selected_players
+                      .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref && String(p.user_id) !== potdSecondPref)
+                      .map(p => (
+                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button className="w-full bg-yellow-600 hover:bg-yellow-700"
+                disabled={!potdFirstPref || actionLoading === 'potd'}
+                onClick={() => handleAction('potd', () =>
+                  api.voteRankedPOTD(
+                    game.id,
+                    Number(potdFirstPref),
+                    potdSecondPref ? Number(potdSecondPref) : undefined,
+                    potdThirdPref ? Number(potdThirdPref) : undefined
+                  )
+                )}>
+                {actionLoading === 'potd' ? 'Submitting...' : (potdMyVotes.length > 0 ? 'Update Vote' : 'Submit Vote')}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {game.status === 'completed' && !potdVotingOpen && isSelectedPlayer && !isReadOnly && (
+          <Card className="border-gray-200 bg-gray-50">
+            <CardContent className="p-4 text-center text-sm text-gray-500">
+              <Clock size={16} className="inline mr-1" /> Voting window has closed
             </CardContent>
           </Card>
         )}
@@ -1244,15 +1343,25 @@ export default function GameDetail({ gameId, onBack }: Props) {
         {game.status === 'completed' && potdResults.length > 0 && (
           <Card className="border-yellow-200">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2"><Trophy size={16} className="text-yellow-500" /> Man of the Match</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2"><Trophy size={16} className="text-yellow-500" /> Player of the Day Rankings</CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-0">
               {potdResults.map((r, idx) => (
-                <div key={r.player_id} className="flex items-center gap-2 mb-2">
-                  {idx === 0 ? <Trophy size={20} className="text-yellow-500" /> : <span className="w-5 h-5 text-center text-xs text-gray-400">{idx + 1}</span>}
-                  <span className={`flex-1 ${idx === 0 ? 'font-bold text-yellow-700' : 'text-gray-600'}`}>{r.name}</span>
+                <div key={r.player_id} className={`flex items-center gap-2 mb-2 p-2 rounded ${idx === 0 ? 'bg-yellow-50 border border-yellow-200' : ''}`}>
+                  {idx === 0 ? <Trophy size={20} className="text-yellow-500" /> :
+                   idx === 1 ? <span className="w-5 h-5 text-center text-sm text-gray-500 font-bold">2</span> :
+                   idx === 2 ? <span className="w-5 h-5 text-center text-sm text-gray-500 font-bold">3</span> :
+                   <span className="w-5 h-5 text-center text-xs text-gray-400">{idx + 1}</span>}
+                  <div className="flex-1">
+                    <span className={`${idx === 0 ? 'font-bold text-yellow-700' : 'text-gray-600'}`}>{r.name}</span>
+                    <div className="text-xs text-gray-400">
+                      {r.first_pref > 0 && <span className="mr-2">1st: {r.first_pref}</span>}
+                      {r.second_pref > 0 && <span className="mr-2">2nd: {r.second_pref}</span>}
+                      {r.third_pref > 0 && <span>3rd: {r.third_pref}</span>}
+                    </div>
+                  </div>
                   <Badge variant={idx === 0 ? 'default' : 'outline'} className={idx === 0 ? 'bg-yellow-500' : ''}>
-                    {r.votes} {r.votes === 1 ? 'vote' : 'votes'}
+                    {r.points} {r.points === 1 ? 'pt' : 'pts'}
                   </Badge>
                 </div>
               ))}

@@ -394,4 +394,50 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ target_type: targetType, target_id: targetId, emoji }),
     }),
+
+  // Ground Management Assignments
+  listGroundManagementAssignments: () =>
+    request('/api/locations/ground-management-assignments'),
+
+  assignGroundManagement: (userId: number, groundId: number) =>
+    request('/api/locations/ground-management-assignments', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, ground_id: groundId }),
+    }),
+
+  removeGroundManagementAssignment: (assignmentId: number) =>
+    request(`/api/locations/ground-management-assignments/${assignmentId}`, { method: 'DELETE' }),
+
+  // Ground Schedule (Gantt chart data)
+  getGroundSchedule: (groundId: number, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    const qs = params.toString();
+    return request(`/api/locations/grounds/${groundId}/schedule${qs ? `?${qs}` : ''}`);
+  },
+
+  // My Managed Grounds
+  myManagedGrounds: () => request('/api/locations/my-managed-grounds'),
+
+  // Enhanced POTD voting (ranked)
+  voteRankedPOTD: (gameId: number, first: number, second?: number, third?: number) =>
+    request(`/api/games/${gameId}/vote-potd`, {
+      method: 'POST',
+      body: JSON.stringify({
+        first_preference: first,
+        ...(second !== undefined && { second_preference: second }),
+        ...(third !== undefined && { third_preference: third }),
+      }),
+    }),
+
+  // Hall of Fame
+  getHallOfFame: (sport?: string) => {
+    const qs = sport ? `?sport=${encodeURIComponent(sport)}` : '';
+    return request(`/api/games/hall-of-fame${qs}`);
+  },
+
+  // Player Stats
+  getPlayerStats: (playerId: number) =>
+    request(`/api/games/player/${playerId}/stats`),
 };

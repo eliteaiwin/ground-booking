@@ -50,6 +50,11 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   isAdmin: boolean;
   isModerator: boolean;
+  isGroundManagement: boolean;
+  isReadOnly: boolean;
+  // Active role switching
+  activeRole: string;
+  switchRole: (role: string) => void;
   // Multi-account support
   storedAccounts: StoredAccount[];
   switchAccount: (userId: number) => Promise<void>;
@@ -63,6 +68,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const ACCOUNTS_KEY = 'stored_accounts';
 const ACTIVE_ACCOUNT_KEY = 'active_account_id';
+const ACTIVE_ROLE_KEY = 'active_role';
 
 function getStoredAccounts(): StoredAccount[] {
   try {
@@ -92,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [storedAccounts, setStoredAccounts] = useState<StoredAccount[]>([]);
   const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [activeRole, setActiveRole] = useState<string>(localStorage.getItem(ACTIVE_ROLE_KEY) || '');
 
   const refreshUser = async () => {
     try {
@@ -221,13 +228,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStoredAccounts(accounts);
   };
 
-  const isAdmin = user?.roles.includes('admin') || false;
-  const isModerator = user?.roles.includes('moderator') || false;
+  // Determine effective role: use activeRole if set and valid, otherwise highest role
+  const effectiveRole = activeRole && user?.roles.includes(activeRole) ? activeRole : (user?.roles[0] || 'user');
+
+  // Set activeRole on user load if not set
+  useEffect(() => {
+    if (user && (!activeRole || !user.roles.includes(activeRole))) {
+      const defaultRole = user.roles[0] || 'user';
+      setActiveRole(defaultRole);
+      localStorage.setItem(ACTIVE_ROLE_KEY, defaultRole);
+    }
+  }, [user]);
+
+  const switchRole = (role: string) => {
+    if (user?.roles.includes(role)) {
+      setActiveRole(role);
+      localStorage.setItem(ACTIVE_ROLE_KEY, role);
+    }
+  };
+
+  // Role checks based on active role
+  const isAdmin = effectiveRole === 'admin';
+  const isModerator = effectiveRole === 'moderator' || effectiveRole === 'admin';
+  const isGroundManagement = effectiveRole === 'ground_management' || effectiveRole === 'admin';
+  const isReadOnly = effectiveRole === 'readonly';
 
   return (
     <AuthContext.Provider value={{
       user, loading, login, loginWithOTP, requestOTP, loginWithGoogle,
-      register, logout, refreshUser, isAdmin, isModerator,
+      register, logout, refreshUser, isAdmin, isModerator, isGroundManagement, isReadOnly,
+      activeRole: effectiveRole, switchRole,
       storedAccounts, switchAccount, addAccount, removeAccount,
       isAddingAccount, setIsAddingAccount,
     }}>

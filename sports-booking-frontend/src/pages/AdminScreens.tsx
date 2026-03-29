@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2 } from 'lucide-react';
+import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3 } from 'lucide-react';
 
 interface UserItem {
   id: number;
@@ -45,7 +45,7 @@ interface Props {
 }
 
 export default function AdminScreens({ onBack }: Props) {
-  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user'>('locations');
+  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles'>('locations');
   const [users, setUsers] = useState<UserItem[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [grounds, setGrounds] = useState<Ground[]>([]);
@@ -78,6 +78,11 @@ export default function AdminScreens({ onBack }: Props) {
   const [renamingGroundId, setRenamingGroundId] = useState<number | null>(null);
   const [renameGroundName, setRenameGroundName] = useState('');
 
+  // Ground Management assignment
+  const [gmUserId, setGmUserId] = useState('');
+  const [gmGroundId, setGmGroundId] = useState('');
+  const [gmAssignments, setGmAssignments] = useState<{id: number; user_id: number; user_name: string; user_phone: string; ground_id: number; ground_name: string; location: string; display_name: string; created_at: string}[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -88,16 +93,18 @@ export default function AdminScreens({ onBack }: Props) {
 
   const loadData = async () => {
     try {
-      const [usersData, locsData, grndsData, assignData] = await Promise.all([
+      const [usersData, locsData, grndsData, assignData, gmData] = await Promise.all([
         api.listUsers(),
         api.listLocations(),
         api.listGrounds(),
         api.listModeratorAssignments(),
+        api.listGroundManagementAssignments().catch(() => []),
       ]);
       setUsers(usersData);
       setLocations(locsData);
       setGrounds(grndsData);
       setAssignments(assignData);
+      setGmAssignments(gmData);
     } catch (err) {
       console.error(err);
     }
@@ -321,6 +328,14 @@ export default function AdminScreens({ onBack }: Props) {
             size="sm"
           >
             <Search size={14} className="mr-1" /> Search User
+          </Button>
+          <Button
+            variant={activeTab === 'roles' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('roles')}
+            className={activeTab === 'roles' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+            size="sm"
+          >
+            <BarChart3 size={14} className="mr-1" /> Roles
           </Button>
         </div>
 
@@ -694,6 +709,101 @@ export default function AdminScreens({ onBack }: Props) {
                 </Card>
               </>
             )}
+          </>
+        )}
+        {/* ===== ROLES TAB ===== */}
+        {activeTab === 'roles' && (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BarChart3 size={16} /> Assign Ground Management
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-gray-500">Assign a user to manage a specific ground. This auto-grants them the Ground Management role.</p>
+                <div className="space-y-2">
+                  <Label>Select User</Label>
+                  <Select value={gmUserId} onValueChange={setGmUserId}>
+                    <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
+                    <SelectContent>
+                      {users.map(u => (
+                        <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Select Ground</Label>
+                  <Select value={gmGroundId} onValueChange={setGmGroundId}>
+                    <SelectTrigger><SelectValue placeholder="Select a ground" /></SelectTrigger>
+                    <SelectContent>
+                      {grounds.map(g => (
+                        <SelectItem key={g.id} value={String(g.id)}>{g.display_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={async () => {
+                    if (!gmUserId || !gmGroundId) return;
+                    setLoading(true);
+                    try {
+                      await api.assignGroundManagement(Number(gmUserId), Number(gmGroundId));
+                      showMsg('Ground management assigned successfully!');
+                      setGmUserId('');
+                      setGmGroundId('');
+                      await loadData();
+                    } catch (err: unknown) {
+                      showMsg(err instanceof Error ? err.message : 'Failed to assign', true);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  disabled={loading || !gmUserId || !gmGroundId}
+                  className="w-full bg-amber-600 hover:bg-amber-700"
+                >
+                  {loading ? 'Assigning...' : 'Assign Ground Management'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Current Ground Management Assignments */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Users size={16} /> Ground Management Assignments ({gmAssignments.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {gmAssignments.length === 0 ? (
+                  <p className="text-sm text-gray-400">No ground management assignments yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {gmAssignments.map(a => (
+                      <div key={a.id} className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{a.user_name}</p>
+                          <p className="text-xs text-gray-500">{a.display_name}</p>
+                        </div>
+                        <Badge variant="outline" className="text-xs">{a.user_phone}</Badge>
+                        <Button size="sm" variant="ghost" className="text-red-500 h-8 w-8 p-0"
+                          onClick={async () => {
+                            try {
+                              await api.removeGroundManagementAssignment(a.id);
+                              await loadData();
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}>
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
       </div>

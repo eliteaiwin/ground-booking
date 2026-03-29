@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
+from datetime import datetime, timedelta
 
 from ..database import get_db
 from ..auth import get_current_user_id
@@ -44,6 +45,11 @@ class RemoveModeratorLocationRequest(BaseModel):
     location: str
     ground_name: str = ""
     sport_type: str = ""
+
+
+class AssignGroundManagementRequest(BaseModel):
+    user_id: int
+    ground_id: int
 
 
 class RenameLocationRequest(BaseModel):
@@ -443,3 +449,240 @@ async def remove_moderator_assignment(
     await db.execute("DELETE FROM moderator_locations WHERE id = ?", (assignment_id,))
     await db.commit()
     return {"message": "Assignment removed"}
+
+
+# --- Ground Management Assignments ---
+
+@router.get("/ground-management-assignments")
+async def list_ground_management_assignments(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """List ground management assignments. Admin sees all, ground_management role sees their own."""
+    cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
+    is_admin = await cursor.fetchone() is not None
+
+    if is_admin:
+        cursor = await db.execute(
+            """SELECT gma.id, gma.user_id, gma.ground_id, gma.created_at,
+                      u.name as user_name, u.first_name, u.phone as user_phone,
+                      g.name as ground_name, g.location
+               FROM ground_management_assignments gma
+               JOIN users u ON gma.user_id = u.id
+               JOIN grounds g ON gma.ground_id = g.id
+               ORDER BY g.location, g.name, u.name"""
+        )
+    else:
+        cursor = await db.execute(
+            """SELECT gma.id, gma.user_id, gma.ground_id, gma.created_at,
+                      u.name as user_name, u.first_name, u.phone as user_phone,
+                      g.name as ground_name, g.location
+               FROM ground_management_assignments gma
+               JOIN users u ON gma.user_id = u.id
+               JOIN grounds g ON gma.ground_id = g.id
+               WHERE gma.user_id = ?
+               ORDER BY g.location, g.name""",
+            (user_id,)
+        )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "user_phone": r["user_phone"],
+            "ground_id": r["ground_id"],
+            "ground_name": r["ground_name"],
+            "location": r["location"],
+            "display_name": f"{r['location']} - {r['ground_name']}",
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+@router.post("/ground-management-assignments")
+async def assign_ground_management(
+    req: AssignGroundManagementRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+
+    # Verify ground exists
+    cursor = await db.execute("SELECT id FROM grounds WHERE id = ?", (req.ground_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    # Verify target user exists
+    cursor = await db.execute("SELECT id FROM users WHERE id = ?", (req.user_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Auto-grant ground_management role if user doesn't already have it
+    await db.execute(
+        "INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'ground_management')",
+        (req.user_id,)
+    )
+
+    try:
+        await db.execute(
+            "INSERT INTO ground_management_assignments (user_id, ground_id, assigned_by) VALUES (?, ?, ?)",
+            (req.user_id, req.ground_id, user_id)
+        )
+        await db.commit()
+        return {"message": "Ground management assigned"}
+    except Exception:
+        raise HTTPException(status_code=400, detail="Assignment already exists")
+
+
+@router.delete("/ground-management-assignments/{assignment_id}")
+async def remove_ground_management_assignment(
+    assignment_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    await db.execute("DELETE FROM ground_management_assignments WHERE id = ?", (assignment_id,))
+    await db.commit()
+    return {"message": "Assignment removed"}
+
+
+# --- Ground Schedule / Gantt Chart Data ---
+
+@router.get("/grounds/{ground_id}/schedule")
+async def get_ground_schedule(
+    ground_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get schedule data for a ground (for Gantt chart view).
+    Accessible by admin and ground_management users assigned to this ground.
+    Returns games within the date range with status, timing, and details.
+    """
+    # Check access: admin or ground_management for this ground
+    cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
+    is_admin = await cursor.fetchone() is not None
+
+    if not is_admin:
+        cursor = await db.execute(
+            "SELECT role FROM user_roles WHERE user_id = ? AND role = 'ground_management'", (user_id,)
+        )
+        is_gm = await cursor.fetchone() is not None
+        if not is_gm:
+            raise HTTPException(status_code=403, detail="Ground Management or Admin access required")
+
+        # Check if assigned to this ground
+        cursor = await db.execute(
+            "SELECT id FROM ground_management_assignments WHERE user_id = ? AND ground_id = ?",
+            (user_id, ground_id)
+        )
+        if not await cursor.fetchone():
+            raise HTTPException(status_code=403, detail="Not assigned to this ground")
+
+    # Get ground info
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    display_name = f"{ground['location']} - {ground['name']}"
+
+    # Default date range: last 30 days to next 30 days
+    if not start_date:
+        start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+
+    # Fetch games for this ground in date range
+    cursor = await db.execute(
+        """SELECT g.*, u.name as creator_name, u.phone as creator_phone
+           FROM games g
+           LEFT JOIN users u ON g.created_by = u.id
+           WHERE (g.ground_name = ? OR g.ground_name = ?)
+             AND g.game_date >= ? AND g.game_date <= ?
+           ORDER BY g.game_date, g.game_time""",
+        (display_name, ground["name"], start_date, end_date)
+    )
+    game_rows = await cursor.fetchall()
+
+    schedule = []
+    for g in game_rows:
+        # Get player count
+        p_cursor = await db.execute(
+            "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'",
+            (g["id"],)
+        )
+        player_count = (await p_cursor.fetchone())["cnt"]
+
+        # Get moderators for this ground
+        mod_cursor = await db.execute(
+            """SELECT u.name, u.phone FROM moderator_locations ml
+               JOIN users u ON ml.user_id = u.id
+               WHERE ml.location = ? AND (ml.ground_name = ? OR ml.ground_name = '')""",
+            (ground["location"], ground["name"])
+        )
+        moderators = [{"name": m["name"], "phone": m["phone"]} for m in await mod_cursor.fetchall()]
+
+        # Calculate end time
+        duration = 90
+        try:
+            duration = g["duration_minutes"] or 90
+        except Exception:
+            pass
+
+        schedule.append({
+            "game_id": g["id"],
+            "title": g["title"] or "Regular Game",
+            "sport_type": g["sport_type"],
+            "status": g["status"],
+            "game_date": g["game_date"],
+            "game_time": g["game_time"],
+            "duration_minutes": duration,
+            "max_players": g["max_players"],
+            "current_players": player_count,
+            "cost_per_person": g["cost_per_person"],
+            "created_by": g["creator_name"],
+            "creator_phone": g["creator_phone"],
+            "moderators": moderators,
+        })
+
+    return {
+        "ground_id": ground_id,
+        "ground_name": display_name,
+        "location": ground["location"],
+        "start_date": start_date,
+        "end_date": end_date,
+        "schedule": schedule,
+    }
+
+
+# --- My Managed Grounds (for ground_management role) ---
+
+@router.get("/my-managed-grounds")
+async def my_managed_grounds(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get grounds assigned to the current user for ground management."""
+    cursor = await db.execute(
+        """SELECT g.id, g.name, g.location, gma.created_at as assigned_at
+           FROM ground_management_assignments gma
+           JOIN grounds g ON gma.ground_id = g.id
+           WHERE gma.user_id = ?
+           ORDER BY g.location, g.name""",
+        (user_id,)
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "location": r["location"],
+            "display_name": f"{r['location']} - {r['name']}",
+            "assigned_at": r["assigned_at"],
+        }
+        for r in rows
+    ]
