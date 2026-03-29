@@ -1822,12 +1822,33 @@ async def access_voting_page(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Resolve a voting token to a game and check if voting is open."""
-    # Find the game by checking all game IDs against the token
-    cursor = await db.execute("SELECT id, status FROM games ORDER BY id DESC")
+    # Look up game by stored voting_token column first (O(1) lookup)
+    try:
+        cursor = await db.execute(
+            "SELECT id, status FROM games WHERE voting_token = ?", (voting_token,)
+        )
+        game = await cursor.fetchone()
+        if game:
+            return {
+                "game_id": game["id"],
+                "voting_open": game["status"] == "voting_open",
+                "status": game["status"],
+            }
+    except Exception:
+        pass
+
+    # Fallback: check recent games only (limit to 100 most recent) for backwards compatibility
+    cursor = await db.execute("SELECT id, status FROM games ORDER BY id DESC LIMIT 100")
     games = await cursor.fetchall()
     for game in games:
         expected_token = hashlib.sha256(f"{game['id']}-{VOTING_LINK_SECRET}".encode()).hexdigest()[:16]
         if expected_token == voting_token:
+            # Store the token for future O(1) lookups
+            try:
+                await db.execute("UPDATE games SET voting_token = ? WHERE id = ?", (voting_token, game["id"]))
+                await db.commit()
+            except Exception:
+                pass
             return {
                 "game_id": game["id"],
                 "voting_open": game["status"] == "voting_open",

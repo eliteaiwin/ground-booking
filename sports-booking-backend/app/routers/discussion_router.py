@@ -213,12 +213,17 @@ async def upload_media(
     if media_type not in ("photo", "video"):
         raise HTTPException(status_code=400, detail="media_type must be 'photo' or 'video'")
 
-    # Validate file size (10MB for photos, 50MB for videos)
+    # Validate file size (10MB for photos, 50MB for videos) using chunked reads
     max_size = 50 * 1024 * 1024 if media_type == "video" else 10 * 1024 * 1024
-    content = await file.read()
-    if len(content) > max_size:
-        size_label = "50MB" if media_type == "video" else "10MB"
-        raise HTTPException(status_code=400, detail=f"File too large. Max size: {size_label}")
+    size_label = "50MB" if media_type == "video" else "10MB"
+    chunks = []
+    total = 0
+    while chunk := await file.read(8192):
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(status_code=400, detail=f"File too large. Max size: {size_label}")
+        chunks.append(chunk)
+    content = b"".join(chunks)
 
     # Save file
     ext = os.path.splitext(file.filename or "upload")[1] or (".jpg" if media_type == "photo" else ".mp4")

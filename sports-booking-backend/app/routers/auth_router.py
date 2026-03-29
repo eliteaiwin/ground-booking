@@ -380,10 +380,16 @@ async def upload_profile_pic(
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files are allowed")
 
-    # Limit file size to 5MB
-    contents = await file.read()
-    if len(contents) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large. Max 5MB.")
+    # Limit file size to 5MB using chunked reads
+    max_size = 5 * 1024 * 1024
+    chunks = []
+    total = 0
+    while chunk := await file.read(8192):
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(status_code=400, detail="File too large. Max 5MB.")
+        chunks.append(chunk)
+    contents = b"".join(chunks)
 
     # Generate unique filename
     ext = Path(file.filename or "pic.jpg").suffix or ".jpg"

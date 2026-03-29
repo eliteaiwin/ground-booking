@@ -76,6 +76,7 @@ async def init_db():
             status TEXT NOT NULL DEFAULT 'draft',
             payee_user_id INTEGER,
             quit_penalty_hours INTEGER NOT NULL DEFAULT 0,
+            voting_token TEXT,
             created_by INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (created_by) REFERENCES users(id),
@@ -387,6 +388,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE ground_members ADD COLUMN max_nominations INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE games ADD COLUMN voting_token TEXT",
     ]
     for migration in migrations:
         try:
