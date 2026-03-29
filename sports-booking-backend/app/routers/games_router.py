@@ -134,16 +134,26 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     for p in players_rows:
         nom_by = p["nominated_by"]
         nom_info = None
+        joined_at_str = p["joined_at"] or ""
+        # Format joined_at for display
+        joined_display = ""
+        if joined_at_str:
+            try:
+                from datetime import datetime as _dt
+                jdt = _dt.fromisoformat(joined_at_str.replace("Z", "+00:00"))
+                joined_display = jdt.strftime("%-d-%b-%y %-I:%M %p")
+            except Exception:
+                joined_display = joined_at_str[:16] if len(joined_at_str) > 16 else joined_at_str
         if nom_by:
             if nom_by == p["user_id"]:
-                nom_info = "Self Nominated"
+                nom_info = f"Self Nominated" + (f" on {joined_display}" if joined_display else "")
             elif nom_by in nominator_map:
                 n = nominator_map[nom_by]
-                nom_info = f"Nominated by {n['name']} {n['phone']}"
+                nom_info = f"Nominated by {n['name']} {n['phone']}" + (f" on {joined_display}" if joined_display else "")
             else:
-                nom_info = f"Nominated by user #{nom_by}"
+                nom_info = f"Nominated by user #{nom_by}" + (f" on {joined_display}" if joined_display else "")
         else:
-            nom_info = "Self Nominated"
+            nom_info = f"Self Nominated" + (f" on {joined_display}" if joined_display else "")
         player_data = {
             "id": p["id"],
             "user_id": p["user_id"],
@@ -512,6 +522,42 @@ async def vote_join_game(
     if await cursor.fetchone():
         raise HTTPException(status_code=400, detail="Already joined this game")
 
+    # Check nomination limit for this user on this ground
+    ground_name = game["ground_name"]
+    try:
+        # Find the ground_id from ground_name
+        parts = ground_name.split(" - ")
+        if len(parts) == 2:
+            gnd_cursor = await db.execute(
+                "SELECT id FROM grounds WHERE location = ? AND name = ?",
+                (parts[0].strip(), parts[1].strip())
+            )
+        else:
+            gnd_cursor = await db.execute("SELECT id FROM grounds WHERE name = ?", (ground_name,))
+        gnd_row = await gnd_cursor.fetchone()
+        if gnd_row:
+            mem_cursor = await db.execute(
+                "SELECT max_nominations FROM ground_members WHERE user_id = ? AND ground_id = ?",
+                (user_id, gnd_row["id"])
+            )
+            mem_row = await mem_cursor.fetchone()
+            if mem_row and mem_row["max_nominations"] and mem_row["max_nominations"] > 0:
+                # Count how many players this user has nominated (including self) in this game
+                nom_cursor = await db.execute(
+                    "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND (nominated_by = ? OR (user_id = ? AND nominated_by IS NULL))",
+                    (game_id, user_id, user_id)
+                )
+                nom_count = (await nom_cursor.fetchone())["cnt"]
+                if nom_count >= mem_row["max_nominations"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"You can only nominate up to {mem_row['max_nominations']} players (including yourself) for games on this ground"
+                    )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If ground lookup fails, allow the nomination
+
     # Count selected players
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,))
     count_row = await cursor.fetchone()
@@ -729,6 +775,40 @@ async def nominate_player(
     cursor = await db.execute("SELECT id FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, req.user_id))
     if await cursor.fetchone():
         raise HTTPException(status_code=400, detail="User already in this game")
+
+    # Check nomination limit for the nominator on this ground
+    ground_name = game["ground_name"]
+    try:
+        parts = ground_name.split(" - ")
+        if len(parts) == 2:
+            gnd_cursor = await db.execute(
+                "SELECT id FROM grounds WHERE location = ? AND name = ?",
+                (parts[0].strip(), parts[1].strip())
+            )
+        else:
+            gnd_cursor = await db.execute("SELECT id FROM grounds WHERE name = ?", (ground_name,))
+        gnd_row = await gnd_cursor.fetchone()
+        if gnd_row:
+            mem_cursor = await db.execute(
+                "SELECT max_nominations FROM ground_members WHERE user_id = ? AND ground_id = ?",
+                (user_id, gnd_row["id"])
+            )
+            mem_row = await mem_cursor.fetchone()
+            if mem_row and mem_row["max_nominations"] and mem_row["max_nominations"] > 0:
+                nom_cursor = await db.execute(
+                    "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND (nominated_by = ? OR (user_id = ? AND nominated_by IS NULL))",
+                    (game_id, user_id, user_id)
+                )
+                nom_count = (await nom_cursor.fetchone())["cnt"]
+                if nom_count >= mem_row["max_nominations"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"This user can only nominate up to {mem_row['max_nominations']} players (including themselves) for games on this ground"
+                    )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
 
     # Count selected
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,))

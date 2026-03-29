@@ -515,7 +515,7 @@ async def get_user_persona(
             """SELECT g.sport_type, SUM(gs.goals) as total_goals
             FROM goal_scorers gs
             JOIN games g ON gs.game_id = g.id
-            WHERE gs.player_id = ?
+            WHERE gs.user_id = ?
             GROUP BY g.sport_type
             ORDER BY total_goals DESC""",
             (target_user_id,)

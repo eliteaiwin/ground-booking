@@ -487,10 +487,10 @@ export const api = {
     return request(`/api/locations/grounds/${groundId}/join-requests${qs}`);
   },
 
-  approveJoinRequest: (groundId: number, requestId: number, assignedRole: string) =>
+  approveJoinRequest: (groundId: number, requestId: number, assignedRole: string, maxNominations: number = 0) =>
     request(`/api/locations/grounds/${groundId}/join-request/${requestId}/approve`, {
       method: 'POST',
-      body: JSON.stringify({ assigned_role: assignedRole }),
+      body: JSON.stringify({ assigned_role: assignedRole, max_nominations: maxNominations }),
     }),
 
   rejectJoinRequest: (groundId: number, requestId: number) =>

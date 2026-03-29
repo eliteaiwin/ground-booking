@@ -298,6 +298,7 @@ async def init_db():
             user_id INTEGER NOT NULL,
             ground_id INTEGER NOT NULL,
             role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'readonly')),
+            max_nominations INTEGER NOT NULL DEFAULT 0,
             added_by INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id),
@@ -330,6 +331,7 @@ async def init_db():
         "ALTER TABLE games ADD COLUMN game_code TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN user_code TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE ground_members ADD COLUMN max_nominations INTEGER NOT NULL DEFAULT 0",
     ]
     for migration in migrations:
         try:

@@ -68,6 +68,7 @@ class JoinGroundRequest(BaseModel):
 
 class ReviewJoinRequest(BaseModel):
     assigned_role: str = "user"  # 'user' or 'readonly'
+    max_nominations: int = 0  # 0 = unlimited, >0 = max nominations per game (includes self)
 
 
 SPORT_CODE_MAP = {
@@ -192,9 +193,10 @@ async def search_grounds_public(
         except Exception:
             pass
         # Get distinct sport types played on this ground
+        display_name = f"{g['location']} - {g['name']}"
         sport_cursor = await db.execute(
-            "SELECT DISTINCT sport_type FROM games WHERE ground_id = ? AND sport_type != '' ORDER BY sport_type",
-            (g["id"],)
+            "SELECT DISTINCT sport_type FROM games WHERE (ground_name = ? OR ground_name = ?) AND sport_type != '' ORDER BY sport_type",
+            (display_name, g["name"])
         )
         sport_rows = await sport_cursor.fetchall()
         sport_types = [s["sport_type"] for s in sport_rows]
@@ -902,10 +904,17 @@ async def approve_join_request(
         (assigned_role, user_id, datetime.now(timezone.utc).isoformat(), request_id)
     )
 
+    max_noms = max(0, req.max_nominations)
+
     # Add to ground_members
     await db.execute(
-        "INSERT OR IGNORE INTO ground_members (user_id, ground_id, role, added_by) VALUES (?, ?, ?, ?)",
-        (join_req["user_id"], ground_id, assigned_role, user_id)
+        "INSERT OR IGNORE INTO ground_members (user_id, ground_id, role, max_nominations, added_by) VALUES (?, ?, ?, ?, ?)",
+        (join_req["user_id"], ground_id, assigned_role, max_noms, user_id)
+    )
+    # Update max_nominations if member already exists
+    await db.execute(
+        "UPDATE ground_members SET max_nominations = ?, role = ? WHERE user_id = ? AND ground_id = ?",
+        (max_noms, assigned_role, join_req["user_id"], ground_id)
     )
 
     # If readonly, add readonly role to user_roles
@@ -987,13 +996,19 @@ async def list_ground_members(
         (ground_id,)
     )
     rows = await cursor.fetchall()
-    return [
-        {
+    results = []
+    for r in rows:
+        max_noms = 0
+        try:
+            max_noms = r["max_nominations"] or 0
+        except Exception:
+            pass
+        results.append({
             "id": r["id"],
             "user_id": r["user_id"],
             "user_name": r["user_name"],
             "user_phone": r["user_phone"],
             "role": r["role"],
-        }
-        for r in rows
-    ]
+            "max_nominations": max_noms,
+        })
+    return results

@@ -1296,7 +1296,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <CardContent className="p-4 pt-0">
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{game.cost_per_person * game.max_players} {currency}</p>
+                  <p className="text-lg font-bold text-gray-800">{game.cost_per_person * game.selected_players.length} {currency}</p>
                   <p className="text-xs text-gray-500">Total Outstanding</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-2">
@@ -1304,7 +1304,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <p className="text-xs text-gray-500">Received</p>
                 </div>
                 <div className="bg-red-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-red-600">{game.cost_per_person * game.max_players - totalReceived} {currency}</p>
+                  <p className="text-lg font-bold text-red-600">{game.cost_per_person * game.selected_players.length - totalReceived} {currency}</p>
                   <p className="text-xs text-gray-500">Pending</p>
                 </div>
               </div>
