@@ -405,6 +405,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN force_password_change INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN password_reset_token TEXT",
         "ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP",
+        "ALTER TABLE games ADD COLUMN potd_congrats_delay_minutes INTEGER NOT NULL DEFAULT 1440",
     ]
     for migration in migrations:
         try:

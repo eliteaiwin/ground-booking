@@ -63,6 +63,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [payeeUserId, setPayeeUserId] = useState('');
   const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
   const [paymentMode, setPaymentMode] = useState('postpaid');
+  const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
 
   const currency = user?.currency || 'Rs';
@@ -82,6 +83,12 @@ export default function CreateGame({ onBack, onCreated }: Props) {
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
       api.listUsers().then((u: UserItem[]) => setAllUsers(u)).catch(() => {}),
     ]);
+    // Load previous POTD delay from last game created by this user
+    api.listGames().then((games: { potd_congrats_delay_minutes?: number }[]) => {
+      if (games.length > 0 && games[0].potd_congrats_delay_minutes) {
+        setPotdDelayMinutes(String(games[0].potd_congrats_delay_minutes));
+      }
+    }).catch(() => {});
   }, []);
 
   const handleSportChange = (val: string) => {
@@ -125,6 +132,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         payee_user_id: payeeUserId ? Number(payeeUserId) : undefined,
         quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
         payment_mode: paymentMode,
+        potd_congrats_delay_minutes: parseInt(potdDelayMinutes) || 1440,
       });
       onCreated(game.id);
     } catch (err: unknown) {
@@ -230,6 +238,14 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <Separator className="my-2" />
+              <h3 className="text-sm font-semibold text-gray-700">POTD Settings</h3>
+              <div className="space-y-2">
+                <Label htmlFor="potdDelay">POTD Congratulation Delay (minutes)</Label>
+                <Input id="potdDelay" type="number" min="1" max="10080" value={potdDelayMinutes}
+                  onChange={(e) => setPotdDelayMinutes(e.target.value)} />
+                <p className="text-xs text-gray-400">Default: 1440 minutes (24 hours). Time after game completion to announce POTD winner.</p>
               </div>
               <Separator className="my-2" />
               <h3 className="text-sm font-semibold text-gray-700">Payment & Rules</h3>

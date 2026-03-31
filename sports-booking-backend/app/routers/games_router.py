@@ -26,6 +26,7 @@ class CreateGameRequest(BaseModel):
     payee_user_id: Optional[int] = None
     quit_penalty_hours: int = 0
     payment_mode: str = "postpaid"  # prepaid, postpaid
+    potd_congrats_delay_minutes: int = 1440  # default 24 hours
 
 
 class EditGameRequest(BaseModel):
@@ -40,6 +41,7 @@ class EditGameRequest(BaseModel):
     payee_user_id: Optional[int] = None
     quit_penalty_hours: Optional[int] = None
     payment_mode: Optional[str] = None  # prepaid, postpaid
+    potd_congrats_delay_minutes: Optional[int] = None
 
 
 class NominateRequest(BaseModel):
@@ -214,15 +216,20 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     teams_rows = await cursor.fetchall()
     teams = [{"id": t["id"], "team_name": t["team_name"], "team_order": t["team_order"]} for t in teams_rows]
 
-    # Get quit_penalty_hours and duration
+    # Get quit_penalty_hours, duration, and potd delay
     quit_penalty_hours = 0
     duration_minutes = 90
+    potd_delay_minutes = 1440
     try:
         quit_penalty_hours = game["quit_penalty_hours"] or 0
     except Exception:
         pass
     try:
         duration_minutes = game["duration_minutes"] or 90
+    except Exception:
+        pass
+    try:
+        potd_delay_minutes = game["potd_congrats_delay_minutes"] or 1440
     except Exception:
         pass
 
@@ -294,6 +301,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "payee": payee_info,
         "quit_penalty_hours": quit_penalty_hours,
         "duration_minutes": duration_minutes,
+        "potd_congrats_delay_minutes": potd_delay_minutes,
         "is_archived": is_archived,
         "created_by": game["created_by"],
         "created_by_name": creator["name"] if creator else None,
@@ -379,14 +387,27 @@ async def create_game(
     ground_parts = req.ground_name.replace(' - ', '-').replace(' ', '')
     game_code_display = f"{game_code}-{ground_parts}"
 
+    # Check if moderator has a previous game with custom POTD delay
+    potd_delay = req.potd_congrats_delay_minutes
+    if potd_delay == 1440:  # default value, check if user has a previous override
+        prev_cursor = await db.execute(
+            """SELECT potd_congrats_delay_minutes FROM games 
+               WHERE created_by = ? AND potd_congrats_delay_minutes IS NOT NULL 
+               ORDER BY id DESC LIMIT 1""",
+            (user_id,)
+        )
+        prev_row = await prev_cursor.fetchone()
+        if prev_row and prev_row["potd_congrats_delay_minutes"]:
+            potd_delay = prev_row["potd_congrats_delay_minutes"]
+
     cursor = await db.execute(
         """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time, 
            max_players, cost_per_person, payment_timing, created_by, duration_minutes,
-           payee_user_id, quit_penalty_hours) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
          req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
-         req.payee_user_id, req.quit_penalty_hours)
+         req.payee_user_id, req.quit_penalty_hours, potd_delay)
     )
     game_id = cursor.lastrowid
     await db.commit()
@@ -443,7 +464,7 @@ async def edit_game(
 
     for field in ("title", "sport_type", "ground_name", "game_date", "game_time",
                   "max_players", "cost_per_person", "duration_minutes",
-                  "payee_user_id", "quit_penalty_hours"):
+                  "payee_user_id", "quit_penalty_hours", "potd_congrats_delay_minutes"):
         val = getattr(req, field, None)
         if val is not None:
             updates.append(f"{field} = ?")

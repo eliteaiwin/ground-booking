@@ -49,7 +49,8 @@ interface Props {
 }
 
 export default function NotificationSettings({ onBack }: Props) {
-  const { isModerator, isAdmin } = useAuth();
+  const { isModerator, isAdmin, activeRole } = useAuth();
+  const isUserRole = activeRole === 'user';
   const [settings, setSettings] = useState<NotifSettings | null>(null);
   const [pauses, setPauses] = useState<GroundPause[]>([]);
   const [grounds, setGrounds] = useState<GroundInfo[]>([]);
@@ -126,17 +127,6 @@ export default function NotificationSettings({ onBack }: Props) {
     }
   };
 
-  const saveDelayHours = async (hours: number) => {
-    setSaving(true);
-    try {
-      await api.updateNotificationSettings({ potd_congrats_delay_hours: hours });
-      if (settings) setSettings({ ...settings, potd_congrats_delay_hours: hours });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const toggleGroundPause = async (groundId: number, sportType: string, currentlyPaused: boolean) => {
     try {
@@ -194,8 +184,8 @@ export default function NotificationSettings({ onBack }: Props) {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {/* Vacation Mode */}
-        <Card>
+        {/* Vacation Mode - User role only */}
+        {isUserRole && (<Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Palmtree size={18} className="text-green-600" /> Vacation Mode
@@ -231,7 +221,7 @@ export default function NotificationSettings({ onBack }: Props) {
               )}
             </div>
           </CardContent>
-        </Card>
+        </Card>)}
 
         {/* Alert Toggles */}
         <Card>
@@ -271,33 +261,11 @@ export default function NotificationSettings({ onBack }: Props) {
               </div>
             )}
 
-            {/* POTD Congratulation Delay - only visible to moderators/admins */}
-            {(isModerator || isAdmin) && (
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">POTD Congratulation Delay</p>
-                    <p className="text-xs text-gray-500">Hours after game to announce POTD winner</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      max={72}
-                      value={settings?.potd_congrats_delay_hours || 24}
-                      onChange={e => saveDelayHours(parseInt(e.target.value) || 24)}
-                      className="w-16 h-8 text-sm text-center"
-                    />
-                    <span className="text-xs text-gray-500">hrs</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
 
-        {/* Ground-level Alert Pauses */}
-        <Card>
+        {/* Ground-level Alert Pauses - User role only */}
+        {isUserRole && (<Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <MapPin size={18} className="text-orange-600" /> Ground Alert Pauses
@@ -347,10 +315,10 @@ export default function NotificationSettings({ onBack }: Props) {
               ))
             )}
           </CardContent>
-        </Card>
+        </Card>)}
 
-        {/* Moderator-controlled alerts info */}
-        {(isModerator || isAdmin) && (
+        {/* Moderator-controlled alerts info - Moderator only, not Admin */}
+        {isModerator && !isAdmin && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -380,8 +348,8 @@ export default function NotificationSettings({ onBack }: Props) {
           </Card>
         )}
 
-        {/* Active Pauses Summary */}
-        {pauses.length > 0 && (
+        {/* Active Pauses Summary - User role only */}
+        {isUserRole && pauses.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-gray-600">Active Pauses</CardTitle>

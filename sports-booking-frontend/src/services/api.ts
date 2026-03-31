@@ -176,6 +176,7 @@ export const api = {
     game_date: string; game_time: string; max_players: number;
     cost_per_person: number; payment_timing: string; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
+    potd_congrats_delay_minutes?: number;
   }) => request('/api/games', { method: 'POST', body: JSON.stringify(data) }),
 
   editGame: (gameId: number, data: {
