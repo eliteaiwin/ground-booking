@@ -1908,7 +1908,7 @@ async def search_games(
         params.append(f"%{ground}%")
     if location:
         # Join with grounds table to filter by location
-        query += " AND ground_name IN (SELECT name FROM grounds WHERE LOWER(location) = LOWER(?))"
+        query += " AND ground_name IN (SELECT (g2.location || ' - ' || g2.name) FROM grounds g2 WHERE LOWER(g2.location) = LOWER(?))"
         params.append(location)
     if status:
         query += " AND status = ?"
