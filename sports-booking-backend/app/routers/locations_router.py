@@ -214,6 +214,28 @@ async def search_grounds_public(
             st = m["sport_type"] or ""
             if st and st.lower() not in [x.lower() for x in sport_types] and st.lower() != "all sports":
                 sport_types.append(st)
+        # Check if current user is already a member of this ground
+        member_cursor = await db.execute(
+            "SELECT 1 FROM ground_members WHERE user_id = ? AND ground_id = ?",
+            (user_id, g["id"])
+        )
+        is_member = await member_cursor.fetchone() is not None
+        # Also check if user is a moderator or ground manager for this ground
+        mod_check = await db.execute(
+            "SELECT 1 FROM moderator_locations WHERE user_id = ? AND location = ? AND (ground_name = ? OR ground_name = '')",
+            (user_id, g["location"], g["name"])
+        )
+        is_mod_for_ground = await mod_check.fetchone() is not None
+        gm_check = await db.execute(
+            "SELECT 1 FROM ground_management_assignments WHERE user_id = ? AND ground_id = ?",
+            (user_id, g["id"])
+        )
+        is_gm_for_ground = await gm_check.fetchone() is not None
+        # Check if user has admin role
+        admin_check = await db.execute(
+            "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+        )
+        is_admin_user = await admin_check.fetchone() is not None
         results.append({
             "id": g["id"],
             "name": g["name"],
@@ -224,6 +246,8 @@ async def search_grounds_public(
             "is_approved": g["is_approved"],
             "sport_types": sport_types,
             "moderators": moderators,
+            "is_member": is_member,
+            "is_mod_or_admin": is_mod_for_ground or is_gm_for_ground or is_admin_user,
         })
     return results
 

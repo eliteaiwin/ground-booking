@@ -26,6 +26,8 @@ interface GroundResult {
   is_approved: number;
   sport_types: string[];
   moderators: Moderator[];
+  is_member?: boolean;
+  is_mod_or_admin?: boolean;
 }
 
 interface Location {
@@ -265,8 +267,8 @@ export default function SearchGrounds({ onBack }: Props) {
                     <p className="text-sm text-gray-400">No moderators assigned yet</p>
                   )}
 
-                  {/* Join Request - only show when moderators are assigned */}
-                  {ground.moderators.length > 0 && (
+                  {/* Join Request - only show to regular users who haven't joined, when moderators are assigned */}
+                  {ground.moderators.length > 0 && !ground.is_member && !ground.is_mod_or_admin && (
                   <div className="mt-3 border-t pt-3">
                     {joinGroundId === ground.id ? (
                       <div className="space-y-2 mb-3">
