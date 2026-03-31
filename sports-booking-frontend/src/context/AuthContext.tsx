@@ -68,21 +68,47 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ACCOUNTS_KEY = 'stored_accounts';
 const ACTIVE_ACCOUNT_KEY = 'active_account_id';
 const ACTIVE_ROLE_KEY = 'active_role';
 
-function getStoredAccounts(): StoredAccount[] {
+// Per-user account storage: each user has their own list of added accounts
+function accountsKeyFor(userId: number): string {
+  return `stored_accounts_${userId}`;
+}
+
+function getStoredAccountsFor(ownerUserId: number): StoredAccount[] {
   try {
-    const raw = localStorage.getItem(ACCOUNTS_KEY);
+    const raw = localStorage.getItem(accountsKeyFor(ownerUserId));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveStoredAccounts(accounts: StoredAccount[]) {
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+function saveStoredAccountsFor(ownerUserId: number, accounts: StoredAccount[]) {
+  localStorage.setItem(accountsKeyFor(ownerUserId), JSON.stringify(accounts));
+}
+
+// Migrate legacy shared storage to per-user storage on first load
+function migrateLegacyAccounts() {
+  const legacyKey = 'stored_accounts';
+  const raw = localStorage.getItem(legacyKey);
+  if (!raw) return;
+  try {
+    const accounts: StoredAccount[] = JSON.parse(raw);
+    const activeId = localStorage.getItem(ACTIVE_ACCOUNT_KEY);
+    if (activeId && accounts.length > 0) {
+      const ownerId = parseInt(activeId, 10);
+      // Store all OTHER accounts under the current user's key
+      const others = accounts.filter(a => a.userId !== ownerId);
+      if (others.length > 0) {
+        saveStoredAccountsFor(ownerId, others);
+      }
+    }
+    localStorage.removeItem(legacyKey);
+  } catch {
+    localStorage.removeItem(legacyKey);
+  }
 }
 
 function upsertAccount(accounts: StoredAccount[], account: StoredAccount): StoredAccount[] {
@@ -106,20 +132,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const profile = await api.getProfile();
       setUser(profile);
+      localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(profile.id));
 
-      // Update stored account info for current user
+      // Update the added account's token in the owner's stored list
+      // (so switching back works with a fresh token)
       const token = localStorage.getItem('token');
       if (token && profile) {
-        const updated = upsertAccount(getStoredAccounts(), {
-          token,
-          userId: profile.id,
-          name: `${profile.first_name} ${profile.last_name}`,
-          phone: profile.phone,
-          roles: profile.roles,
-        });
-        saveStoredAccounts(updated);
-        setStoredAccounts(updated);
-        localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(profile.id));
+        const accounts = getStoredAccountsFor(profile.id);
+        // Update stored accounts list for display
+        setStoredAccounts(accounts);
       }
     } catch (err) {
       localStorage.removeItem('token');
@@ -129,7 +150,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    setStoredAccounts(getStoredAccounts());
+    migrateLegacyAccounts();
+    const activeId = localStorage.getItem(ACTIVE_ACCOUNT_KEY);
+    if (activeId) {
+      setStoredAccounts(getStoredAccountsFor(parseInt(activeId, 10)));
+    }
     const token = localStorage.getItem('token');
     if (token) {
       refreshUser().catch(() => {}).finally(() => setLoading(false));
@@ -172,28 +197,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    // Remove current account from stored accounts
-    const currentId = user?.id;
-    if (currentId) {
-      const accounts = getStoredAccounts().filter(a => a.userId !== currentId);
-      saveStoredAccounts(accounts);
-      setStoredAccounts(accounts);
-
-      // If there are other accounts, switch to the first one
-      if (accounts.length > 0) {
-        localStorage.setItem('token', accounts[0].token);
-        localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(accounts[0].userId));
-        refreshUser().catch(() => {});
-        return;
-      }
-    }
+    // Keep stored accounts intact so they persist on next login.
+    // Just clear the active session.
     localStorage.removeItem('token');
     localStorage.removeItem(ACTIVE_ACCOUNT_KEY);
     setUser(null);
+    setStoredAccounts([]);
   };
 
   const switchAccount = async (userId: number) => {
-    const accounts = getStoredAccounts();
+    if (!user) return;
+    const ownerId = user.id;
+    const accounts = getStoredAccountsFor(ownerId);
     const target = accounts.find(a => a.userId === userId);
     if (!target) return;
 
@@ -206,10 +221,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Token may be expired — remove the stale account and restore previous token
       const updated = accounts.filter(a => a.userId !== userId);
-      saveStoredAccounts(updated);
+      saveStoredAccountsFor(ownerId, updated);
       setStoredAccounts(updated);
       if (previousToken) {
         localStorage.setItem('token', previousToken);
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(ownerId));
         await refreshUser().catch(() => {});
       }
     } finally {
@@ -218,15 +234,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const addAccount = async (phone: string, password: string) => {
+    if (!user) return;
+    const ownerId = user.id;
+    // Login as the new account to get their token and profile
     const res = await api.login({ phone, password });
-    localStorage.setItem('token', res.token);
-    await refreshUser();
+    const newToken = res.token;
+
+    // Temporarily set the new token to fetch the new user's profile
+    localStorage.setItem('token', newToken);
+    let newProfile;
+    try {
+      newProfile = await api.getProfile();
+    } catch {
+      // Restore original token on failure
+      const origToken = localStorage.getItem('token');
+      if (!origToken) {
+        localStorage.removeItem('token');
+      }
+      throw new Error('Failed to fetch added account profile');
+    }
+
+    // Store the new account under the OWNER's account list
+    const accounts = getStoredAccountsFor(ownerId);
+    const updated = upsertAccount(accounts, {
+      token: newToken,
+      userId: newProfile.id,
+      name: `${newProfile.first_name} ${newProfile.last_name}`,
+      phone: newProfile.phone,
+      roles: newProfile.roles,
+    });
+    saveStoredAccountsFor(ownerId, updated);
+    setStoredAccounts(updated);
+
+    // Switch to the newly added account
+    localStorage.setItem(ACTIVE_ACCOUNT_KEY, String(newProfile.id));
+    setUser(newProfile);
     setIsAddingAccount(false);
   };
 
   const removeAccount = (userId: number) => {
-    const accounts = getStoredAccounts().filter(a => a.userId !== userId);
-    saveStoredAccounts(accounts);
+    if (!user) return;
+    const ownerId = user.id;
+    const accounts = getStoredAccountsFor(ownerId).filter(a => a.userId !== userId);
+    saveStoredAccountsFor(ownerId, accounts);
     setStoredAccounts(accounts);
   };
 
