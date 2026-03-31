@@ -389,6 +389,9 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN profile_pic TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE ground_members ADD COLUMN max_nominations INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN voting_token TEXT",
+        "ALTER TABLE users ADD COLUMN force_password_change INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN password_reset_token TEXT",
+        "ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP",
     ]
     for migration in migrations:
         try:

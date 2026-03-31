@@ -18,14 +18,19 @@ import GameSearch from './pages/GameSearch';
 import GroundManagement from './pages/GroundManagement';
 import HallOfFame from './pages/HallOfFame';
 import NotificationSettings from './pages/NotificationSettings';
+import ChangePassword from './pages/ChangePassword';
+import ForgotPassword from './pages/ForgotPassword';
 
 type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
 
 function AppContent() {
   const { user, loading, isAddingAccount, setIsAddingAccount } = useAuth();
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot-password'>('login');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+  const [forcePasswordChange, setForcePasswordChange] = useState(
+    () => localStorage.getItem('force_password_change') === '1'
+  );
 
   // Reset to login screen whenever user logs out
   useEffect(() => {
@@ -48,10 +53,26 @@ function AppContent() {
   }
 
   if (!user) {
+    if (authMode === 'forgot-password') {
+      return <ForgotPassword onBack={() => setAuthMode('login')} />;
+    }
     if (authMode === 'login') {
-      return <LoginPage onSwitchToRegister={() => setAuthMode('register')} />;
+      return <LoginPage onSwitchToRegister={() => setAuthMode('register')} onForgotPassword={() => setAuthMode('forgot-password')} />;
     }
     return <RegisterPage onSwitchToLogin={() => setAuthMode('login')} />;
+  }
+
+  // Force password change flow
+  if (forcePasswordChange) {
+    return (
+      <ChangePassword
+        isForced
+        onComplete={() => {
+          setForcePasswordChange(false);
+          localStorage.removeItem('force_password_change');
+        }}
+      />
+    );
   }
 
   // "Add User" mode — show login form as overlay so user can log in as another account

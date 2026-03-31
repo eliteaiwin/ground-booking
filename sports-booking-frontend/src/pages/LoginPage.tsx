@@ -31,12 +31,13 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 interface Props {
   onSwitchToRegister: () => void;
+  onForgotPassword?: () => void;
   isAddUserMode?: boolean;
 }
 
 type LoginMode = 'password' | 'otp' | 'google';
 
-export default function LoginPage({ onSwitchToRegister, isAddUserMode }: Props) {
+export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddUserMode }: Props) {
   const { login, loginWithOTP, requestOTP, loginWithGoogle } = useAuth();
   const [loginMode, setLoginMode] = useState<LoginMode>('password');
   const [phone, setPhone] = useState('');
@@ -212,6 +213,15 @@ export default function LoginPage({ onSwitchToRegister, isAddUserMode }: Props) 
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}
               </Button>
+              {onForgotPassword && (
+                <button
+                  type="button"
+                  onClick={onForgotPassword}
+                  className="text-sm text-green-600 hover:underline w-full text-center mt-2"
+                >
+                  Forgot Password?
+                </button>
+              )}
             </form>
           )}
 

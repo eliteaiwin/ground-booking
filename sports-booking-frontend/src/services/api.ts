@@ -125,11 +125,50 @@ export const api = {
   }) =>
     request('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
 
-  // Users
+  // Change password (self)
+  changePassword: (data: { current_password?: string; new_password: string }) =>
+    request('/api/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Forgot password
+  forgotPassword: (data: { email: string }) =>
+    request('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Reset password with token
+  resetPasswordToken: (data: { token: string; new_password: string }) =>
+    request('/api/auth/reset-password-token', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Users (admin)
+  searchUsers: (filters?: { search?: string; location?: string; ground_id?: number; role?: string; sport?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.location) params.append('location', filters.location);
+    if (filters?.ground_id) params.append('ground_id', String(filters.ground_id));
+    if (filters?.role) params.append('role', filters.role);
+    if (filters?.sport) params.append('sport', filters.sport);
+    const qs = params.toString();
+    return request(`/api/users${qs ? `?${qs}` : ''}`);
+  },
+
   listUsers: () => request('/api/users'),
 
   updateUserRoles: (userId: number, roles: string[]) =>
     request(`/api/users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ roles }) }),
+
+  adminUpdateUser: (userId: number, data: {
+    first_name?: string; last_name?: string; email?: string; phone?: string;
+    notification_preference?: string; sports?: string[]; locations?: string[];
+    sport_positions?: Record<string, string[]>; currency?: string;
+  }) =>
+    request(`/api/users/${userId}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  adminResetPassword: (userId: number, data: { new_password: string; force_change: boolean }) =>
+    request(`/api/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
+
+  assignGroundRole: (userId: number, data: { ground_id: number; role: string; sport_type?: string }) =>
+    request(`/api/users/${userId}/ground-role`, { method: 'POST', body: JSON.stringify(data) }),
+
+  removeGroundRole: (userId: number, assignmentType: string, assignmentId: number) =>
+    request(`/api/users/${userId}/ground-role/${assignmentType}/${assignmentId}`, { method: 'DELETE' }),
 
   // Games
   createGame: (data: {

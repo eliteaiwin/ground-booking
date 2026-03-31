@@ -166,6 +166,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (phone: string, password: string) => {
     const res = await api.login({ phone, password });
     localStorage.setItem('token', res.token);
+    if (res.force_password_change) {
+      localStorage.setItem('force_password_change', '1');
+    } else {
+      localStorage.removeItem('force_password_change');
+    }
     await refreshUser();
     setIsAddingAccount(false);
   };

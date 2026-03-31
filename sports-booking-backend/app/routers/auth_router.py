@@ -68,6 +68,20 @@ class GoogleAuthRequest(BaseModel):
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: Optional[str] = None
+    new_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordTokenRequest(BaseModel):
+    token: str
+    new_password: str
+
+
 class UpdateProfileRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -145,8 +159,18 @@ async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
     if not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Check force_password_change flag
+    force_change = False
+    try:
+        fc_cursor = await db.execute("SELECT force_password_change FROM users WHERE id = ?", (user["id"],))
+        fc_row = await fc_cursor.fetchone()
+        if fc_row and fc_row["force_password_change"]:
+            force_change = True
+    except Exception:
+        pass
+
     token = create_access_token(user["id"])
-    return {"token": token, "user_id": user["id"]}
+    return {"token": token, "user_id": user["id"], "force_password_change": force_change}
 
 
 @router.post("/otp/request")
@@ -275,6 +299,107 @@ async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends
 
     token = create_access_token(user_id)
     return {"token": token, "user_id": user_id, "message": "Registration via Google successful"}
+
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Change password. Used for force-change and voluntary change."""
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    cursor = await db.execute("SELECT password_hash, force_password_change FROM users WHERE id = ?", (user_id,))
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # If not a forced change, verify current password
+    force_change = False
+    try:
+        force_change = bool(user["force_password_change"])
+    except Exception:
+        pass
+
+    if not force_change:
+        if not req.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required")
+        if not verify_password(req.current_password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    new_hash = hash_password(req.new_password)
+    await db.execute(
+        "UPDATE users SET password_hash = ?, force_password_change = 0 WHERE id = ?",
+        (new_hash, user_id)
+    )
+    await db.commit()
+    return {"message": "Password changed successfully", "force_logout": True}
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    req: ForgotPasswordRequest,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Send password reset email with a token link."""
+    cursor = await db.execute("SELECT id, email FROM users WHERE email = ?", (req.email,))
+    user = await cursor.fetchone()
+    if not user:
+        # Don't reveal if email exists
+        return {"message": "If the email is registered, a reset link has been sent."}
+
+    # Generate reset token
+    reset_token = uuid.uuid4().hex
+    expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db.execute(
+        "UPDATE users SET password_reset_token = ?, password_reset_expires = ? WHERE id = ?",
+        (reset_token, expires.isoformat(), user["id"])
+    )
+    await db.commit()
+
+    # In production, send email with reset link. For demo, return the token.
+    return {
+        "message": "If the email is registered, a reset link has been sent.",
+        "reset_token_demo": reset_token
+    }
+
+
+@router.post("/reset-password-token")
+async def reset_password_with_token(
+    req: ResetPasswordTokenRequest,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Reset password using a token from forgot-password email."""
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    cursor = await db.execute(
+        "SELECT id, password_reset_token, password_reset_expires FROM users WHERE password_reset_token = ?",
+        (req.token,)
+    )
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    # Check expiry
+    try:
+        expires = datetime.fromisoformat(user["password_reset_expires"])
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            raise HTTPException(status_code=400, detail="Reset token has expired")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    new_hash = hash_password(req.new_password)
+    await db.execute(
+        "UPDATE users SET password_hash = ?, force_password_change = 0, password_reset_token = NULL, password_reset_expires = NULL WHERE id = ?",
+        (new_hash, user["id"])
+    )
+    await db.commit()
+    return {"message": "Password reset successfully. Please login with your new password.", "force_logout": True}
 
 
 @router.get("/me")
