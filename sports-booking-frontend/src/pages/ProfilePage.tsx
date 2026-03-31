@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X } from 'lucide-react';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin', 'Pune'];
@@ -57,7 +57,8 @@ export default function ProfilePage({ onBack }: Props) {
   const [lastName, setLastName] = useState(user?.last_name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
-  const [notifPref, setNotifPref] = useState(user?.notification_preference || 'whatsapp');
+  const initNotifPrefs = (user?.notification_preference || 'whatsapp').split(',').filter(Boolean);
+  const [notifPrefs, setNotifPrefs] = useState<string[]>(initNotifPrefs);
   const [sports, setSports] = useState<string[]>(user?.sports || []);
   const [locations, setLocations] = useState<string[]>(user?.locations || []);
   const [sportPositions, setSportPositions] = useState<Record<string, string[]>>(user?.sport_positions || {});
@@ -99,15 +100,29 @@ export default function ProfilePage({ onBack }: Props) {
     }
   };
 
-  const toggleSport = (sport: string) => {
-    setSports(prev => {
-      if (prev.includes(sport)) {
-        const np = { ...sportPositions };
-        delete np[sport];
-        setSportPositions(np);
-        return prev.filter(s => s !== sport);
+  const toggleNotifPref = (pref: string) => {
+    setNotifPrefs(prev => {
+      if (prev.includes(pref)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(p => p !== pref);
       }
-      return [...prev, sport];
+      return [...prev, pref];
+    });
+  };
+
+  const addSport = (sport: string) => {
+    if (!sports.includes(sport)) {
+      setSports(prev => [...prev, sport]);
+    }
+  };
+
+  const removeSport = (sport: string) => {
+    if (sports.length <= 1) return;
+    setSports(prev => prev.filter(s => s !== sport));
+    setSportPositions(prev => {
+      const np = { ...prev };
+      delete np[sport];
+      return np;
     });
   };
 
@@ -139,7 +154,8 @@ export default function ProfilePage({ onBack }: Props) {
       if (lastName !== user?.last_name) data.last_name = lastName;
       if (email !== user?.email) data.email = email;
       if (phone !== user?.phone) data.phone = phone;
-      if (notifPref !== user?.notification_preference) data.notification_preference = notifPref;
+      const notifPrefStr = notifPrefs.join(',');
+      if (notifPrefStr !== user?.notification_preference) data.notification_preference = notifPrefStr;
       if (currency !== user?.currency) data.currency = currency;
       data.sports = sports;
       data.locations = locations;
@@ -210,17 +226,13 @@ export default function ProfilePage({ onBack }: Props) {
             </div>
             {user?.email && <div className="flex items-center gap-2 text-gray-500 text-sm"><Mail size={14} /> {user?.email}</div>}
             <div className="flex items-center gap-2 text-gray-500 text-sm">
-              {user?.notification_preference === 'whatsapp' ? (
-                <MessageCircle size={14} className="text-green-500" />
-              ) : (
-                <MessageSquare size={14} className="text-blue-500" />
+              {(user?.notification_preference || '').includes('whatsapp') && (
+                <><MessageCircle size={14} className="text-green-500" /><span className="text-green-600 text-xs">WhatsApp</span></>
               )}
-              <span>Notifications via {user?.notification_preference === 'sms' ? 'SMS' : 'WhatsApp'}</span>
-              {user?.notification_preference === 'whatsapp' ? (
-                <span className="text-green-500 text-xs">(WhatsApp)</span>
-              ) : (
-                <span className="text-blue-500 text-xs">(SMS)</span>
+              {(user?.notification_preference || '').includes('sms') && (
+                <><MessageSquare size={14} className="text-blue-500" /><span className="text-blue-600 text-xs">SMS</span></>
               )}
+              <span>Notifications</span>
             </div>
             {user?.currency && (
               <div className="flex items-center gap-2 text-gray-500 text-sm">
@@ -286,14 +298,15 @@ export default function ProfilePage({ onBack }: Props) {
             </div>
             <div className="space-y-2">
               <Label>Communication Preference</Label>
+              <p className="text-xs text-gray-400">Select one or both</p>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={notifPref === 'whatsapp'} onCheckedChange={() => setNotifPref('whatsapp')} />
+                  <Checkbox checked={notifPrefs.includes('whatsapp')} onCheckedChange={() => toggleNotifPref('whatsapp')} />
                   <MessageCircle size={14} className="text-green-500" />
                   <span className="text-sm">WhatsApp</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={notifPref === 'sms'} onCheckedChange={() => setNotifPref('sms')} />
+                  <Checkbox checked={notifPrefs.includes('sms')} onCheckedChange={() => toggleNotifPref('sms')} />
                   <MessageSquare size={14} className="text-blue-500" />
                   <span className="text-sm">SMS</span>
                 </label>
@@ -312,37 +325,65 @@ export default function ProfilePage({ onBack }: Props) {
                 ))}
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Preferred Sports</Label>
-              <div className="flex flex-wrap gap-3">
-                {ALL_SPORTS.map(sport => (
-                  <label key={sport} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={sports.includes(sport)} onCheckedChange={() => toggleSport(sport)} />
-                    <span className="text-sm">{sport}</span>
-                  </label>
-                ))}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Sports &amp; Positions</Label>
+                <span className="text-xs text-gray-400">Min. 1 sport required</span>
               </div>
-            </div>
-            {sports.length > 0 && (
-              <div className="space-y-3">
-                <Label>Preferred Positions</Label>
-                {sports.map(sport => (
-                  <div key={sport} className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-sm font-medium text-gray-700 mb-2">{sport}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {(SPORT_POSITIONS[sport] || []).map(pos => (
-                        <button key={pos} type="button" onClick={() => togglePosition(sport, pos)}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                            (sportPositions[sport] || []).includes(pos)
-                              ? 'bg-green-600 text-white border-green-600'
-                              : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
-                          }`}>{pos}</button>
-                      ))}
-                    </div>
+
+              {/* Selected sports with positions */}
+              {sports.map(sport => (
+                <div key={sport} className="border border-green-200 bg-green-50/50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-green-800">{sport}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeSport(sport)}
+                      disabled={sports.length <= 1}
+                      className={`p-1 rounded-full transition-colors ${
+                        sports.length <= 1
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-red-400 hover:bg-red-50 hover:text-red-600'
+                      }`}
+                      title={sports.length <= 1 ? 'At least 1 sport required' : `Remove ${sport}`}
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                ))}
-              </div>
-            )}
+                  <p className="text-xs text-gray-500 mb-2">Select your positions:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(SPORT_POSITIONS[sport] || []).map(pos => (
+                      <button key={pos} type="button" onClick={() => togglePosition(sport, pos)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                          (sportPositions[sport] || []).includes(pos)
+                            ? 'bg-green-600 text-white border-green-600'
+                            : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
+                        }`}>{pos}</button>
+                    ))}
+                  </div>
+                  {(sportPositions[sport] || []).length > 0 && (
+                    <p className="text-xs text-green-700 mt-2">
+                      Selected: {(sportPositions[sport] || []).join(', ')}
+                    </p>
+                  )}
+                </div>
+              ))}
+
+              {/* Add sport dropdown */}
+              {ALL_SPORTS.filter(s => !sports.includes(s)).length > 0 && (
+                <div className="border border-dashed border-gray-300 rounded-lg p-3">
+                  <p className="text-xs text-gray-500 mb-2">Add a sport:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ALL_SPORTS.filter(s => !sports.includes(s)).map(sport => (
+                      <button key={sport} type="button" onClick={() => addSport(sport)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:border-green-400 hover:bg-green-50 transition-all">
+                        <Plus size={12} /> {sport}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               <Label>Default Currency</Label>
               <Select value={currency} onValueChange={setCurrency}>
