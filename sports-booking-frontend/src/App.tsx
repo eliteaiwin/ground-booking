@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -26,6 +26,13 @@ function AppContent() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+
+  // Reset to login screen whenever user logs out
+  useEffect(() => {
+    if (!user && !loading) {
+      setAuthMode('login');
+    }
+  }, [user, loading]);
 
   if (loading) {
     return (
