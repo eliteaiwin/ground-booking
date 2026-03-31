@@ -28,7 +28,18 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [notifPref, setNotifPref] = useState('whatsapp');
+  const [notifPrefs, setNotifPrefs] = useState<string[]>(['whatsapp']);
+
+  const toggleNotifPref = (pref: string) => {
+    setNotifPrefs(prev => {
+      if (prev.includes(pref)) {
+        // Don't allow deselecting the last one
+        if (prev.length === 1) return prev;
+        return prev.filter(p => p !== pref);
+      }
+      return [...prev, pref];
+    });
+  };
   const [sports, setSports] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [sportPositions, setSportPositions] = useState<Record<string, string[]>>({});
@@ -72,7 +83,7 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
         phone,
         email: email || undefined,
         password,
-        notification_preference: notifPref,
+        notification_preference: notifPrefs.join(','),
         sports,
         locations,
         sport_positions: sportPositions,
@@ -123,13 +134,14 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
             </div>
             <div className="space-y-2">
               <Label>Communication Preference</Label>
+              <p className="text-xs text-gray-400">Select one or both</p>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={notifPref === 'whatsapp'} onCheckedChange={() => setNotifPref('whatsapp')} />
+                  <Checkbox checked={notifPrefs.includes('whatsapp')} onCheckedChange={() => toggleNotifPref('whatsapp')} />
                   <span className="text-sm">WhatsApp</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={notifPref === 'sms'} onCheckedChange={() => setNotifPref('sms')} />
+                  <Checkbox checked={notifPrefs.includes('sms')} onCheckedChange={() => toggleNotifPref('sms')} />
                   <span className="text-sm">SMS</span>
                 </label>
               </div>

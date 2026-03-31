@@ -265,7 +265,8 @@ export default function SearchGrounds({ onBack }: Props) {
                     <p className="text-sm text-gray-400">No moderators assigned yet</p>
                   )}
 
-                  {/* Join Request */}
+                  {/* Join Request - only show when moderators are assigned */}
+                  {ground.moderators.length > 0 && (
                   <div className="mt-3 border-t pt-3">
                     {joinGroundId === ground.id ? (
                       <div className="space-y-2 mb-3">
@@ -296,6 +297,7 @@ export default function SearchGrounds({ onBack }: Props) {
                       </Button>
                     )}
                   </div>
+                  )}
 
                   {/* View Players section */}
                   <div className="border-t pt-3">
