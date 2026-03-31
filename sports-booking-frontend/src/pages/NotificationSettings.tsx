@@ -271,26 +271,28 @@ export default function NotificationSettings({ onBack }: Props) {
               </div>
             )}
 
-            {/* POTD Congratulation Delay */}
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-800">POTD Congratulation Delay</p>
-                  <p className="text-xs text-gray-500">Hours after game to announce POTD winner</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={72}
-                    value={settings?.potd_congrats_delay_hours || 24}
-                    onChange={e => saveDelayHours(parseInt(e.target.value) || 24)}
-                    className="w-16 h-8 text-sm text-center"
-                  />
-                  <span className="text-xs text-gray-500">hrs</span>
+            {/* POTD Congratulation Delay - only visible to moderators/admins */}
+            {(isModerator || isAdmin) && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">POTD Congratulation Delay</p>
+                    <p className="text-xs text-gray-500">Hours after game to announce POTD winner</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={72}
+                      value={settings?.potd_congrats_delay_hours || 24}
+                      onChange={e => saveDelayHours(parseInt(e.target.value) || 24)}
+                      className="w-16 h-8 text-sm text-center"
+                    />
+                    <span className="text-xs text-gray-500">hrs</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
