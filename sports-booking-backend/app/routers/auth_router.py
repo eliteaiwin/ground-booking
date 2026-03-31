@@ -62,10 +62,10 @@ class OTPVerifyRequest(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    google_id: str  # In production, this should be a Google OAuth ID token verified server-side
-    email: str
-    first_name: str
-    last_name: str
+    id_token: str  # Google ID token from Google Identity Services
+
+
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 
 class UpdateProfileRequest(BaseModel):
@@ -212,23 +212,69 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
 async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends(get_db)):
     """Authenticate or register via Google SSO.
 
-    DISABLED: This endpoint is intentionally disabled until proper server-side
-    Google OAuth token verification is implemented.  The previous implementation
-    accepted a client-supplied ``google_id`` without any cryptographic proof,
-    which allowed anyone who could guess (or compute) the ``google_id`` to
-    impersonate any Google-linked account.
-
-    To re-enable:
-      1. Add ``google-auth`` to dependencies.
-      2. Accept a Google **ID token** (not a bare ``google_id``).
-      3. Verify it server-side with
-         ``google.oauth2.id_token.verify_oauth2_token()``.
-      4. Use the verified ``sub`` claim as the stable user identifier.
+    Accepts a Google ID token from Google Identity Services, verifies it
+    server-side, and returns a JWT. Creates a new user if the Google account
+    is not yet registered.
     """
-    raise HTTPException(
-        status_code=501,
-        detail="Google authentication is not yet available. Please use password or OTP login."
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(
+            status_code=501,
+            detail="Google authentication is not configured. Set GOOGLE_CLIENT_ID env var."
+        )
+
+    from google.oauth2 import id_token as google_id_token
+    from google.auth.transport import requests as google_requests
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            req.id_token, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google ID token")
+
+    google_sub = idinfo["sub"]
+    email = idinfo.get("email", "")
+    first_name = idinfo.get("given_name", "")
+    last_name = idinfo.get("family_name", "")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="Google account has no email")
+
+    # Look up by google_id first, then by email
+    cursor = await db.execute("SELECT id FROM users WHERE google_id = ?", (google_sub,))
+    user = await cursor.fetchone()
+
+    if not user:
+        # Check if an account with this email exists (link Google to it)
+        cursor = await db.execute("SELECT id FROM users WHERE email = ?", (email,))
+        user = await cursor.fetchone()
+        if user:
+            await db.execute("UPDATE users SET google_id = ? WHERE id = ?", (google_sub, user["id"]))
+            await db.commit()
+
+    if user:
+        token = create_access_token(user["id"])
+        return {"token": token, "user_id": user["id"]}
+
+    # New user — register
+    full_name = f"{first_name} {last_name}".strip() or email.split("@")[0]
+    user_code = await generate_user_code(db)
+    # Use a placeholder phone since the column is NOT NULL UNIQUE;
+    # the user can update it later in their profile.
+    placeholder_phone = f"g-{google_sub[:20]}"
+
+    cursor = await db.execute(
+        """INSERT INTO users (user_code, first_name, last_name, name, phone, email,
+           google_id, notification_preference, sports, locations, sport_positions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'whatsapp', '', '', '')""",
+        (user_code, first_name, last_name, full_name, placeholder_phone, email, google_sub)
     )
+    user_id = cursor.lastrowid
+    await _assign_roles(db, user_id)
+    await db.commit()
+
+    token = create_access_token(user_id)
+    return {"token": token, "user_id": user_id, "message": "Registration via Google successful"}
 
 
 @router.get("/me")

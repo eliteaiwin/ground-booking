@@ -113,7 +113,7 @@ export const api = {
   verifyOTP: (data: { phone: string; otp: string }) =>
     request('/api/auth/otp/verify', { method: 'POST', body: JSON.stringify(data) }),
 
-  googleAuth: (data: { google_id: string; email: string; first_name: string; last_name: string }) =>
+  googleAuth: (data: { id_token: string }) =>
     request('/api/auth/google', { method: 'POST', body: JSON.stringify(data) }),
 
   getProfile: () => request('/api/auth/me'),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,28 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Phone, Lock, Smartphone, Chrome } from 'lucide-react';
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+            auto_select?: boolean;
+          }) => void;
+          renderButton: (
+            element: HTMLElement,
+            config: { theme?: string; size?: string; width?: number; text?: string }
+          ) => void;
+        };
+      };
+    };
+  }
+}
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 interface Props {
   onSwitchToRegister: () => void;
@@ -15,7 +37,7 @@ interface Props {
 type LoginMode = 'password' | 'otp' | 'google';
 
 export default function LoginPage({ onSwitchToRegister, isAddUserMode }: Props) {
-  const { login, loginWithOTP, requestOTP } = useAuth();
+  const { login, loginWithOTP, requestOTP, loginWithGoogle } = useAuth();
   const [loginMode, setLoginMode] = useState<LoginMode>('password');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -24,6 +46,50 @@ export default function LoginPage({ onSwitchToRegister, isAddUserMode }: Props) 
   const [otpDemo, setOtpDemo] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  const handleGoogleCallback = useCallback(async (response: { credential: string }) => {
+    setError('');
+    setLoading(true);
+    try {
+      await loginWithGoogle(response.credential);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Google login failed');
+    } finally {
+      setLoading(false);
+    }
+  }, [loginWithGoogle]);
+
+  useEffect(() => {
+    if (loginMode !== 'google' || !GOOGLE_CLIENT_ID) return;
+
+    const renderGoogleButton = () => {
+      if (!window.google || !googleBtnRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCallback,
+      });
+      window.google.accounts.id.renderButton(googleBtnRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: 320,
+        text: 'signin_with',
+      });
+    };
+
+    // GIS script may already be loaded or still loading
+    if (window.google) {
+      renderGoogleButton();
+    } else {
+      const interval = setInterval(() => {
+        if (window.google) {
+          clearInterval(interval);
+          renderGoogleButton();
+        }
+      }, 100);
+      return () => clearInterval(interval);
+    }
+  }, [loginMode, handleGoogleCallback]);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,16 +277,25 @@ export default function LoginPage({ onSwitchToRegister, isAddUserMode }: Props) 
             </form>
           )}
 
-          {/* Google Login - disabled until proper OAuth is implemented */}
+          {/* Google Login */}
           {loginMode === 'google' && (
             <div className="space-y-4 text-center py-6">
-              <Chrome size={40} className="mx-auto text-gray-400" />
-              <p className="text-sm text-gray-500">
-                Google Sign-In is coming soon.
-              </p>
-              <p className="text-xs text-gray-400">
-                Please use Password or Mobile OTP login for now.
-              </p>
+              {GOOGLE_CLIENT_ID ? (
+                <>
+                  <div ref={googleBtnRef} className="flex justify-center" />
+                  {loading && <p className="text-sm text-gray-500">Signing in with Google...</p>}
+                </>
+              ) : (
+                <>
+                  <Chrome size={40} className="mx-auto text-gray-400" />
+                  <p className="text-sm text-gray-500">
+                    Google Sign-In is not configured.
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Set VITE_GOOGLE_CLIENT_ID to enable Google login.
+                  </p>
+                </>
+              )}
             </div>
           )}
 

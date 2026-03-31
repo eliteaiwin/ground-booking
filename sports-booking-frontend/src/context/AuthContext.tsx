@@ -46,7 +46,7 @@ interface AuthContextType {
   login: (phone: string, password: string) => Promise<void>;
   loginWithOTP: (phone: string, otp: string) => Promise<void>;
   requestOTP: (phone: string) => Promise<{ otp_demo?: string }>;
-  loginWithGoogle: (googleId: string, email: string, firstName: string, lastName: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -157,8 +157,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAddingAccount(false);
   };
 
-  const loginWithGoogle = async (googleId: string, email: string, firstName: string, lastName: string) => {
-    const res = await api.googleAuth({ google_id: googleId, email, first_name: firstName, last_name: lastName });
+  const loginWithGoogle = async (idToken: string) => {
+    const res = await api.googleAuth({ id_token: idToken });
     localStorage.setItem('token', res.token);
     await refreshUser();
     setIsAddingAccount(false);
