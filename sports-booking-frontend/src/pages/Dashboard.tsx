@@ -393,8 +393,8 @@ export default function Dashboard({ onNavigate }: Props) {
               <span className="text-xs font-medium text-gray-700">Admin</span>
             </button>
           )}
-          {/* Ground Management */}
-          {isGroundManagement && (
+          {/* Ground Management - visible to Ground Management, Moderator, and Admin */}
+          {(isGroundManagement || isModerator) && (
             <button
               onClick={() => onNavigate('ground-management')}
               className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"

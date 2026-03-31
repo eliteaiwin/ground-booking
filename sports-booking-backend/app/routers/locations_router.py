@@ -24,6 +24,14 @@ async def require_admin(user_id: int, db: aiosqlite.Connection):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+async def require_admin_or_ground_management(user_id: int, db: aiosqlite.Connection):
+    cursor = await db.execute(
+        "SELECT role FROM user_roles WHERE user_id = ? AND role IN ('admin', 'ground_management')", (user_id,)
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=403, detail="Admin or Ground Management access required")
+
+
 class AddLocationRequest(BaseModel):
     name: str
 
@@ -31,6 +39,7 @@ class AddLocationRequest(BaseModel):
 class AddGroundRequest(BaseModel):
     name: str
     location: str
+    moderator_user_ids: List[int] = []
 
 
 class AssignModeratorLocationRequest(BaseModel):
@@ -258,12 +267,16 @@ async def add_ground(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_admin_or_ground_management(user_id, db)
+
+    # At least one moderator is required when adding a new ground
+    if not req.moderator_user_ids:
+        raise HTTPException(status_code=400, detail="At least one moderator must be assigned when adding a new ground")
 
     # Check if user is admin
     cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
     is_admin = await cursor.fetchone() is not None
-    approved = 1 if is_admin else 1  # auto-approve for now
+    approved = 1  # auto-approve for now
 
     # Generate unique ground code
     ground_code = await generate_ground_code(db)
@@ -273,6 +286,22 @@ async def add_ground(
             "INSERT INTO grounds (name, location, created_by, is_approved, ground_code) VALUES (?, ?, ?, ?, ?)",
             (req.name, req.location, user_id, approved, ground_code)
         )
+        await db.commit()
+
+        ground_id = cursor.lastrowid
+
+        # Assign moderators to this ground
+        for mod_user_id in req.moderator_user_ids:
+            # Auto-grant moderator role if user doesn't already have it
+            await db.execute(
+                "INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')",
+                (mod_user_id,)
+            )
+            # Create moderator-location assignment for this ground
+            await db.execute(
+                "INSERT OR IGNORE INTO moderator_locations (user_id, location, ground_name, sport_type) VALUES (?, ?, ?, '')",
+                (mod_user_id, req.location, req.name)
+            )
         await db.commit()
 
         # If not admin, notify admins about new ground
@@ -289,7 +318,7 @@ async def add_ground(
             await db.commit()
 
         return {
-            "id": cursor.lastrowid,
+            "id": ground_id,
             "name": req.name,
             "location": req.location,
             "ground_code": ground_code,
@@ -978,6 +1007,39 @@ async def reject_join_request(
     await db.commit()
 
     return {"message": "Join request rejected"}
+
+
+@router.get("/users-by-location")
+async def users_by_location(
+    location: str,
+    search: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Browse users that have a specific location in their locations list. Used for moderator selection."""
+    await require_admin_or_ground_management(user_id, db)
+    query = """SELECT u.id, u.name, u.first_name, u.last_name, u.phone, u.email
+               FROM users u
+               WHERE (',' || u.locations || ',' LIKE '%,' || ? || ',%' OR u.locations = ?)"""
+    params: list = [location, location]
+    if search:
+        escaped = search.replace('%', '\\%').replace('_', '\\_')
+        query += " AND (u.name LIKE ? ESCAPE '\\' OR u.phone LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\')"
+        params.extend([f"%{escaped}%", f"%{escaped}%", f"%{escaped}%"])
+    query += " ORDER BY u.name LIMIT 50"
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "first_name": r["first_name"],
+            "last_name": r["last_name"],
+            "phone": r["phone"],
+            "email": r["email"] or "",
+        }
+        for r in rows
+    ]
 
 
 @router.get("/grounds/{ground_id}/members")

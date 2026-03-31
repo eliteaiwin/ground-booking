@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -93,8 +93,25 @@ interface Props {
   onBack: () => void;
 }
 
+interface LocationItem {
+  id: number;
+  name: string;
+}
+
+interface UserOption {
+  id: number;
+  name: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string;
+}
+
 export default function GroundManagement({ onBack }: Props) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isGroundManagement, isModerator } = useAuth();
+  const canAddGround = isAdmin || isGroundManagement;
+  const canManageRequests = isAdmin || isGroundManagement;
+  const isModeratorOnly = isModerator && !isAdmin && !isGroundManagement;
   const [grounds, setGrounds] = useState<Ground[]>([]);
   const [selectedGround, setSelectedGround] = useState<Ground | null>(null);
   const [scheduleData, setScheduleData] = useState<ScheduleData | null>(null);
@@ -103,12 +120,24 @@ export default function GroundManagement({ onBack }: Props) {
   const [hoveredGame, setHoveredGame] = useState<ScheduleItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [loading, setLoading] = useState(true);
-  const [_allGrounds, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
+  const [, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'schedule' | 'requests'>('schedule');
   const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
+
+  // Add Ground state
+  const [showAddGround, setShowAddGround] = useState(false);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
+  const [newGroundName, setNewGroundName] = useState('');
+  const [newGroundLocation, setNewGroundLocation] = useState('');
+  const [modSearch, setModSearch] = useState('');
+  const [modSearchResults, setModSearchResults] = useState<UserOption[]>([]);
+  const [selectedModerators, setSelectedModerators] = useState<UserOption[]>([]);
+  const [modSearchLoading, setModSearchLoading] = useState(false);
+  const [addGroundLoading, setAddGroundLoading] = useState(false);
+  const [addGroundError, setAddGroundError] = useState('');
 
   useEffect(() => {
     loadGrounds();
@@ -117,8 +146,8 @@ export default function GroundManagement({ onBack }: Props) {
   const loadGrounds = async () => {
     setLoading(true);
     try {
-      if (isAdmin) {
-        // Admin sees all grounds
+      if (isAdmin || isGroundManagement) {
+        // Admin and Ground Management see all grounds
         const groundsList = await api.listGrounds();
         const mapped = groundsList.map((g: { id: number; name: string; location: string; display_name: string }) => ({
           id: g.id,
@@ -137,6 +166,68 @@ export default function GroundManagement({ onBack }: Props) {
       console.error('Failed to load grounds:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openAddGround = async () => {
+    setShowAddGround(true);
+    setNewGroundName('');
+    setNewGroundLocation('');
+    setModSearch('');
+    setModSearchResults([]);
+    setSelectedModerators([]);
+    setAddGroundError('');
+    try {
+      const locs = await api.listLocations();
+      setLocations(locs);
+    } catch (err) {
+      console.error('Failed to load locations:', err);
+    }
+  };
+
+  const searchModerators = async (searchTerm: string) => {
+    setModSearch(searchTerm);
+    if (!newGroundLocation || searchTerm.length < 1) {
+      setModSearchResults([]);
+      return;
+    }
+    setModSearchLoading(true);
+    try {
+      const users = await api.usersByLocation(newGroundLocation, searchTerm);
+      // Filter out already selected
+      const selectedIds = new Set(selectedModerators.map(m => m.id));
+      setModSearchResults(users.filter((u: UserOption) => !selectedIds.has(u.id)));
+    } catch (err) {
+      console.error('Failed to search users:', err);
+    } finally {
+      setModSearchLoading(false);
+    }
+  };
+
+  const addModerator = (user: UserOption) => {
+    setSelectedModerators(prev => [...prev, user]);
+    setModSearchResults(prev => prev.filter(u => u.id !== user.id));
+    setModSearch('');
+  };
+
+  const removeModerator = (userId: number) => {
+    setSelectedModerators(prev => prev.filter(m => m.id !== userId));
+  };
+
+  const handleAddGround = async () => {
+    if (!newGroundName.trim()) { setAddGroundError('Ground name is required'); return; }
+    if (!newGroundLocation) { setAddGroundError('Location is required'); return; }
+    if (selectedModerators.length === 0) { setAddGroundError('At least one moderator is required'); return; }
+    setAddGroundLoading(true);
+    setAddGroundError('');
+    try {
+      await api.addGround(newGroundName.trim(), newGroundLocation, selectedModerators.map(m => m.id));
+      setShowAddGround(false);
+      await loadGrounds();
+    } catch (err) {
+      setAddGroundError(err instanceof Error ? err.message : 'Failed to add ground');
+    } finally {
+      setAddGroundLoading(false);
     }
   };
 
@@ -467,10 +558,15 @@ export default function GroundManagement({ onBack }: Props) {
             <button onClick={onBack} className="p-1 rounded-full hover:bg-amber-700">
               <ArrowLeft size={20} />
             </button>
-            <div>
+            <div className="flex-1">
               <h1 className="text-lg font-bold">Ground Management</h1>
               <p className="text-amber-100 text-xs">Select a ground to view schedule</p>
             </div>
+            {canAddGround && (
+              <button onClick={openAddGround} className="p-2 rounded-full hover:bg-amber-700" title="Add Ground">
+                <Plus size={20} />
+              </button>
+            )}
           </div>
         </header>
 
@@ -505,6 +601,114 @@ export default function GroundManagement({ onBack }: Props) {
             ))
           )}
         </div>
+
+        {/* Add Ground Modal */}
+        {showAddGround && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="p-4 border-b bg-amber-50 rounded-t-2xl flex items-center justify-between">
+                <h3 className="text-lg font-bold text-amber-800">Add New Ground</h3>
+                <button onClick={() => setShowAddGround(false)} className="p-1 rounded-full hover:bg-amber-100">
+                  <X size={20} className="text-gray-500" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Location *</Label>
+                  <Select value={newGroundLocation} onValueChange={(val) => { setNewGroundLocation(val); setSelectedModerators([]); setModSearchResults([]); setModSearch(''); }}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Select location" /></SelectTrigger>
+                    <SelectContent>
+                      {locations.map(loc => (
+                        <SelectItem key={loc.id} value={loc.name}>{loc.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">Ground Name *</Label>
+                  <Input
+                    value={newGroundName}
+                    onChange={e => setNewGroundName(e.target.value)}
+                    placeholder="e.g. Whitefield Sports Arena"
+                    className="mt-1"
+                  />
+                </div>
+
+                {/* Moderator Selection */}
+                <div>
+                  <Label className="text-sm font-medium">Moderator(s) * <span className="text-gray-400 font-normal">(at least 1 required)</span></Label>
+
+                  {/* Selected moderators */}
+                  {selectedModerators.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {selectedModerators.map(mod => (
+                        <div key={mod.id} className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                          <Check size={14} className="text-green-600" />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium text-gray-800">{mod.name}</span>
+                            <span className="text-xs text-gray-500 ml-2">{mod.phone}</span>
+                          </div>
+                          <button onClick={() => removeModerator(mod.id)} className="p-0.5 rounded-full hover:bg-red-100">
+                            <X size={14} className="text-red-500" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Search for users in selected location */}
+                  {newGroundLocation ? (
+                    <div className="mt-2 relative">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <Input
+                          value={modSearch}
+                          onChange={e => searchModerators(e.target.value)}
+                          placeholder="Search users by name, phone or email..."
+                          className="pl-8 text-sm"
+                        />
+                      </div>
+                      {modSearchLoading && <p className="text-xs text-gray-400 mt-1">Searching...</p>}
+                      {modSearchResults.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {modSearchResults.map(user => (
+                            <button
+                              key={user.id}
+                              onClick={() => addModerator(user)}
+                              className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center gap-2 border-b last:border-b-0"
+                            >
+                              <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold text-blue-600">
+                                {(user.first_name || user.name || '?')[0].toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{user.name}</p>
+                                <p className="text-xs text-gray-500">{user.phone}{user.email ? ` • ${user.email}` : ''}</p>
+                              </div>
+                              <Plus size={14} className="text-green-500" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 mt-2">Select a location first to browse users</p>
+                  )}
+                </div>
+
+                {addGroundError && <p className="text-red-500 text-sm">{addGroundError}</p>}
+
+                <div className="flex gap-2 pt-2">
+                  <Button onClick={handleAddGround} disabled={addGroundLoading} className="flex-1 bg-amber-600 hover:bg-amber-700">
+                    {addGroundLoading ? 'Adding...' : 'Add Ground'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowAddGround(false)}>Cancel</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -527,6 +731,14 @@ export default function GroundManagement({ onBack }: Props) {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-4">
+        {/* Read-only indicator for moderators */}
+        {isModeratorOnly && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex items-center gap-2">
+            <Calendar size={14} className="text-blue-500" />
+            <span className="text-sm text-blue-700">Read-only view — Moderators can view the schedule but cannot manage requests</span>
+          </div>
+        )}
+
         {/* Tab selector */}
         <div className="flex bg-white rounded-lg shadow-sm border overflow-hidden mb-4">
           <button
@@ -535,15 +747,17 @@ export default function GroundManagement({ onBack }: Props) {
           >
             <Calendar size={14} className="inline mr-1" /> Schedule
           </button>
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`flex-1 px-4 py-2 text-sm font-medium relative ${activeTab === 'requests' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-          >
-            <Bell size={14} className="inline mr-1" /> Join Requests
-            {joinRequests.length > 0 && (
-              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-red-500 text-white">{joinRequests.length}</span>
-            )}
-          </button>
+          {canManageRequests && (
+            <button
+              onClick={() => setActiveTab('requests')}
+              className={`flex-1 px-4 py-2 text-sm font-medium relative ${activeTab === 'requests' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Bell size={14} className="inline mr-1" /> Join Requests
+              {joinRequests.length > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-red-500 text-white">{joinRequests.length}</span>
+              )}
+            </button>
+          )}
         </div>
 
         {activeTab === 'requests' && (

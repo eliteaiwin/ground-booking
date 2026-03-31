@@ -310,8 +310,14 @@ export const api = {
   listGrounds: (location?: string) =>
     request(`/api/locations/grounds${location ? `?location=${encodeURIComponent(location)}` : ''}`),
 
-  addGround: (name: string, location: string) =>
-    request('/api/locations/grounds', { method: 'POST', body: JSON.stringify({ name, location }) }),
+  addGround: (name: string, location: string, moderatorUserIds?: number[]) =>
+    request('/api/locations/grounds', { method: 'POST', body: JSON.stringify({ name, location, moderator_user_ids: moderatorUserIds || [] }) }),
+
+  usersByLocation: (location: string, search?: string) => {
+    const params = new URLSearchParams({ location });
+    if (search) params.append('search', search);
+    return request(`/api/locations/users-by-location?${params.toString()}`);
+  },
 
   renameLocation: (locationId: number, newName: string) =>
     request(`/api/locations/${locationId}/rename`, { method: 'PUT', body: JSON.stringify({ new_name: newName }) }),
