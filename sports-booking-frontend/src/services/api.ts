@@ -546,6 +546,19 @@ export const api = {
   listGroundMembers: (groundId: number) =>
     request(`/api/locations/grounds/${groundId}/members`),
 
+  // Ground-level moderator management (accessible by moderators of that ground)
+  listGroundModerators: (groundId: number) =>
+    request(`/api/locations/grounds/${groundId}/moderators`),
+
+  addGroundModerator: (groundId: number, userId: number, sportType: string = '') =>
+    request(`/api/locations/grounds/${groundId}/moderators`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, sport_type: sportType }),
+    }),
+
+  removeGroundModerator: (groundId: number, assignmentId: number) =>
+    request(`/api/locations/grounds/${groundId}/moderators/${assignmentId}`, { method: 'DELETE' }),
+
   // Direct Voting Link
   getVotingLink: (gameId: number) =>
     request(`/api/games/${gameId}/voting-link`),

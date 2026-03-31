@@ -1041,7 +1041,12 @@ async def users_by_location(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Browse users that have a specific location in their locations list. Used for moderator selection."""
-    await require_admin_or_ground_management(user_id, db)
+    # Allow admin, ground_management, or moderator to browse users
+    cursor_role = await db.execute(
+        "SELECT role FROM user_roles WHERE user_id = ? AND role IN ('admin', 'ground_management', 'moderator')", (user_id,)
+    )
+    if not await cursor_role.fetchone():
+        raise HTTPException(status_code=403, detail="Admin, Ground Management, or Moderator access required")
     query = """SELECT u.id, u.name, u.first_name, u.last_name, u.phone, u.email
                FROM users u
                WHERE (',' || u.locations || ',' LIKE '%,' || ? || ',%' OR u.locations = ?)"""
@@ -1098,3 +1103,141 @@ async def list_ground_members(
             "max_nominations": max_noms,
         })
     return results
+
+
+async def _is_moderator_for_ground(user_id: int, ground_id: int, db: aiosqlite.Connection) -> bool:
+    """Check if user is a moderator for the given ground."""
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        return False
+    mod_cursor = await db.execute(
+        "SELECT 1 FROM moderator_locations WHERE user_id = ? AND location = ? AND (ground_name = ? OR ground_name = '')",
+        (user_id, ground["location"], ground["name"])
+    )
+    return await mod_cursor.fetchone() is not None
+
+
+@router.get("/grounds/{ground_id}/moderators")
+async def list_ground_moderators(
+    ground_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """List moderators for a specific ground. Accessible by admin, ground mgmt, or moderator of that ground."""
+    is_admin_check = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'ground_management')", (user_id,)
+    )
+    is_admin_or_gm = await is_admin_check.fetchone() is not None
+    is_mod = await _is_moderator_for_ground(user_id, ground_id, db)
+    if not is_admin_or_gm and not is_mod:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    mod_cursor = await db.execute(
+        """SELECT ml.id, ml.user_id, ml.sport_type, u.name as user_name, u.phone as user_phone, u.email as user_email
+           FROM moderator_locations ml JOIN users u ON ml.user_id = u.id
+           WHERE ml.location = ? AND (ml.ground_name = ? OR ml.ground_name = '')
+           ORDER BY u.name""",
+        (ground["location"], ground["name"])
+    )
+    rows = await mod_cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "user_phone": r["user_phone"],
+            "user_email": r["user_email"] or "",
+            "sport_type": r["sport_type"] or "All Sports",
+        }
+        for r in rows
+    ]
+
+
+class GroundModeratorRequest(BaseModel):
+    user_id: int
+    sport_type: str = ""
+
+
+@router.post("/grounds/{ground_id}/moderators")
+async def add_ground_moderator(
+    ground_id: int,
+    req: GroundModeratorRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Add a moderator to a ground. Allowed for admin, ground mgmt, or existing moderator of that ground."""
+    is_admin_check = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'ground_management')", (user_id,)
+    )
+    is_admin_or_gm = await is_admin_check.fetchone() is not None
+    is_mod = await _is_moderator_for_ground(user_id, ground_id, db)
+    if not is_admin_or_gm and not is_mod:
+        raise HTTPException(status_code=403, detail="Only admin, ground management, or moderators of this ground can add moderators")
+
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    # Auto-grant moderator role
+    await db.execute(
+        "INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')",
+        (req.user_id,)
+    )
+    try:
+        await db.execute(
+            "INSERT INTO moderator_locations (user_id, location, ground_name, sport_type) VALUES (?, ?, ?, ?)",
+            (req.user_id, ground["location"], ground["name"], req.sport_type)
+        )
+        await db.commit()
+    except Exception:
+        raise HTTPException(status_code=400, detail="User is already a moderator for this ground")
+
+    return {"message": "Moderator added to ground"}
+
+
+@router.delete("/grounds/{ground_id}/moderators/{assignment_id}")
+async def remove_ground_moderator(
+    ground_id: int,
+    assignment_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Remove a moderator from a ground. Allowed for admin, ground mgmt, or existing moderator of that ground."""
+    is_admin_check = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'ground_management')", (user_id,)
+    )
+    is_admin_or_gm = await is_admin_check.fetchone() is not None
+    is_mod = await _is_moderator_for_ground(user_id, ground_id, db)
+    if not is_admin_or_gm and not is_mod:
+        raise HTTPException(status_code=403, detail="Only admin, ground management, or moderators of this ground can remove moderators")
+
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    # Ensure at least 1 moderator remains
+    count_cursor = await db.execute(
+        "SELECT COUNT(*) as cnt FROM moderator_locations WHERE location = ? AND (ground_name = ? OR ground_name = '')",
+        (ground["location"], ground["name"])
+    )
+    count_row = await count_cursor.fetchone()
+    if count_row["cnt"] <= 1:
+        raise HTTPException(status_code=400, detail="Cannot remove the last moderator. At least one moderator is required.")
+
+    # Don't allow moderator to remove themselves (they can't un-assign themselves)
+    check_cursor = await db.execute("SELECT user_id FROM moderator_locations WHERE id = ?", (assignment_id,))
+    assignment = await check_cursor.fetchone()
+    if assignment and assignment["user_id"] == user_id and not is_admin_or_gm:
+        raise HTTPException(status_code=400, detail="You cannot remove yourself as moderator. Ask another moderator or admin.")
+
+    await db.execute("DELETE FROM moderator_locations WHERE id = ?", (assignment_id,))
+    await db.commit()
+    return {"message": "Moderator removed from ground"}

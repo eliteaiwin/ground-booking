@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -122,7 +122,7 @@ export default function GroundManagement({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'schedule' | 'requests'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'requests' | 'moderators'>('schedule');
   const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
@@ -138,6 +138,22 @@ export default function GroundManagement({ onBack }: Props) {
   const [modSearchLoading, setModSearchLoading] = useState(false);
   const [addGroundLoading, setAddGroundLoading] = useState(false);
   const [addGroundError, setAddGroundError] = useState('');
+
+  // Moderator management state
+  interface GroundModerator {
+    id: number;
+    user_id: number;
+    user_name: string;
+    user_phone: string;
+    user_email: string;
+    sport_type: string;
+  }
+  const [groundModerators, setGroundModerators] = useState<GroundModerator[]>([]);
+  const [moderatorsLoading, setModeratorsLoading] = useState(false);
+  const [modMgmtSearch, setModMgmtSearch] = useState('');
+  const [modMgmtSearchResults, setModMgmtSearchResults] = useState<UserOption[]>([]);
+  const [modMgmtSearchLoading, setModMgmtSearchLoading] = useState(false);
+  const [addModLoading, setAddModLoading] = useState(false);
 
   useEffect(() => {
     loadGrounds();
@@ -265,8 +281,65 @@ export default function GroundManagement({ onBack }: Props) {
     if (selectedGround) {
       loadSchedule(selectedGround.id);
       loadJoinRequests(selectedGround.id);
+      loadGroundModerators(selectedGround.id);
     }
   }, [selectedGround, viewMode, currentDate]);
+
+  const loadGroundModerators = async (groundId: number) => {
+    setModeratorsLoading(true);
+    try {
+      const data = await api.listGroundModerators(groundId);
+      setGroundModerators(data);
+    } catch (err) {
+      console.error('Failed to load moderators:', err);
+    } finally {
+      setModeratorsLoading(false);
+    }
+  };
+
+  const searchModsForGround = async (searchTerm: string) => {
+    setModMgmtSearch(searchTerm);
+    if (!selectedGround || searchTerm.length < 1) {
+      setModMgmtSearchResults([]);
+      return;
+    }
+    setModMgmtSearchLoading(true);
+    try {
+      const users = await api.usersByLocation(selectedGround.location, searchTerm);
+      const existingIds = new Set(groundModerators.map(m => m.user_id));
+      setModMgmtSearchResults(users.filter((u: UserOption) => !existingIds.has(u.id)));
+    } catch (err) {
+      console.error('Failed to search users:', err);
+    } finally {
+      setModMgmtSearchLoading(false);
+    }
+  };
+
+  const handleAddModToGround = async (user: UserOption) => {
+    if (!selectedGround) return;
+    setAddModLoading(true);
+    try {
+      await api.addGroundModerator(selectedGround.id, user.id);
+      setModMgmtSearch('');
+      setModMgmtSearchResults([]);
+      await loadGroundModerators(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add moderator');
+    } finally {
+      setAddModLoading(false);
+    }
+  };
+
+  const handleRemoveModFromGround = async (assignmentId: number) => {
+    if (!selectedGround) return;
+    if (!confirm('Remove this moderator from the ground?')) return;
+    try {
+      await api.removeGroundModerator(selectedGround.id, assignmentId);
+      await loadGroundModerators(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to remove moderator');
+    }
+  };
 
   const loadJoinRequests = async (groundId: number) => {
     setRequestsLoading(true);
@@ -735,7 +808,7 @@ export default function GroundManagement({ onBack }: Props) {
         {isModeratorOnly && (
           <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 flex items-center gap-2">
             <Calendar size={14} className="text-blue-500" />
-            <span className="text-sm text-blue-700">Read-only view — Moderators can view the schedule but cannot manage requests</span>
+            <span className="text-sm text-blue-700">Moderator view — You can view the schedule and manage moderators for your grounds</span>
           </div>
         )}
 
@@ -758,6 +831,12 @@ export default function GroundManagement({ onBack }: Props) {
               )}
             </button>
           )}
+          <button
+            onClick={() => setActiveTab('moderators')}
+            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'moderators' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Shield size={14} className="inline mr-1" /> Moderators
+          </button>
         </div>
 
         {activeTab === 'requests' && (
@@ -831,6 +910,101 @@ export default function GroundManagement({ onBack }: Props) {
                 );
               })
             )}
+          </div>
+        )}
+
+        {activeTab === 'moderators' && (
+          <div className="space-y-4">
+            {/* Add moderator search */}
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Plus size={14} /> Add Moderator
+                </h3>
+                {selectedGround ? (
+                  <div className="relative">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        value={modMgmtSearch}
+                        onChange={e => searchModsForGround(e.target.value)}
+                        placeholder="Search users by name, phone or email..."
+                        className="pl-8 text-sm"
+                        disabled={addModLoading}
+                      />
+                    </div>
+                    {modMgmtSearchLoading && <p className="text-xs text-gray-400 mt-1">Searching...</p>}
+                    {modMgmtSearchResults.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {modMgmtSearchResults.map(user => (
+                          <button
+                            key={user.id}
+                            onClick={() => handleAddModToGround(user)}
+                            className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center gap-2 border-b last:border-b-0"
+                            disabled={addModLoading}
+                          >
+                            <div className="w-7 h-7 bg-purple-100 rounded-full flex items-center justify-center text-xs font-bold text-purple-600">
+                              {(user.first_name || user.name || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{user.name}</p>
+                              <p className="text-xs text-gray-500">{user.phone}{user.email ? ` • ${user.email}` : ''}</p>
+                            </div>
+                            <Plus size={14} className="text-green-500" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">Select a ground first</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Current moderators list */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <Shield size={14} className="text-purple-600" /> Current Moderators ({groundModerators.length})
+              </h3>
+              {moderatorsLoading ? (
+                <p className="text-gray-500 text-center py-4">Loading...</p>
+              ) : groundModerators.length === 0 ? (
+                <Card>
+                  <CardContent className="py-6 text-center text-gray-500">
+                    <Shield size={24} className="mx-auto mb-2 text-gray-400" />
+                    No moderators assigned
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  {groundModerators.map(mod => (
+                    <Card key={mod.id}>
+                      <CardContent className="p-3 flex items-center gap-3">
+                        <div className="w-9 h-9 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 font-bold text-sm">
+                          {(mod.user_name || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{mod.user_name}</p>
+                          <p className="text-xs text-gray-500">
+                            <Phone size={10} className="inline mr-1" />{mod.user_phone}
+                            {mod.user_email && <span className="ml-2">{mod.user_email}</span>}
+                          </p>
+                          <Badge className="bg-purple-100 text-purple-700 text-xs mt-1">{mod.sport_type}</Badge>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveModFromGround(mod.id)}
+                          className="p-1.5 rounded-full hover:bg-red-50 text-red-400 hover:text-red-600"
+                          title="Remove moderator"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
