@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp, UserPlus } from 'lucide-react';
+import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp, UserPlus, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface Moderator {
   user_id: number;
@@ -56,6 +57,9 @@ interface Props {
   onBack: () => void;
 }
 
+const GROUNDS_PER_PAGE = 12;
+const PLAYERS_PER_PAGE = 10;
+
 const sportIconChar = (type: string) => {
   if (type === 'soccer' || type === 'football') return '\u26BD';
   if (type === 'cricket') return '\uD83C\uDFCF';
@@ -65,28 +69,11 @@ const sportIconChar = (type: string) => {
   return '\uD83C\uDFC5';
 };
 
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'voting_open': return 'Open for Voting';
-    case 'in_progress': return 'In Progress';
-    case 'completed': return 'Completed';
-    default: return status;
-  }
-};
-
 const formatPlayerName = (name: string) => (name || '').split(' ')[0];
-
-const statusColor = (status: string) => {
-  switch (status) {
-    case 'voting_open': return 'bg-green-100 text-green-700';
-    case 'in_progress': return 'bg-blue-100 text-blue-700';
-    case 'completed': return 'bg-purple-100 text-purple-700';
-    default: return 'bg-gray-100 text-gray-700';
-  }
-};
 
 export default function SearchGrounds({ onBack }: Props) {
   const { user } = useAuth();
+  const { activeTheme } = useTheme();
   const [locations, setLocations] = useState<Location[]>([]);
   const [results, setResults] = useState<GroundResult[]>([]);
   const [searchLocation, setSearchLocation] = useState('');
@@ -102,6 +89,9 @@ export default function SearchGrounds({ onBack }: Props) {
   const [joinMessage, setJoinMessage] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerPage, setPlayerPage] = useState(1);
 
   const handleJoinRequest = async (groundId: number) => {
     if (!joinSports.trim()) { alert('Please specify your sport interests'); return; }
@@ -120,7 +110,6 @@ export default function SearchGrounds({ onBack }: Props) {
     }
   };
 
-  // User's sport interests
   const userSports: string[] = user?.sports ? (typeof user.sports === 'string' ? (user.sports as string).split(',').filter(Boolean) : user.sports) : [];
 
   useEffect(() => {
@@ -130,6 +119,7 @@ export default function SearchGrounds({ onBack }: Props) {
 
   const handleSearch = async () => {
     setLoading(true);
+    setCurrentPage(1);
     try {
       const data = await api.searchGrounds(
         searchLocation && searchLocation !== 'all' ? searchLocation : undefined,
@@ -148,10 +138,14 @@ export default function SearchGrounds({ onBack }: Props) {
     if (expandedGround === groundId && !sportType) {
       setExpandedGround(null);
       setGroundGames([]);
+      setPlayerSearch('');
+      setPlayerPage(1);
       return;
     }
     setExpandedGround(groundId);
     setLoadingPlayers(true);
+    setPlayerSearch('');
+    setPlayerPage(1);
     try {
       const data = await api.getGroundPlayers(groundId, sportType || selectedSport || undefined);
       setGroundGames(data.games || []);
@@ -163,54 +157,106 @@ export default function SearchGrounds({ onBack }: Props) {
     }
   };
 
+  const totalPages = Math.ceil(results.length / GROUNDS_PER_PAGE);
+  const paginatedResults = results.slice(
+    (currentPage - 1) * GROUNDS_PER_PAGE,
+    currentPage * GROUNDS_PER_PAGE
+  );
+
+  const allPlayers = useMemo(() => {
+    const players: Array<GamePlayer & { game_title: string; sport_type: string; game_date: string }> = [];
+    for (const game of groundGames) {
+      for (const p of game.players) {
+        players.push({ ...p, game_title: game.title, sport_type: game.sport_type, game_date: game.game_date });
+      }
+    }
+    return players;
+  }, [groundGames]);
+
+  const filteredPlayers = useMemo(() => {
+    if (!playerSearch.trim()) return allPlayers;
+    const q = playerSearch.toLowerCase();
+    return allPlayers.filter(p => p.name.toLowerCase().includes(q));
+  }, [allPlayers, playerSearch]);
+
+  const playerTotalPages = Math.ceil(filteredPlayers.length / PLAYERS_PER_PAGE);
+  const paginatedPlayers = filteredPlayers.slice(
+    (playerPage - 1) * PLAYERS_PER_PAGE,
+    playerPage * PLAYERS_PER_PAGE
+  );
+
+  const PaginationControls = ({ page, total, onPageChange }: { page: number; total: number; onPageChange: (p: number) => void }) => {
+    if (total <= 1) return null;
+    return (
+      <div className="flex items-center justify-center gap-2 mt-3">
+        <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+          <ChevronLeft size={14} />
+        </Button>
+        <span className="text-xs text-gray-600">Page {page} of {total}</span>
+        <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={page >= total} onClick={() => onPageChange(page + 1)}>
+          <ChevronRight size={14} />
+        </Button>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-green-600 text-white">
-        <div className="max-w-lg mx-auto px-4 py-3">
+      <header className="text-white" style={{ backgroundColor: activeTheme.header_bg }}>
+        <div className="max-w-4xl mx-auto px-4 py-3">
           <button onClick={onBack} className="flex items-center gap-1 text-sm mb-2 hover:underline">
             <ArrowLeft size={16} /> Back
           </button>
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Search size={20} /> Search Grounds
           </h1>
-          <p className="text-sm text-green-100 mt-1">Find grounds, moderators & see who is playing</p>
+          <p className="text-sm opacity-80 mt-1">Find grounds, moderators & see who is playing</p>
         </div>
       </header>
 
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+      <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
         <Card>
           <CardContent className="p-4 space-y-3">
-            <div className="space-y-2">
-              <Label>Filter by Location</Label>
-              <Select value={searchLocation} onValueChange={setSearchLocation}>
-                <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {locations.map(loc => (
-                    <SelectItem key={loc.id} value={loc.name}>{loc.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label>Filter by Location</Label>
+                <Select value={searchLocation} onValueChange={setSearchLocation}>
+                  <SelectTrigger><SelectValue placeholder="All locations" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {locations.map(loc => (
+                      <SelectItem key={loc.id} value={loc.name}>{loc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Search by Name</Label>
+                <Input
+                  placeholder="e.g. Whitefield"
+                  value={searchName}
+                  onChange={e => setSearchName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button onClick={handleSearch} disabled={loading} className="w-full" style={{ backgroundColor: activeTheme.button_bg }}>
+                  <Search size={16} className="mr-2" />
+                  {loading ? 'Searching...' : 'Search'}
+                </Button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Search by Name</Label>
-              <Input
-                placeholder="e.g. Whitefield"
-                value={searchName}
-                onChange={e => setSearchName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              />
-            </div>
-            <Button onClick={handleSearch} disabled={loading} className="w-full bg-green-600 hover:bg-green-700">
-              <Search size={16} className="mr-2" />
-              {loading ? 'Searching...' : 'Search Grounds'}
-            </Button>
           </CardContent>
         </Card>
 
         {searched && (
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">{results.length} ground{results.length !== 1 ? 's' : ''} found</p>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">{results.length} ground{results.length !== 1 ? 's' : ''} found</p>
+              {totalPages > 1 && (
+                <p className="text-xs text-gray-400">Showing {(currentPage - 1) * GROUNDS_PER_PAGE + 1}-{Math.min(currentPage * GROUNDS_PER_PAGE, results.length)} of {results.length}</p>
+              )}
+            </div>
             {results.length === 0 && (
               <Card>
                 <CardContent className="py-8 text-center text-gray-500">
@@ -222,139 +268,133 @@ export default function SearchGrounds({ onBack }: Props) {
             {joinSuccess && (
               <div className="bg-green-50 text-green-700 p-3 rounded-md text-sm">{joinSuccess}</div>
             )}
-            {results.map(ground => (
-              <Card key={ground.id}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    {ground.sport_types && ground.sport_types.length > 0 ? (
-                      <span className="flex gap-0.5">{ground.sport_types.map(s => <span key={s} title={s}>{sportIconChar(s)}</span>)}</span>
-                    ) : (
-                      <MapPin size={16} className="text-green-600" />
-                    )}
-                    {ground.display_name}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {paginatedResults.map(ground => (
+                <Card key={ground.id} className="flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      {ground.sport_types && ground.sport_types.length > 0 ? (
+                        <span className="flex gap-0.5">{ground.sport_types.map(s => <span key={s} title={s}>{sportIconChar(s)}</span>)}</span>
+                      ) : (
+                        <MapPin size={16} style={{ color: activeTheme.primary_color }} />
+                      )}
+                      <span className="truncate">{ground.display_name}</span>
+                    </CardTitle>
                     {ground.ground_code_display && (
-                      <Badge variant="outline" className="text-xs font-mono ml-auto">{ground.ground_code_display}</Badge>
+                      <Badge variant="outline" className="text-xs font-mono w-fit">{ground.ground_code_display}</Badge>
                     )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Badge className="bg-green-100 text-green-700 text-xs">{ground.location}</Badge>
-                    <Badge variant="outline" className="text-xs">{ground.name}</Badge>
-                  </div>
-
-                  {ground.moderators.length > 0 ? (
-                    <div>
-                      <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
-                        <Shield size={14} className="text-purple-600" /> Moderators
-                      </p>
-                      <div className="space-y-2">
-                        {ground.moderators.map((mod, idx) => (
-                          <div key={`${mod.user_id}-${idx}`} className="flex items-center gap-2 p-2 bg-purple-50 rounded-lg">
-                            <Shield size={12} className="text-purple-600" />
-                            <div className="flex-1">
-                              <p className="text-sm font-medium">{mod.name}</p>
-                              <p className="text-xs text-gray-500">{mod.sport_type}</p>
-                            </div>
-                            <a href={`tel:${mod.phone}`} className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                              <Phone size={12} /> {mod.phone}
-                            </a>
-                          </div>
-                        ))}
-                      </div>
+                  </CardHeader>
+                  <CardContent className="p-4 pt-0 flex-1 flex flex-col">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Badge className="text-xs" style={{ backgroundColor: activeTheme.primary_color + '20', color: activeTheme.primary_color }}>{ground.location}</Badge>
+                      <Badge variant="outline" className="text-xs">{ground.name}</Badge>
                     </div>
-                  ) : (
-                    <p className="text-sm text-gray-400">No moderators assigned yet</p>
-                  )}
-
-                  {/* Join Request - only show to regular users who haven't joined, when moderators are assigned */}
-                  {ground.moderators.length > 0 && !ground.is_member && !ground.is_mod_or_admin && (
-                  <div className="mt-3 border-t pt-3">
-                    {joinGroundId === ground.id ? (
-                      <div className="space-y-2 mb-3">
-                        <Label className="text-sm">Your Sport Interests</Label>
-                        <Input
-                          placeholder="e.g. Soccer, Cricket"
-                          value={joinSports}
-                          onChange={e => setJoinSports(e.target.value)}
-                        />
-                        <Label className="text-sm">Message (optional)</Label>
-                        <Textarea
-                          placeholder="Hi, I'd like to join..."
-                          value={joinMessage}
-                          onChange={e => setJoinMessage(e.target.value)}
-                          rows={2}
-                        />
-                        <div className="flex gap-2">
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700" disabled={joinLoading}
-                            onClick={() => handleJoinRequest(ground.id)}>
-                            {joinLoading ? 'Submitting...' : 'Submit Request'}
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => setJoinGroundId(null)}>Cancel</Button>
+                    {ground.moderators.length > 0 ? (
+                      <div className="mb-2">
+                        <p className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                          <Shield size={14} className="text-purple-600" /> Moderators ({ground.moderators.length})
+                        </p>
+                        <div className="space-y-1">
+                          {ground.moderators.slice(0, 2).map((mod, idx) => (
+                            <div key={mod.user_id + '-' + idx} className="flex items-center gap-2 p-1.5 bg-purple-50 rounded text-xs">
+                              <Shield size={10} className="text-purple-600 shrink-0" />
+                              <span className="font-medium truncate">{mod.name}</span>
+                              <a href={'tel:' + mod.phone} className="ml-auto text-blue-600 hover:underline shrink-0">
+                                <Phone size={10} />
+                              </a>
+                            </div>
+                          ))}
+                          {ground.moderators.length > 2 && (
+                            <p className="text-xs text-gray-400">+{ground.moderators.length - 2} more</p>
+                          )}
                         </div>
                       </div>
                     ) : (
-                      <Button size="sm" variant="outline" className="mb-3 text-xs" onClick={() => setJoinGroundId(ground.id)}>
-                        <UserPlus size={12} className="mr-1" /> Request to Join
-                      </Button>
+                      <p className="text-xs text-gray-400 mb-2">No moderators assigned yet</p>
                     )}
-                  </div>
-                  )}
-
-                  {/* View Players section */}
-                  <div className="border-t pt-3">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      {userSports.length > 0 && (
-                        <div className="flex gap-1 flex-wrap">
-                          {userSports.map(s => (
-                            <button key={s}
-                              onClick={() => { setSelectedSport(s); handleViewPlayers(ground.id, s); }}
-                              className={`text-xs px-2 py-1 rounded-full border ${selectedSport === s && expandedGround === ground.id ? 'bg-green-100 border-green-400 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-green-50'}`}>
-                              {sportIconChar(s)} {s.charAt(0).toUpperCase() + s.slice(1)}
-                            </button>
-                          ))}
+                    {ground.moderators.length > 0 && !ground.is_member && !ground.is_mod_or_admin && (
+                    <div className="border-t pt-2 mt-auto">
+                      {joinGroundId === ground.id ? (
+                        <div className="space-y-2 mb-2">
+                          <Label className="text-xs">Your Sport Interests</Label>
+                          <Input className="h-7 text-xs" placeholder="e.g. Soccer, Cricket" value={joinSports} onChange={e => setJoinSports(e.target.value)} />
+                          <Label className="text-xs">Message (optional)</Label>
+                          <Textarea placeholder="Hi, I'd like to join..." value={joinMessage} onChange={e => setJoinMessage(e.target.value)} rows={2} className="text-xs" />
+                          <div className="flex gap-2">
+                            <Button size="sm" className="h-7 text-xs" style={{ backgroundColor: activeTheme.button_bg }} disabled={joinLoading} onClick={() => handleJoinRequest(ground.id)}>
+                              {joinLoading ? 'Submitting...' : 'Submit'}
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setJoinGroundId(null)}>Cancel</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => setJoinGroundId(ground.id)}>
+                          <UserPlus size={12} className="mr-1" /> Request to Join
+                        </Button>
+                      )}
+                    </div>
+                    )}
+                    <div className="border-t pt-2 mt-auto">
+                      <div className="flex items-center gap-1 mb-1 flex-wrap">
+                        {userSports.length > 0 && (
+                          <div className="flex gap-1 flex-wrap">
+                            {userSports.map(s => (
+                              <button key={s}
+                                onClick={() => { setSelectedSport(s); handleViewPlayers(ground.id, s); }}
+                                className={'text-xs px-1.5 py-0.5 rounded-full border ' + (selectedSport === s && expandedGround === ground.id ? 'border-current' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100')}
+                                style={selectedSport === s && expandedGround === ground.id ? { backgroundColor: activeTheme.primary_color + '15', color: activeTheme.primary_color, borderColor: activeTheme.primary_color } : undefined}>
+                                {sportIconChar(s)} {s.charAt(0).toUpperCase() + s.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <Button size="sm" variant="outline" className="ml-auto text-xs h-6 px-2" onClick={() => handleViewPlayers(ground.id)}>
+                          <Users size={12} className="mr-1" />
+                          {expandedGround === ground.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          {expandedGround === ground.id ? ' Hide' : ' Players'}
+                        </Button>
+                      </div>
+                      {expandedGround === ground.id && (
+                        <div className="space-y-2 mt-2">
+                          {loadingPlayers ? (
+                            <p className="text-xs text-gray-400">Loading...</p>
+                          ) : groundGames.length === 0 ? (
+                            <p className="text-xs text-gray-400">No games found{selectedSport ? ' for ' + selectedSport : ''}</p>
+                          ) : (
+                            <>
+                              {allPlayers.length > 0 && (
+                                <div className="relative">
+                                  <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                                  <Input className="h-7 text-xs pl-7" placeholder="Search players..." value={playerSearch} onChange={e => { setPlayerSearch(e.target.value); setPlayerPage(1); }} />
+                                </div>
+                              )}
+                              {filteredPlayers.length === 0 ? (
+                                <p className="text-xs text-gray-400">No players match &quot;{playerSearch}&quot;</p>
+                              ) : (
+                                <>
+                                  <div className="text-xs text-gray-400">{filteredPlayers.length} player{filteredPlayers.length !== 1 ? 's' : ''}</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {paginatedPlayers.map((p, idx) => (
+                                      <Badge key={p.user_id + '-' + idx} variant="outline" className="text-xs">
+                                        {formatPlayerName(p.name)}{p.position && p.position !== 'Anywhere' ? ' (' + p.position + ')' : ''}
+                                        {p.status === 'waiting' && <span className="text-orange-500 ml-1">WL</span>}
+                                        <span className="ml-1 text-gray-400">{sportIconChar(p.sport_type)}</span>
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                  <PaginationControls page={playerPage} total={playerTotalPages} onPageChange={setPlayerPage} />
+                                </>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
-                      <Button size="sm" variant="outline" className="ml-auto text-xs h-7"
-                        onClick={() => handleViewPlayers(ground.id)}>
-                        <Users size={12} className="mr-1" />
-                        {expandedGround === ground.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        {expandedGround === ground.id ? ' Hide' : ' Players'}
-                      </Button>
                     </div>
-
-                    {expandedGround === ground.id && (
-                      <div className="space-y-2">
-                        {loadingPlayers ? (
-                          <p className="text-xs text-gray-400">Loading...</p>
-                        ) : groundGames.length === 0 ? (
-                          <p className="text-xs text-gray-400">No games found on this ground{selectedSport ? ` for ${selectedSport}` : ''}</p>
-                        ) : (
-                          groundGames.map(game => (
-                            <div key={game.game_id} className="p-2 bg-gray-50 rounded-lg">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm">{sportIconChar(game.sport_type)}</span>
-                                {game.title && <span className="text-sm font-medium">{game.title}</span>}
-                                <Badge className={`${statusColor(game.status)} text-xs`}>{statusLabel(game.status)}</Badge>
-                              </div>
-                              <p className="text-xs text-gray-500 mb-1">{game.game_date} at {game.game_time}</p>
-                              <div className="flex flex-wrap gap-1">
-                                {game.players.map(p => (
-                                  <Badge key={p.user_id} variant="outline" className="text-xs">
-                                    {formatPlayerName(p.name)}{p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}
-                                    {p.status === 'waiting' && <span className="text-orange-500 ml-1">WL</span>}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            <PaginationControls page={currentPage} total={totalPages} onPageChange={setCurrentPage} />
           </div>
         )}
       </div>

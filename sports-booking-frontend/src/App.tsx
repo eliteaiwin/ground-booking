@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Dashboard from './pages/Dashboard';
@@ -156,10 +157,19 @@ function AppContent() {
   }
 }
 
+function ThemedApp() {
+  const { activeRole } = useAuth();
+  return (
+    <ThemeProvider activeRole={activeRole || 'user'}>
+      <AppContent />
+    </ThemeProvider>
+  );
+}
+
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ThemedApp />
     </AuthProvider>
   );
 }

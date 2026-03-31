@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -92,6 +93,7 @@ const roleDisplayNames: Record<string, string> = {
 
 export default function Dashboard({ onNavigate }: Props) {
   const { user, logout, isAdmin, isModerator, isGroundManagement, isReadOnly, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
+  const { activeTheme } = useTheme();
   const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -132,7 +134,7 @@ export default function Dashboard({ onNavigate }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-green-600 text-white shadow-lg">
+      <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">&#9917;</span>
@@ -141,7 +143,7 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('notifications')}
-              className="relative p-2 rounded-full hover:bg-green-700"
+              className="relative p-2 rounded-full hover:opacity-80"
             >
               <Bell size={20} />
               {unreadCount > 0 && (
@@ -153,7 +155,7 @@ export default function Dashboard({ onNavigate }: Props) {
             <div className="relative">
               <button
                 onClick={() => { setShowUserMenu(!showUserMenu); setShowSwitchUser(false); }}
-                className="flex items-center gap-1 p-1.5 rounded-full hover:bg-green-700"
+                className="flex items-center gap-1 p-1.5 rounded-full hover:opacity-80"
               >
                 <UserCircle size={22} />
                 <ChevronDown size={14} />
@@ -167,7 +169,7 @@ export default function Dashboard({ onNavigate }: Props) {
                     {/* Current user header */}
                     <div className="px-4 py-3 bg-gray-50 border-b">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center text-sm font-bold">
+                        <div className="w-8 h-8 rounded-full text-white flex items-center justify-center text-sm font-bold" style={{ backgroundColor: activeTheme.primary_color }}>
                           {user?.first_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -176,7 +178,7 @@ export default function Dashboard({ onNavigate }: Props) {
                       </div>
                       <div className="flex gap-1 mt-1 flex-wrap">
                         {user?.roles.map(role => (
-                          <Badge key={role} variant={role === activeRole ? "default" : "secondary"} className={`text-xs ${role === activeRole ? 'bg-green-600' : ''}`}>{roleDisplayNames[role] || role}</Badge>
+                          <Badge key={role} variant={role === activeRole ? "default" : "secondary"} className="text-xs" style={role === activeRole ? { backgroundColor: activeTheme.primary_color } : undefined}>{roleDisplayNames[role] || role}</Badge>
                         ))}
                       </div>
                     </div>
@@ -214,11 +216,12 @@ export default function Dashboard({ onNavigate }: Props) {
                                 setShowSwitchRole(false);
                                 setShowUserMenu(false);
                               }}
-                              className={`w-full flex items-center gap-3 px-6 py-2 text-sm transition-colors ${role === activeRole ? 'bg-green-50 text-green-700 font-medium' : 'hover:bg-gray-100 text-gray-700'}`}
+                              className={`w-full flex items-center gap-3 px-6 py-2 text-sm transition-colors ${role === activeRole ? 'font-medium' : 'hover:bg-gray-100 text-gray-700'}`}
+                              style={role === activeRole ? { backgroundColor: `${activeTheme.primary_color}15`, color: activeTheme.primary_color } : undefined}
                             >
-                              <div className={`w-2 h-2 rounded-full ${role === activeRole ? 'bg-green-500' : 'bg-gray-300'}`} />
+                              <div className={`w-2 h-2 rounded-full ${role === activeRole ? '' : 'bg-gray-300'}`} style={role === activeRole ? { backgroundColor: activeTheme.primary_color } : undefined} />
                               {roleDisplayNames[role] || role}
-                              {role === activeRole && <span className="ml-auto text-xs text-green-600">(Active)</span>}
+                              {role === activeRole && <span className="ml-auto text-xs" style={{ color: activeTheme.primary_color }}>(Active)</span>}
                             </button>
                           ))}
                         </div>
@@ -305,7 +308,7 @@ export default function Dashboard({ onNavigate }: Props) {
           <div>
             <h2 className="text-xl font-bold text-gray-800">Hey, {user?.first_name || user?.name}!</h2>
             <div className="flex gap-1 mt-1">
-              <Badge variant="default" className="text-xs bg-green-600">{roleDisplayNames[activeRole] || activeRole}</Badge>
+              <Badge variant="default" className="text-xs" style={{ backgroundColor: activeTheme.primary_color }}>{roleDisplayNames[activeRole] || activeRole}</Badge>
             </div>
           </div>
           {storedAccounts.length > 1 && (

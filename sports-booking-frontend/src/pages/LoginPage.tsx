@@ -328,8 +328,18 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden">
+      {/* Sports collage background */}
+      <div className="absolute inset-0 grid grid-cols-3 grid-rows-2 gap-0 opacity-20">
+        <div className="bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=600&q=80)' }} />
+        <div className="bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600&q=80)' }} />
+        <div className="bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=600&q=80)' }} />
+        <div className="bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1519861531473-9200262188bf?w=600&q=80)' }} />
+        <div className="bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1587280501635-68a0e82cd5ff?w=600&q=80)' }} />
+        <div className="bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1461896836934-bd45ba8fcf9b?w=600&q=80)' }} />
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-br from-green-900/70 to-blue-900/70" />
+      <Card className="w-full max-w-md relative z-10 shadow-2xl">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
             <span className="text-white text-2xl">&#9917;</span>

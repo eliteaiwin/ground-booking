@@ -1860,22 +1860,35 @@ async def access_voting_page(
 @router.get("/search/games")
 async def search_games(
     date: Optional[str] = Query(None, description="Filter by game date (YYYY-MM-DD)"),
+    date_from: Optional[str] = Query(None, description="Filter games from this date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter games up to this date (YYYY-MM-DD)"),
     ground: Optional[str] = Query(None, description="Filter by ground name (partial match)"),
+    location: Optional[str] = Query(None, description="Filter by location name"),
     status: Optional[str] = Query(None, description="Filter by game status"),
     sport: Optional[str] = Query(None, description="Filter by sport type"),
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    """Search games by date, ground, status, sport. Any user can search."""
+    """Search games by date range, ground, location, status, sport. Any user can search."""
     query = "SELECT id FROM games WHERE 1=1"
     params: list[str] = []
 
     if date:
         query += " AND game_date = ?"
         params.append(date)
+    if date_from:
+        query += " AND game_date >= ?"
+        params.append(date_from)
+    if date_to:
+        query += " AND game_date <= ?"
+        params.append(date_to)
     if ground:
         query += " AND LOWER(ground_name) LIKE LOWER(?)"
         params.append(f"%{ground}%")
+    if location:
+        # Join with grounds table to filter by location
+        query += " AND ground_name IN (SELECT name FROM grounds WHERE LOWER(location) = LOWER(?))"
+        params.append(location)
     if status:
         query += " AND status = ?"
         params.append(status)
@@ -1883,7 +1896,7 @@ async def search_games(
         query += " AND LOWER(sport_type) LIKE LOWER(?)"
         params.append(f"%{sport}%")
 
-    query += " ORDER BY game_date DESC, game_time DESC"
+    query += " ORDER BY game_date ASC, game_time ASC"
 
     cursor = await db.execute(query, params)
     games = await cursor.fetchall()

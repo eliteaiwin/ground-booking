@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -6,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3, Palette, RotateCcw } from 'lucide-react';
 
 interface UserItem {
   id: number;
@@ -45,7 +46,8 @@ interface Props {
 }
 
 export default function AdminScreens({ onBack }: Props) {
-  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles'>('locations');
+  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles' | 'themes'>('locations');
+  const { themes, refreshThemes } = useTheme();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [grounds, setGrounds] = useState<Ground[]>([]);
@@ -86,6 +88,49 @@ export default function AdminScreens({ onBack }: Props) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+
+  // Theme editing state
+  interface ThemeColors { primary_color: string; header_bg: string; button_bg: string; button_hover: string; accent_color: string; }
+  const DEFAULT_THEMES: Record<string, ThemeColors> = {
+    admin: { primary_color: '#7f1d1d', header_bg: '#7f1d1d', button_bg: '#7f1d1d', button_hover: '#991b1b', accent_color: '#7f1d1d' },
+    moderator: { primary_color: '#1d4ed8', header_bg: '#1d4ed8', button_bg: '#1d4ed8', button_hover: '#1e40af', accent_color: '#1d4ed8' },
+    ground_management: { primary_color: '#6b7280', header_bg: '#6b7280', button_bg: '#6b7280', button_hover: '#4b5563', accent_color: '#6b7280' },
+    user: { primary_color: '#16a34a', header_bg: '#16a34a', button_bg: '#16a34a', button_hover: '#15803d', accent_color: '#16a34a' },
+    readonly: { primary_color: '#16a34a', header_bg: '#16a34a', button_bg: '#16a34a', button_hover: '#15803d', accent_color: '#16a34a' },
+  };
+  const ROLE_LABELS: Record<string, string> = { admin: 'Admin', moderator: 'Moderator', ground_management: 'Ground Management', user: 'User', readonly: 'User (Read Only)' };
+  const [editingThemes, setEditingThemes] = useState<Record<string, ThemeColors>>({});
+  const [themeSaving, setThemeSaving] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'themes' && Object.keys(editingThemes).length === 0) {
+      const merged: Record<string, ThemeColors> = {};
+      for (const role of Object.keys(DEFAULT_THEMES)) {
+        const t = (themes as Record<string, ThemeColors>)[role] || DEFAULT_THEMES[role];
+        merged[role] = { ...t };
+      }
+      setEditingThemes(merged);
+    }
+  }, [activeTab, themes]);
+
+  const handleSaveTheme = async (role: string) => {
+    const t = editingThemes[role];
+    if (!t) return;
+    setThemeSaving(true);
+    try {
+      await api.updateRoleTheme({ role, ...t });
+      await refreshThemes();
+      showMsg(`Theme updated for ${ROLE_LABELS[role] || role}!`);
+    } catch (err: unknown) {
+      showMsg(err instanceof Error ? err.message : 'Failed to update theme', true);
+    } finally {
+      setThemeSaving(false);
+    }
+  };
+
+  const handleResetTheme = (role: string) => {
+    setEditingThemes(prev => ({ ...prev, [role]: { ...DEFAULT_THEMES[role] } }));
+  };
 
   useEffect(() => {
     loadData();
@@ -336,6 +381,14 @@ export default function AdminScreens({ onBack }: Props) {
             size="sm"
           >
             <BarChart3 size={14} className="mr-1" /> Roles
+          </Button>
+          <Button
+            variant={activeTab === 'themes' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('themes')}
+            className={activeTab === 'themes' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+            size="sm"
+          >
+            <Palette size={14} className="mr-1" /> Themes
           </Button>
         </div>
 
@@ -802,6 +855,79 @@ export default function AdminScreens({ onBack }: Props) {
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* ===== THEMES TAB ===== */}
+        {activeTab === 'themes' && (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Palette size={16} /> Role Theme Colors
+                </CardTitle>
+                <p className="text-xs text-gray-500 mt-1">Customize the app colors for each role. Changes apply to all users of that role.</p>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {Object.keys(DEFAULT_THEMES).map(role => {
+                  const t = editingThemes[role];
+                  if (!t) return null;
+                  const colorFields: Array<{ key: keyof ThemeColors; label: string }> = [
+                    { key: 'primary_color', label: 'Primary' },
+                    { key: 'header_bg', label: 'Header' },
+                    { key: 'button_bg', label: 'Button' },
+                    { key: 'button_hover', label: 'Button Hover' },
+                    { key: 'accent_color', label: 'Accent' },
+                  ];
+                  return (
+                    <div key={role} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: t.primary_color }} />
+                          <span className="font-medium text-sm">{ROLE_LABELS[role] || role}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleResetTheme(role)}>
+                            <RotateCcw size={12} className="mr-1" /> Reset
+                          </Button>
+                          <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700" disabled={themeSaving} onClick={() => handleSaveTheme(role)}>
+                            {themeSaving ? 'Saving...' : 'Save'}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {colorFields.map(({ key, label }) => (
+                          <div key={key} className="text-center">
+                            <Label className="text-xs text-gray-500 block mb-1">{label}</Label>
+                            <input
+                              type="color"
+                              value={t[key]}
+                              onChange={e => setEditingThemes(prev => ({
+                                ...prev,
+                                [role]: { ...prev[role], [key]: e.target.value }
+                              }))}
+                              className="w-full h-8 rounded border cursor-pointer"
+                            />
+                            <span className="text-xs text-gray-400 mt-0.5 block">{t[key]}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Preview bar */}
+                      <div className="mt-3 rounded-lg overflow-hidden">
+                        <div className="px-3 py-2 text-white text-xs font-medium" style={{ backgroundColor: t.header_bg }}>
+                          Preview: {ROLE_LABELS[role] || role} Header
+                        </div>
+                        <div className="p-2 bg-gray-50 flex gap-2">
+                          <button className="px-3 py-1 rounded text-white text-xs" style={{ backgroundColor: t.button_bg }}>Button</button>
+                          <button className="px-3 py-1 rounded text-white text-xs" style={{ backgroundColor: t.button_hover }}>Hover</button>
+                          <Badge className="text-xs" style={{ backgroundColor: t.accent_color + '20', color: t.accent_color }}>Accent</Badge>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           </>

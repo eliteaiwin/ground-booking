@@ -363,11 +363,15 @@ export const api = {
 
   // Game search
   searchGames: (filters?: {
-    date?: string; ground?: string; status?: string; sport?: string;
+    date?: string; date_from?: string; date_to?: string;
+    ground?: string; location?: string; status?: string; sport?: string;
   }) => {
     const params = new URLSearchParams();
     if (filters?.date) params.append('date', filters.date);
+    if (filters?.date_from) params.append('date_from', filters.date_from);
+    if (filters?.date_to) params.append('date_to', filters.date_to);
     if (filters?.ground) params.append('ground', filters.ground);
+    if (filters?.location) params.append('location', filters.location);
     if (filters?.status) params.append('status', filters.status);
     if (filters?.sport) params.append('sport', filters.sport);
     const qs = params.toString();
@@ -605,4 +609,14 @@ export const api = {
 
   getPaymentReminders: (gameId: number) =>
     request(`/api/notifications/payment-reminders/${gameId}`),
+
+  // Role Theme Settings
+  getRoleThemes: () =>
+    request('/api/preferences/role-themes'),
+
+  updateRoleTheme: (data: {
+    role: string; primary_color: string; header_bg: string;
+    button_bg: string; button_hover: string; accent_color: string;
+  }) =>
+    request('/api/preferences/role-themes', { method: 'PUT', body: JSON.stringify(data) }),
 };

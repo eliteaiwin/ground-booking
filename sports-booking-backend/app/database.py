@@ -362,6 +362,19 @@ async def init_db():
             FOREIGN KEY (game_id) REFERENCES games(id),
             UNIQUE(user_id, game_id)
         );
+
+        CREATE TABLE IF NOT EXISTS role_theme_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL UNIQUE,
+            primary_color TEXT NOT NULL DEFAULT '#16a34a',
+            header_bg TEXT NOT NULL DEFAULT '#16a34a',
+            button_bg TEXT NOT NULL DEFAULT '#16a34a',
+            button_hover TEXT NOT NULL DEFAULT '#15803d',
+            accent_color TEXT NOT NULL DEFAULT '#16a34a',
+            updated_by INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (updated_by) REFERENCES users(id)
+        );
     """)
 
     # Migration: add columns if they don't exist (for existing databases)
@@ -497,6 +510,25 @@ async def init_db():
                 )
     except Exception:
         pass
+
+    # Seed default role theme colors
+    default_themes = [
+        ("admin", "#7f1d1d", "#7f1d1d", "#7f1d1d", "#991b1b", "#7f1d1d"),       # Maroon
+        ("moderator", "#1d4ed8", "#1d4ed8", "#1d4ed8", "#1e40af", "#1d4ed8"),    # Blue
+        ("ground_management", "#6b7280", "#6b7280", "#6b7280", "#4b5563", "#6b7280"),  # Light Grey
+        ("user", "#16a34a", "#16a34a", "#16a34a", "#15803d", "#16a34a"),          # Green
+        ("readonly", "#16a34a", "#16a34a", "#16a34a", "#15803d", "#16a34a"),      # Green (same as user)
+    ]
+    for role, primary, header, btn, btn_hover, accent in default_themes:
+        try:
+            await db.execute(
+                """INSERT OR IGNORE INTO role_theme_settings
+                   (role, primary_color, header_bg, button_bg, button_hover, accent_color)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (role, primary, header, btn, btn_hover, accent)
+            )
+        except Exception:
+            pass
 
     await db.commit()
 
