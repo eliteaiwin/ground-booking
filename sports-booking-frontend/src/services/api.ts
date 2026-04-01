@@ -574,9 +574,13 @@ export const api = {
     if (caption) formData.append('caption', caption);
     const token = getToken();
     const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const base = (import.meta as Record<string, Record<string, string>>).env?.VITE_API_URL || '';
-    const res = await fetch(`${base}/api/locations/grounds/${groundId}/photos`, {
+    if (_proxyBasicAuth) {
+      headers['Authorization'] = `Basic ${_proxyBasicAuth}`;
+      if (token) headers['X-Auth-Token'] = `Bearer ${token}`;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${API_URL}/api/locations/grounds/${groundId}/photos`, {
       method: 'POST',
       headers,
       body: formData,
@@ -595,8 +599,7 @@ export const api = {
     request(`/api/locations/grounds/${groundId}/photos/${photoId}`, { method: 'DELETE' }),
 
   getGroundPhotoUrl: (filename: string) => {
-    const base = (import.meta as Record<string, Record<string, string>>).env?.VITE_API_URL || '';
-    return `${base}/api/locations/grounds/photo/${filename}`;
+    return `${API_URL}/api/locations/grounds/photo/${filename}`;
   },
 
   // Direct Voting Link
