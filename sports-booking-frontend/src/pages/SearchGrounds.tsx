@@ -29,6 +29,7 @@ interface GroundResult {
   moderators: Moderator[];
   is_member?: boolean;
   is_mod_or_admin?: boolean;
+  main_photo?: string;
 }
 
 interface Location {
@@ -271,6 +272,15 @@ export default function SearchGrounds({ onBack }: Props) {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {paginatedResults.map(ground => (
                 <Card key={ground.id} className="flex flex-col">
+                  {ground.main_photo && (
+                    <div className="w-full h-32 overflow-hidden rounded-t-lg">
+                      <img
+                        src={api.getGroundPhotoUrl(ground.main_photo)}
+                        alt={ground.display_name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       {ground.sport_types && ground.sport_types.length > 0 ? (

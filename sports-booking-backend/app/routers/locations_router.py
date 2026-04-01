@@ -1,11 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
+import os
+import uuid
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from ..database import get_db
 from ..auth import get_current_user_id
+
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads"))
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
 
@@ -236,6 +243,13 @@ async def search_grounds_public(
             "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
         )
         is_admin_user = await admin_check.fetchone() is not None
+        # Get main photo for this ground
+        photo_cursor = await db.execute(
+            "SELECT filename FROM ground_photos WHERE ground_id = ? AND is_main = 1 LIMIT 1",
+            (g["id"],)
+        )
+        photo_row = await photo_cursor.fetchone()
+        main_photo = photo_row["filename"] if photo_row else ""
         results.append({
             "id": g["id"],
             "name": g["name"],
@@ -248,6 +262,7 @@ async def search_grounds_public(
             "moderators": moderators,
             "is_member": is_member,
             "is_mod_or_admin": is_mod_for_ground or is_gm_for_ground or is_admin_user,
+            "main_photo": main_photo,
         })
     return results
 
@@ -272,6 +287,13 @@ async def list_grounds(
             ground_code = r["ground_code"] or ""
         except Exception:
             pass
+        # Get main photo
+        photo_cursor = await db.execute(
+            "SELECT filename FROM ground_photos WHERE ground_id = ? AND is_main = 1 LIMIT 1",
+            (r["id"],)
+        )
+        photo_row = await photo_cursor.fetchone()
+        main_photo = photo_row["filename"] if photo_row else ""
         result.append({
             "id": r["id"],
             "name": r["name"],
@@ -281,6 +303,7 @@ async def list_grounds(
             "display_name": f"{r['location']} - {r['name']}",
             "is_approved": r["is_approved"],
             "created_at": r["created_at"],
+            "main_photo": main_photo,
         })
     return result
 
@@ -1241,3 +1264,211 @@ async def remove_ground_moderator(
     await db.execute("DELETE FROM moderator_locations WHERE id = ?", (assignment_id,))
     await db.commit()
     return {"message": "Moderator removed from ground"}
+
+
+# --- Ground Photos ---
+
+async def _can_manage_ground_photos(user_id: int, ground_id: int, db: aiosqlite.Connection) -> bool:
+    """Check if user is admin, ground manager, or moderator for this ground."""
+    # Admin can always manage
+    cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
+    if await cursor.fetchone():
+        return True
+    # Ground management for this ground
+    cursor = await db.execute(
+        "SELECT 1 FROM ground_management_assignments WHERE user_id = ? AND ground_id = ?", (user_id, ground_id)
+    )
+    if await cursor.fetchone():
+        return True
+    # Moderator for this ground
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if ground:
+        cursor = await db.execute(
+            "SELECT 1 FROM moderator_locations WHERE user_id = ? AND location = ? AND (ground_name = ? OR ground_name = '')",
+            (user_id, ground["location"], ground["name"])
+        )
+        if await cursor.fetchone():
+            return True
+    return False
+
+
+@router.get("/grounds/{ground_id}/photos")
+async def list_ground_photos(
+    ground_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """List all photos for a ground. Any authenticated user can view."""
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ground not found")
+    cursor = await db.execute(
+        """SELECT gp.id, gp.ground_id, gp.filename, gp.caption, gp.is_main, gp.uploaded_by, gp.created_at,
+                  u.name as uploader_name
+           FROM ground_photos gp
+           LEFT JOIN users u ON gp.uploaded_by = u.id
+           WHERE gp.ground_id = ?
+           ORDER BY gp.is_main DESC, gp.created_at DESC""",
+        (ground_id,)
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "ground_id": r["ground_id"],
+            "filename": r["filename"],
+            "caption": r["caption"],
+            "is_main": bool(r["is_main"]),
+            "uploaded_by": r["uploaded_by"],
+            "uploader_name": r["uploader_name"] or "",
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+@router.post("/grounds/{ground_id}/photos")
+async def upload_ground_photo(
+    ground_id: int,
+    file: UploadFile = File(...),
+    caption: str = "",
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Upload a photo for a ground. Only moderators, ground managers, or admins."""
+    if not await _can_manage_ground_photos(user_id, ground_id, db):
+        raise HTTPException(status_code=403, detail="Only moderators, ground managers, or admins can upload ground photos")
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    # Limit file size to 10MB using chunked reads
+    max_size = 10 * 1024 * 1024
+    chunks = []
+    total = 0
+    while chunk := await file.read(8192):
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
+        chunks.append(chunk)
+    contents = b"".join(chunks)
+
+    ext = Path(file.filename or "photo.jpg").suffix or ".jpg"
+    filename = f"ground_{ground_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = UPLOAD_DIR / filename
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    # Check if this is the first photo — make it main by default
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM ground_photos WHERE ground_id = ?", (ground_id,))
+    count = (await cursor.fetchone())["cnt"]
+    is_main = 1 if count == 0 else 0
+
+    cursor = await db.execute(
+        "INSERT INTO ground_photos (ground_id, filename, caption, is_main, uploaded_by) VALUES (?, ?, ?, ?, ?)",
+        (ground_id, filename, caption, is_main, user_id)
+    )
+    await db.commit()
+
+    return {
+        "id": cursor.lastrowid,
+        "filename": filename,
+        "is_main": bool(is_main),
+        "message": "Photo uploaded"
+    }
+
+
+@router.put("/grounds/{ground_id}/photos/{photo_id}/set-main")
+async def set_main_ground_photo(
+    ground_id: int,
+    photo_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Set a photo as the main photo for a ground."""
+    if not await _can_manage_ground_photos(user_id, ground_id, db):
+        raise HTTPException(status_code=403, detail="Only moderators, ground managers, or admins can manage ground photos")
+
+    cursor = await db.execute(
+        "SELECT * FROM ground_photos WHERE id = ? AND ground_id = ?", (photo_id, ground_id)
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Unset all main photos for this ground, then set the selected one
+    await db.execute("UPDATE ground_photos SET is_main = 0 WHERE ground_id = ?", (ground_id,))
+    await db.execute("UPDATE ground_photos SET is_main = 1 WHERE id = ?", (photo_id,))
+    await db.commit()
+
+    return {"message": "Main photo updated"}
+
+
+@router.delete("/grounds/{ground_id}/photos/{photo_id}")
+async def delete_ground_photo(
+    ground_id: int,
+    photo_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Delete a ground photo."""
+    if not await _can_manage_ground_photos(user_id, ground_id, db):
+        raise HTTPException(status_code=403, detail="Only moderators, ground managers, or admins can manage ground photos")
+
+    cursor = await db.execute(
+        "SELECT * FROM ground_photos WHERE id = ? AND ground_id = ?", (photo_id, ground_id)
+    )
+    photo = await cursor.fetchone()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Delete file from disk
+    try:
+        file_path = UPLOAD_DIR / photo["filename"]
+        if file_path.exists():
+            file_path.unlink()
+    except Exception:
+        pass
+
+    was_main = photo["is_main"]
+    await db.execute("DELETE FROM ground_photos WHERE id = ?", (photo_id,))
+
+    # If deleted photo was main, promote the next photo
+    if was_main:
+        cursor = await db.execute(
+            "SELECT id FROM ground_photos WHERE ground_id = ? ORDER BY created_at ASC LIMIT 1",
+            (ground_id,)
+        )
+        next_photo = await cursor.fetchone()
+        if next_photo:
+            await db.execute("UPDATE ground_photos SET is_main = 1 WHERE id = ?", (next_photo["id"],))
+
+    await db.commit()
+    return {"message": "Photo deleted"}
+
+
+@router.get("/grounds/photo/{filename}")
+async def get_ground_photo(filename: str):
+    """Serve a ground photo file."""
+    safe_name = Path(filename).name
+    file_path = UPLOAD_DIR / safe_name
+    if not file_path.exists() or not file_path.is_relative_to(UPLOAD_DIR):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(file_path))
+
+
+@router.get("/grounds/{ground_id}/main-photo")
+async def get_ground_main_photo(
+    ground_id: int,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get the main photo filename for a ground (public, no auth required for display)."""
+    cursor = await db.execute(
+        "SELECT filename FROM ground_photos WHERE ground_id = ? AND is_main = 1 LIMIT 1",
+        (ground_id,)
+    )
+    row = await cursor.fetchone()
+    if row:
+        return {"filename": row["filename"], "has_photo": True}
+    return {"filename": "", "has_photo": False}

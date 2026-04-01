@@ -308,6 +308,18 @@ async def init_db():
             UNIQUE(user_id, ground_id)
         );
 
+        CREATE TABLE IF NOT EXISTS ground_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ground_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            caption TEXT NOT NULL DEFAULT '',
+            is_main INTEGER NOT NULL DEFAULT 0,
+            uploaded_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (uploaded_by) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS notification_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL UNIQUE,

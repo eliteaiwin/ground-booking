@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -122,7 +122,7 @@ export default function GroundManagement({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'schedule' | 'requests' | 'moderators'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'requests' | 'moderators' | 'photos'>('schedule');
   const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
@@ -154,6 +154,23 @@ export default function GroundManagement({ onBack }: Props) {
   const [modMgmtSearchResults, setModMgmtSearchResults] = useState<UserOption[]>([]);
   const [modMgmtSearchLoading, setModMgmtSearchLoading] = useState(false);
   const [addModLoading, setAddModLoading] = useState(false);
+
+  // Ground Photos state
+  interface GroundPhoto {
+    id: number;
+    ground_id: number;
+    filename: string;
+    caption: string;
+    is_main: boolean;
+    uploaded_by: number;
+    uploader_name: string;
+    created_at: string;
+  }
+  const [groundPhotos, setGroundPhotos] = useState<GroundPhoto[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoCaption, setPhotoCaption] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadGrounds();
@@ -282,8 +299,66 @@ export default function GroundManagement({ onBack }: Props) {
       loadSchedule(selectedGround.id);
       loadJoinRequests(selectedGround.id);
       loadGroundModerators(selectedGround.id);
+      loadGroundPhotos(selectedGround.id);
     }
   }, [selectedGround, viewMode, currentDate]);
+
+  const loadGroundPhotos = async (groundId: number) => {
+    setPhotosLoading(true);
+    try {
+      const data = await api.listGroundPhotos(groundId);
+      setGroundPhotos(data);
+    } catch (err) {
+      console.error('Failed to load ground photos:', err);
+    } finally {
+      setPhotosLoading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedGround || !e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    if (!file.type.startsWith('image/')) {
+      alert('Only image files are allowed');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large. Max 10MB.');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      await api.uploadGroundPhoto(selectedGround.id, file, photoCaption);
+      setPhotoCaption('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      await loadGroundPhotos(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to upload photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleSetMainPhoto = async (photoId: number) => {
+    if (!selectedGround) return;
+    try {
+      await api.setMainGroundPhoto(selectedGround.id, photoId);
+      await loadGroundPhotos(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to set main photo');
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: number) => {
+    if (!selectedGround) return;
+    if (!confirm('Delete this photo?')) return;
+    try {
+      await api.deleteGroundPhoto(selectedGround.id, photoId);
+      await loadGroundPhotos(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete photo');
+    }
+  };
 
   const loadGroundModerators = async (groundId: number) => {
     setModeratorsLoading(true);
@@ -837,6 +912,15 @@ export default function GroundManagement({ onBack }: Props) {
           >
             <Shield size={14} className="inline mr-1" /> Moderators
           </button>
+          <button
+            onClick={() => setActiveTab('photos')}
+            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'photos' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Camera size={14} className="inline mr-1" /> Photos
+            {groundPhotos.length > 0 && (
+              <span className="ml-1 text-xs">({groundPhotos.length})</span>
+            )}
+          </button>
         </div>
 
         {activeTab === 'requests' && (
@@ -999,6 +1083,139 @@ export default function GroundManagement({ onBack }: Props) {
                         >
                           <Trash2 size={16} />
                         </button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'photos' && (
+          <div className="space-y-4">
+            {/* Upload section */}
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Upload size={14} /> Upload Ground Photo
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs">Caption (optional)</Label>
+                    <Input
+                      value={photoCaption}
+                      onChange={e => setPhotoCaption(e.target.value)}
+                      placeholder="e.g. Main entrance, Pitch view..."
+                      className="mt-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                      id="ground-photo-upload"
+                    />
+                    <Button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingPhoto}
+                      className="bg-amber-600 hover:bg-amber-700"
+                    >
+                      <Camera size={14} className="mr-2" />
+                      {uploadingPhoto ? 'Uploading...' : 'Choose & Upload Photo'}
+                    </Button>
+                    <p className="text-xs text-gray-400">Max 10MB, images only</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Main photo display */}
+            {groundPhotos.some(p => p.is_main) && (
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <Star size={14} className="text-yellow-500" /> Main Photo
+                  </h3>
+                  {groundPhotos.filter(p => p.is_main).map(photo => (
+                    <div key={photo.id} className="relative">
+                      <img
+                        src={api.getGroundPhotoUrl(photo.filename)}
+                        alt={photo.caption || 'Main ground photo'}
+                        className="w-full max-h-64 object-cover rounded-lg"
+                      />
+                      {photo.caption && (
+                        <p className="text-sm text-gray-600 mt-2">{photo.caption}</p>
+                      )}
+                      <Badge className="absolute top-2 left-2 bg-yellow-500 text-white text-xs">
+                        <Star size={10} className="mr-1" /> Main Photo
+                      </Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Photo gallery */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <Image size={14} className="text-amber-600" /> All Photos ({groundPhotos.length})
+              </h3>
+              {photosLoading ? (
+                <p className="text-gray-500 text-center py-4">Loading photos...</p>
+              ) : groundPhotos.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-gray-500">
+                    <Camera size={24} className="mx-auto mb-2 text-gray-400" />
+                    No photos uploaded yet. Upload the first photo of this ground!
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {groundPhotos.map(photo => (
+                    <Card key={photo.id} className={`overflow-hidden ${photo.is_main ? 'ring-2 ring-yellow-400' : ''}`}>
+                      <div className="relative">
+                        <img
+                          src={api.getGroundPhotoUrl(photo.filename)}
+                          alt={photo.caption || 'Ground photo'}
+                          className="w-full h-32 object-cover"
+                        />
+                        {photo.is_main && (
+                          <Badge className="absolute top-1 left-1 bg-yellow-500 text-white text-xs px-1 py-0">
+                            <Star size={8} className="mr-0.5" /> Main
+                          </Badge>
+                        )}
+                      </div>
+                      <CardContent className="p-2">
+                        {photo.caption && (
+                          <p className="text-xs text-gray-600 truncate mb-1">{photo.caption}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mb-2">
+                          By {photo.uploader_name || 'Unknown'}
+                        </p>
+                        <div className="flex gap-1">
+                          {!photo.is_main && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-6 px-2 flex-1"
+                              onClick={() => handleSetMainPhoto(photo.id)}
+                            >
+                              <Star size={10} className="mr-1" /> Set Main
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-6 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => handleDeletePhoto(photo.id)}
+                          >
+                            <Trash2 size={10} />
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}

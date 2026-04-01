@@ -564,6 +564,41 @@ export const api = {
   removeGroundModerator: (groundId: number, assignmentId: number) =>
     request(`/api/locations/grounds/${groundId}/moderators/${assignmentId}`, { method: 'DELETE' }),
 
+  // Ground Photos
+  listGroundPhotos: (groundId: number) =>
+    request(`/api/locations/grounds/${groundId}/photos`),
+
+  uploadGroundPhoto: async (groundId: number, file: File, caption: string = '') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (caption) formData.append('caption', caption);
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const base = (import.meta as Record<string, Record<string, string>>).env?.VITE_API_URL || '';
+    const res = await fetch(`${base}/api/locations/grounds/${groundId}/photos`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json();
+  },
+
+  setMainGroundPhoto: (groundId: number, photoId: number) =>
+    request(`/api/locations/grounds/${groundId}/photos/${photoId}/set-main`, { method: 'PUT' }),
+
+  deleteGroundPhoto: (groundId: number, photoId: number) =>
+    request(`/api/locations/grounds/${groundId}/photos/${photoId}`, { method: 'DELETE' }),
+
+  getGroundPhotoUrl: (filename: string) => {
+    const base = (import.meta as Record<string, Record<string, string>>).env?.VITE_API_URL || '';
+    return `${base}/api/locations/grounds/photo/${filename}`;
+  },
+
   // Direct Voting Link
   getVotingLink: (gameId: number) =>
     request(`/api/games/${gameId}/voting-link`),
