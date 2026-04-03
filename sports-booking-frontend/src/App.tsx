@@ -33,6 +33,13 @@ function AppContent() {
     () => localStorage.getItem('force_password_change') === '1'
   );
 
+  // Sync forcePasswordChange state when localStorage changes after login
+  useEffect(() => {
+    if (user && !loading) {
+      setForcePasswordChange(localStorage.getItem('force_password_change') === '1');
+    }
+  }, [user, loading]);
+
   // Reset to login screen whenever user logs out
   useEffect(() => {
     if (!user && !loading) {
