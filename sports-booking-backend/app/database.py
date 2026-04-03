@@ -375,6 +375,16 @@ async def init_db():
             UNIQUE(user_id, game_id)
         );
 
+        CREATE TABLE IF NOT EXISTS user_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            purpose TEXT NOT NULL DEFAULT 'profile' CHECK(purpose IN ('profile', 'soccer', 'cricket', 'badminton', 'basketball', 'hockey')),
+            caption TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS role_theme_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             role TEXT NOT NULL UNIQUE,

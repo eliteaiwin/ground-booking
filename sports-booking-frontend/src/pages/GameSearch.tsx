@@ -17,6 +17,7 @@ interface Player {
   position: string;
   status: string;
   payment_confirmed: number;
+  photo: string;
 }
 
 interface GameResult {
@@ -410,7 +411,10 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                               <p className="text-xs font-semibold text-gray-600 mb-1">Confirmed Players:</p>
                               <div className="flex flex-wrap gap-1">
                                 {game.selected_players.map(p => (
-                                  <Badge key={p.user_id} variant="outline" className="text-xs">
+                                  <Badge key={p.user_id} variant="outline" className="text-xs flex items-center gap-1">
+                                    {p.photo && (
+                                      <img src={api.getProfilePicUrl(p.photo)} alt={p.name} className="w-4 h-4 rounded-full object-cover" />
+                                    )}
                                     {formatNamePhone(p.name, p.phone)}
                                     {p.position && p.position !== 'Anywhere' && ` (${p.position})`}
                                   </Badge>

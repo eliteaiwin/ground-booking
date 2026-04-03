@@ -600,6 +600,242 @@ async def get_profile_pic(filename: str):
     return FileResponse(str(file_path))
 
 
+VALID_PHOTO_PURPOSES = ('profile', 'soccer', 'cricket', 'badminton', 'basketball', 'hockey')
+
+
+@router.post("/me/photos")
+async def upload_user_photo(
+    file: UploadFile = File(...),
+    purpose: str = "profile",
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Upload a photo and assign it to a purpose (profile, soccer, cricket, etc.)."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+
+    purpose = purpose.lower().strip()
+    if purpose not in VALID_PHOTO_PURPOSES:
+        raise HTTPException(status_code=400, detail=f"Invalid purpose. Must be one of: {', '.join(VALID_PHOTO_PURPOSES)}")
+
+    # Limit file size to 5MB using chunked reads
+    max_size = 5 * 1024 * 1024
+    chunks = []
+    total = 0
+    while chunk := await file.read(8192):
+        total += len(chunk)
+        if total > max_size:
+            raise HTTPException(status_code=400, detail="File too large. Max 5MB.")
+        chunks.append(chunk)
+    contents = b"".join(chunks)
+
+    # Generate unique filename
+    ext = Path(file.filename or "pic.jpg").suffix or ".jpg"
+    filename = f"userphoto_{user_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = UPLOAD_DIR / filename
+
+    # Save file
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    # Remove any existing photo with the same purpose for this user
+    cursor = await db.execute(
+        "SELECT id, filename FROM user_photos WHERE user_id = ? AND purpose = ?",
+        (user_id, purpose)
+    )
+    old = await cursor.fetchone()
+    if old:
+        old_file = UPLOAD_DIR / old["filename"]
+        if old_file.exists():
+            old_file.unlink()
+        await db.execute("DELETE FROM user_photos WHERE id = ?", (old["id"],))
+
+    # Insert the new photo
+    cursor = await db.execute(
+        "INSERT INTO user_photos (user_id, filename, purpose) VALUES (?, ?, ?)",
+        (user_id, filename, purpose)
+    )
+    photo_id = cursor.lastrowid
+    await db.commit()
+
+    # If this is the 'profile' purpose photo, also update users.profile_pic for backward compat
+    if purpose == "profile":
+        await db.execute("UPDATE users SET profile_pic = ? WHERE id = ?", (filename, user_id))
+        await db.commit()
+
+    return {"message": "Photo uploaded", "id": photo_id, "filename": filename, "purpose": purpose}
+
+
+@router.get("/me/photos")
+async def list_user_photos(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """List all photos for the current user."""
+    cursor = await db.execute(
+        "SELECT id, filename, purpose, caption, created_at FROM user_photos WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,)
+    )
+    rows = await cursor.fetchall()
+    photos = [{"id": r["id"], "filename": r["filename"], "purpose": r["purpose"],
+               "caption": r["caption"], "created_at": r["created_at"]} for r in rows]
+
+    # Also include the legacy profile_pic if it exists and isn't in user_photos
+    cursor = await db.execute("SELECT profile_pic FROM users WHERE id = ?", (user_id,))
+    user_row = await cursor.fetchone()
+    legacy_pic = user_row["profile_pic"] if user_row else ""
+    if legacy_pic:
+        has_profile = any(p["purpose"] == "profile" for p in photos)
+        if not has_profile:
+            photos.insert(0, {"id": 0, "filename": legacy_pic, "purpose": "profile",
+                              "caption": "", "created_at": ""})
+
+    return {"photos": photos}
+
+
+@router.put("/me/photos/{photo_id}/purpose")
+async def update_photo_purpose(
+    photo_id: int,
+    purpose: str = "profile",
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Change the purpose of an existing photo."""
+    purpose = purpose.lower().strip()
+    if purpose not in VALID_PHOTO_PURPOSES:
+        raise HTTPException(status_code=400, detail=f"Invalid purpose. Must be one of: {', '.join(VALID_PHOTO_PURPOSES)}")
+
+    # Verify photo belongs to user
+    cursor = await db.execute(
+        "SELECT id, filename FROM user_photos WHERE id = ? AND user_id = ?",
+        (photo_id, user_id)
+    )
+    photo = await cursor.fetchone()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Remove any existing photo with the target purpose (one photo per purpose)
+    cursor = await db.execute(
+        "SELECT id, filename FROM user_photos WHERE user_id = ? AND purpose = ? AND id != ?",
+        (user_id, purpose, photo_id)
+    )
+    old = await cursor.fetchone()
+    if old:
+        old_file = UPLOAD_DIR / old["filename"]
+        if old_file.exists():
+            old_file.unlink()
+        await db.execute("DELETE FROM user_photos WHERE id = ?", (old["id"],))
+
+    await db.execute("UPDATE user_photos SET purpose = ? WHERE id = ?", (purpose, photo_id))
+    await db.commit()
+
+    # Update users.profile_pic for backward compat
+    if purpose == "profile":
+        await db.execute("UPDATE users SET profile_pic = ? WHERE id = ?", (photo["filename"], user_id))
+        await db.commit()
+
+    return {"message": "Photo purpose updated", "purpose": purpose}
+
+
+@router.delete("/me/photos/{photo_id}")
+async def delete_user_photo(
+    photo_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Delete a user photo."""
+    cursor = await db.execute(
+        "SELECT id, filename, purpose FROM user_photos WHERE id = ? AND user_id = ?",
+        (photo_id, user_id)
+    )
+    photo = await cursor.fetchone()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Delete file from disk
+    file_path = UPLOAD_DIR / photo["filename"]
+    if file_path.exists():
+        file_path.unlink()
+
+    was_profile = photo["purpose"] == "profile"
+    await db.execute("DELETE FROM user_photos WHERE id = ?", (photo_id,))
+    await db.commit()
+
+    # If we deleted the profile photo, pick the next available or clear it
+    if was_profile:
+        cursor = await db.execute(
+            "SELECT filename FROM user_photos WHERE user_id = ? ORDER BY created_at ASC LIMIT 1",
+            (user_id,)
+        )
+        next_photo = await cursor.fetchone()
+        new_pic = next_photo["filename"] if next_photo else ""
+        await db.execute("UPDATE users SET profile_pic = ? WHERE id = ?", (new_pic, user_id))
+        await db.commit()
+
+    return {"message": "Photo deleted"}
+
+
+@router.get("/user/{target_user_id}/photos")
+async def get_user_photos(
+    target_user_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get all photos for a given user (public view)."""
+    cursor = await db.execute(
+        "SELECT id, filename, purpose, created_at FROM user_photos WHERE user_id = ? ORDER BY created_at DESC",
+        (target_user_id,)
+    )
+    rows = await cursor.fetchall()
+    photos = [{"id": r["id"], "filename": r["filename"], "purpose": r["purpose"],
+               "created_at": r["created_at"]} for r in rows]
+
+    # Fallback: include legacy profile_pic if no photos in user_photos table
+    if not photos:
+        cursor = await db.execute("SELECT profile_pic FROM users WHERE id = ?", (target_user_id,))
+        user_row = await cursor.fetchone()
+        legacy_pic = user_row["profile_pic"] if user_row else ""
+        if legacy_pic:
+            photos.append({"id": 0, "filename": legacy_pic, "purpose": "profile", "created_at": ""})
+
+    return {"photos": photos}
+
+
+@router.get("/user/{target_user_id}/sport-photo/{sport}")
+async def get_user_sport_photo(
+    target_user_id: int,
+    sport: str,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get the photo filename for a user for a specific sport. Falls back to profile photo."""
+    sport = sport.lower().strip()
+
+    # Try sport-specific photo first
+    cursor = await db.execute(
+        "SELECT filename FROM user_photos WHERE user_id = ? AND purpose = ?",
+        (target_user_id, sport)
+    )
+    row = await cursor.fetchone()
+    if row:
+        return {"filename": row["filename"], "purpose": sport}
+
+    # Fall back to profile photo from user_photos
+    cursor = await db.execute(
+        "SELECT filename FROM user_photos WHERE user_id = ? AND purpose = 'profile'",
+        (target_user_id,)
+    )
+    row = await cursor.fetchone()
+    if row:
+        return {"filename": row["filename"], "purpose": "profile"}
+
+    # Fall back to legacy profile_pic
+    cursor = await db.execute("SELECT profile_pic FROM users WHERE id = ?", (target_user_id,))
+    user_row = await cursor.fetchone()
+    pic = user_row["profile_pic"] if user_row else ""
+    return {"filename": pic, "purpose": "profile"}
+
+
 @router.get("/user/{target_user_id}/persona")
 async def get_user_persona(
     target_user_id: int,
@@ -746,6 +982,22 @@ async def get_user_persona(
     )
     total_games = (await cursor.fetchone())["cnt"] or 0
 
+    # Get sport-specific photos map
+    sport_photos: dict[str, str] = {}
+    try:
+        cursor = await db.execute(
+            "SELECT purpose, filename FROM user_photos WHERE user_id = ?",
+            (target_user_id,)
+        )
+        photo_rows = await cursor.fetchall()
+        for pr in photo_rows:
+            sport_photos[pr["purpose"]] = pr["filename"]
+    except Exception:
+        pass
+    # If no profile photo in user_photos, use legacy profile_pic
+    if "profile" not in sport_photos and profile_pic:
+        sport_photos["profile"] = profile_pic
+
     return {
         "id": user["id"],
         "user_code": user_code,
@@ -756,6 +1008,7 @@ async def get_user_persona(
         "sports": sports,
         "sport_positions": sport_positions,
         "profile_pic": profile_pic,
+        "sport_photos": sport_photos,
         "roles": roles,
         "sport_rankings": sport_rankings,
         "goal_stats": goal_stats,

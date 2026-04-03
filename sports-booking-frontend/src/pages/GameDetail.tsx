@@ -49,6 +49,7 @@ interface Player {
   nominated_by: number | null;
   nominated_by_info: string | null;
   joined_at: string;
+  photo: string;
 }
 
 interface Team {
@@ -1149,9 +1150,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     return (
                     <div key={player.id}>
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold">
-                          {idx + 1}
-                        </span>
+                        {player.photo ? (
+                          <img src={api.getProfilePicUrl(player.photo)} alt={player.name} className="w-6 h-6 rounded-full object-cover" />
+                        ) : (
+                          <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold">
+                            {idx + 1}
+                          </span>
+                        )}
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                         </span>

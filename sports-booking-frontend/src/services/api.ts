@@ -521,6 +521,46 @@ export const api = {
   getProfilePicUrl: (filename: string) =>
     `${API_URL}/api/auth/profile-pic/${filename}`,
 
+  // User Photos (multi-photo with sport assignment)
+  uploadUserPhoto: async (file: File, purpose: string = 'profile') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('purpose', purpose);
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (_proxyBasicAuth) {
+      headers['Authorization'] = `Basic ${_proxyBasicAuth}`;
+      if (token) headers['X-Auth-Token'] = `Bearer ${token}`;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${API_URL}/api/auth/me/photos`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return res.json();
+  },
+
+  listUserPhotos: () =>
+    request('/api/auth/me/photos'),
+
+  updatePhotoPurpose: (photoId: number, purpose: string) =>
+    request(`/api/auth/me/photos/${photoId}/purpose?purpose=${encodeURIComponent(purpose)}`, { method: 'PUT' }),
+
+  deleteUserPhoto: (photoId: number) =>
+    request(`/api/auth/me/photos/${photoId}`, { method: 'DELETE' }),
+
+  getUserPhotos: (userId: number) =>
+    request(`/api/auth/user/${userId}/photos`),
+
+  getUserSportPhoto: (userId: number, sport: string) =>
+    request(`/api/auth/user/${userId}/sport-photo/${encodeURIComponent(sport)}`),
+
   // User Persona
   getUserPersona: (userId: number) =>
     request(`/api/auth/user/${userId}/persona`),

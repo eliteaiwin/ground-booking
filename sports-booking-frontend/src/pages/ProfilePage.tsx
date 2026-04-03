@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X, Trash2, ImageIcon } from 'lucide-react';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin', 'Pune'];
@@ -36,6 +36,14 @@ const CURRENCIES = [
 
 interface Props {
   onBack: () => void;
+}
+
+interface UserPhoto {
+  id: number;
+  filename: string;
+  purpose: string;
+  caption: string;
+  created_at: string;
 }
 
 interface PersonaData {
@@ -71,6 +79,23 @@ export default function ProfilePage({ onBack }: Props) {
   const [persona, setPersona] = useState<PersonaData | null>(null);
   const [showPersona, setShowPersona] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [userPhotos, setUserPhotos] = useState<UserPhoto[]>([]);
+  const [uploadPurpose, setUploadPurpose] = useState('profile');
+  const [uploadingMulti, setUploadingMulti] = useState(false);
+  const multiFileRef = useRef<HTMLInputElement>(null);
+
+  const loadUserPhotos = async () => {
+    try {
+      const data = await api.listUserPhotos();
+      setUserPhotos(data.photos || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    loadUserPhotos();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUploadPic = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,10 +107,57 @@ export default function ProfilePage({ onBack }: Props) {
       const result = await api.uploadProfilePic(file);
       setProfilePic(result.filename);
       await refreshUser();
+      await loadUserPhotos();
     } catch (err) {
       console.error(err);
     } finally {
       setUploadingPic(false);
+    }
+  };
+
+  const handleUploadMultiPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('Only image files allowed'); return; }
+    if (file.size > 5 * 1024 * 1024) { alert('Max 5MB file size'); return; }
+    setUploadingMulti(true);
+    try {
+      await api.uploadUserPhoto(file, uploadPurpose);
+      await loadUserPhotos();
+      if (uploadPurpose === 'profile') {
+        await refreshUser();
+        const profilePhoto = (await api.listUserPhotos()).photos?.find((p: UserPhoto) => p.purpose === 'profile');
+        if (profilePhoto) setProfilePic(profilePhoto.filename);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUploadingMulti(false);
+      if (multiFileRef.current) multiFileRef.current.value = '';
+    }
+  };
+
+  const handleChangePurpose = async (photoId: number, newPurpose: string) => {
+    try {
+      await api.updatePhotoPurpose(photoId, newPurpose);
+      await loadUserPhotos();
+      if (newPurpose === 'profile') {
+        await refreshUser();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: number) => {
+    if (!confirm('Delete this photo?')) return;
+    try {
+      await api.deleteUserPhoto(photoId);
+      await loadUserPhotos();
+      await refreshUser();
+      setProfilePic(user?.profile_pic || '');
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -400,6 +472,113 @@ export default function ProfilePage({ onBack }: Props) {
             </Button>
           </CardContent>
         </Card>
+        {/* My Photos - Sport-Specific */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ImageIcon size={18} className="text-blue-500" /> My Photos
+            </CardTitle>
+            <p className="text-xs text-gray-500">Upload photos for your profile and different sports. Sport-specific photos show in player lists.</p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Upload new photo */}
+            <div className="border border-dashed border-gray-300 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <Label className="text-sm mb-1 block">Upload for:</Label>
+                  <Select value={uploadPurpose} onValueChange={setUploadPurpose}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="profile">Profile (Default)</SelectItem>
+                      <SelectItem value="soccer">Soccer</SelectItem>
+                      <SelectItem value="cricket">Cricket</SelectItem>
+                      <SelectItem value="badminton">Badminton</SelectItem>
+                      <SelectItem value="basketball">Basketball</SelectItem>
+                      <SelectItem value="hockey">Hockey</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="pt-5">
+                  <Button
+                    size="sm"
+                    onClick={() => multiFileRef.current?.click()}
+                    disabled={uploadingMulti}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Camera size={14} className="mr-1" />
+                    {uploadingMulti ? 'Uploading...' : 'Upload'}
+                  </Button>
+                  <input ref={multiFileRef} type="file" accept="image/*" className="hidden" onChange={handleUploadMultiPhoto} />
+                </div>
+              </div>
+              <p className="text-xs text-gray-400">Max 5MB per photo. One photo per purpose — uploading replaces the existing one.</p>
+            </div>
+
+            {/* Photo grid */}
+            {userPhotos.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {userPhotos.map(photo => (
+                  <div key={photo.id || photo.filename} className="relative border rounded-lg overflow-hidden group">
+                    <img
+                      src={api.getProfilePicUrl(photo.filename)}
+                      alt={photo.purpose}
+                      className="w-full h-32 object-cover"
+                    />
+                    <div className="absolute top-1 left-1">
+                      <Badge className={`text-xs capitalize ${
+                        photo.purpose === 'profile' ? 'bg-green-600' :
+                        photo.purpose === 'soccer' ? 'bg-blue-600' :
+                        photo.purpose === 'cricket' ? 'bg-orange-600' :
+                        photo.purpose === 'badminton' ? 'bg-purple-600' :
+                        photo.purpose === 'basketball' ? 'bg-red-600' :
+                        'bg-teal-600'
+                      }`}>
+                        {photo.purpose}
+                      </Badge>
+                    </div>
+                    <div className="p-2 space-y-1">
+                      <Select
+                        value={photo.purpose}
+                        onValueChange={(val) => {
+                          if (photo.id > 0) handleChangePurpose(photo.id, val);
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="profile">Profile</SelectItem>
+                          <SelectItem value="soccer">Soccer</SelectItem>
+                          <SelectItem value="cricket">Cricket</SelectItem>
+                          <SelectItem value="badminton">Badminton</SelectItem>
+                          <SelectItem value="basketball">Basketball</SelectItem>
+                          <SelectItem value="hockey">Hockey</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {photo.id > 0 && (
+                        <button
+                          onClick={() => handleDeletePhoto(photo.id)}
+                          className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 mt-1"
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-gray-400">
+                <ImageIcon size={32} className="mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No photos uploaded yet</p>
+                <p className="text-xs">Upload a photo to get started</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Player Persona */}
         <Card>
           <CardHeader>
