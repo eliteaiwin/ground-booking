@@ -245,6 +245,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.login({ phone, password });
     const newToken = res.token;
 
+    // Save the original token so we can restore on failure
+    const originalToken = localStorage.getItem('token');
+
     // Temporarily set the new token to fetch the new user's profile
     localStorage.setItem('token', newToken);
     let newProfile;
@@ -252,8 +255,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       newProfile = await api.getProfile();
     } catch {
       // Restore original token on failure
-      const origToken = localStorage.getItem('token');
-      if (!origToken) {
+      if (originalToken) {
+        localStorage.setItem('token', originalToken);
+      } else {
         localStorage.removeItem('token');
       }
       throw new Error('Failed to fetch added account profile');

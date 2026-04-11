@@ -371,6 +371,8 @@ async def change_password(
     if not force_change:
         if not req.current_password:
             raise HTTPException(status_code=400, detail="Current password is required")
+        if not user["password_hash"]:
+            raise HTTPException(status_code=400, detail="No password set on this account. Use Google login or request a password reset.")
         if not verify_password(req.current_password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Current password is incorrect")
 
