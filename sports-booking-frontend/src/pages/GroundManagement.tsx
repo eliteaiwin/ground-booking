@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -122,7 +122,7 @@ export default function GroundManagement({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'schedule' | 'requests' | 'moderators' | 'photos'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'requests' | 'moderators' | 'photos' | 'blocked'>('schedule');
   const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
@@ -166,6 +166,25 @@ export default function GroundManagement({ onBack }: Props) {
     uploader_name: string;
     created_at: string;
   }
+  // Blocked Users state
+  interface BlockedUser {
+    id: number;
+    user_id: number;
+    user_name: string;
+    user_phone: string;
+    reason: string;
+    blocked_by_name: string;
+    created_at: string;
+  }
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [blockSearch, setBlockSearch] = useState('');
+  const [blockSearchResults, setBlockSearchResults] = useState<UserOption[]>([]);
+  const [blockSearchLoading, setBlockSearchLoading] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [blockingUserId, setBlockingUserId] = useState<number | null>(null);
+  const [showBlockConfirm, setShowBlockConfirm] = useState<UserOption | null>(null);
+
   const [groundPhotos, setGroundPhotos] = useState<GroundPhoto[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -300,6 +319,7 @@ export default function GroundManagement({ onBack }: Props) {
       loadJoinRequests(selectedGround.id);
       loadGroundModerators(selectedGround.id);
       loadGroundPhotos(selectedGround.id);
+      loadBlockedUsers(selectedGround.id);
     }
   }, [selectedGround, viewMode, currentDate]);
 
@@ -357,6 +377,64 @@ export default function GroundManagement({ onBack }: Props) {
       await loadGroundPhotos(selectedGround.id);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete photo');
+    }
+  };
+
+  const loadBlockedUsers = async (groundId: number) => {
+    setBlockedLoading(true);
+    try {
+      const data = await api.listBlockedUsers(groundId);
+      setBlockedUsers(data);
+    } catch (err) {
+      console.error('Failed to load blocked users:', err);
+    } finally {
+      setBlockedLoading(false);
+    }
+  };
+
+  const searchUsersToBlock = async (searchTerm: string) => {
+    setBlockSearch(searchTerm);
+    if (!selectedGround || searchTerm.length < 1) {
+      setBlockSearchResults([]);
+      return;
+    }
+    setBlockSearchLoading(true);
+    try {
+      const users = await api.usersByLocation(selectedGround.location, searchTerm);
+      const blockedIds = new Set(blockedUsers.map(b => b.user_id));
+      setBlockSearchResults(users.filter((u: UserOption) => !blockedIds.has(u.id)));
+    } catch (err) {
+      console.error('Failed to search users:', err);
+    } finally {
+      setBlockSearchLoading(false);
+    }
+  };
+
+  const handleBlockUser = async (user: UserOption) => {
+    if (!selectedGround) return;
+    setBlockingUserId(user.id);
+    try {
+      await api.blockUserForGround(selectedGround.id, user.id, blockReason);
+      setShowBlockConfirm(null);
+      setBlockReason('');
+      setBlockSearch('');
+      setBlockSearchResults([]);
+      await loadBlockedUsers(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to block user');
+    } finally {
+      setBlockingUserId(null);
+    }
+  };
+
+  const handleUnblockUser = async (userId: number) => {
+    if (!selectedGround) return;
+    if (!confirm('Unblock this user? They will be able to join games for this ground again.')) return;
+    try {
+      await api.unblockUserForGround(selectedGround.id, userId);
+      await loadBlockedUsers(selectedGround.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to unblock user');
     }
   };
 
@@ -921,6 +999,15 @@ export default function GroundManagement({ onBack }: Props) {
               <span className="ml-1 text-xs">({groundPhotos.length})</span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('blocked')}
+            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'blocked' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Ban size={14} className="inline mr-1" /> Blocked
+            {blockedUsers.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 text-xs rounded-full bg-red-500 text-white">{blockedUsers.length}</span>
+            )}
+          </button>
         </div>
 
         {activeTab === 'requests' && (
@@ -1221,6 +1308,145 @@ export default function GroundManagement({ onBack }: Props) {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'blocked' && (
+          <div className="space-y-4">
+            {/* Search & block user */}
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Ban size={14} /> Block a User from this Ground
+                </h3>
+                {selectedGround ? (
+                  <div className="relative">
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        value={blockSearch}
+                        onChange={e => searchUsersToBlock(e.target.value)}
+                        placeholder="Search users by name, phone or email..."
+                        className="pl-8 text-sm"
+                      />
+                    </div>
+                    {blockSearchLoading && <p className="text-xs text-gray-400 mt-1">Searching...</p>}
+                    {blockSearchResults.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {blockSearchResults.map(user => (
+                          <button
+                            key={user.id}
+                            onClick={() => { setShowBlockConfirm(user); setBlockReason(''); }}
+                            className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 border-b last:border-b-0"
+                          >
+                            <div className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">
+                              {(user.first_name || user.name || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{user.name}</p>
+                              <p className="text-xs text-gray-500">{user.phone}{user.email ? ` • ${user.email}` : ''}</p>
+                            </div>
+                            <Ban size={14} className="text-red-400" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">Select a ground first</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Blocked users list */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <Ban size={14} className="text-red-500" /> Blocked Users ({blockedUsers.length})
+              </h3>
+              {blockedLoading ? (
+                <p className="text-gray-500 text-center py-4">Loading...</p>
+              ) : blockedUsers.length === 0 ? (
+                <Card>
+                  <CardContent className="py-6 text-center text-gray-500">
+                    <Users size={24} className="mx-auto mb-2 text-gray-400" />
+                    No users are blocked from this ground
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  {blockedUsers.map(bu => (
+                    <Card key={bu.id}>
+                      <CardContent className="p-3 flex items-center gap-3">
+                        <div className="w-9 h-9 bg-red-100 rounded-full flex items-center justify-center text-red-600 font-bold text-sm">
+                          {(bu.user_name || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{bu.user_name}</p>
+                          <p className="text-xs text-gray-500">
+                            <Phone size={10} className="inline mr-1" />{bu.user_phone}
+                          </p>
+                          {bu.reason && (
+                            <p className="text-xs text-red-500 italic mt-0.5">Reason: {bu.reason}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Blocked by {bu.blocked_by_name} on {new Date(bu.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7 px-2 text-green-600 border-green-300 hover:bg-green-50"
+                          onClick={() => handleUnblockUser(bu.user_id)}
+                          title="Unblock User"
+                        >
+                          <UserCheck size={14} className="mr-1" /> Unblock
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Block User Confirmation Modal */}
+        {showBlockConfirm && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-sm">
+              <div className="border-b p-4 flex justify-between items-center rounded-t-2xl">
+                <h3 className="font-bold text-red-700">Block User: {showBlockConfirm.name}</h3>
+                <button onClick={() => setShowBlockConfirm(null)} className="p-1 hover:bg-gray-100 rounded">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-sm text-gray-600">
+                  This will prevent <strong>{showBlockConfirm.name}</strong> from joining games at <strong>{selectedGround?.display_name}</strong>.
+                </p>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
+                  <textarea
+                    value={blockReason}
+                    onChange={e => setBlockReason(e.target.value)}
+                    className="w-full border rounded px-3 py-1.5 text-sm"
+                    rows={2}
+                    placeholder="e.g. Disruptive behavior during games"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setShowBlockConfirm(null)} className="flex-1" size="sm">
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handleBlockUser(showBlockConfirm)}
+                    disabled={blockingUserId === showBlockConfirm.id}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white" size="sm">
+                    {blockingUserId === showBlockConfirm.id ? 'Blocking...' : 'Block User'}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -1266,6 +1266,126 @@ async def remove_ground_moderator(
     return {"message": "Moderator removed from ground"}
 
 
+# --- Block / Unblock Users for a Ground (Moderator) ---
+
+
+class BlockUserRequest(BaseModel):
+    user_id: int
+    reason: str = ""
+
+
+@router.post("/grounds/{ground_id}/block-user")
+async def block_user_for_ground(
+    ground_id: int,
+    req: BlockUserRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator blocks a user from a specific ground."""
+    is_admin_check = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+    )
+    is_admin = await is_admin_check.fetchone() is not None
+    is_mod = await _is_moderator_for_ground(user_id, ground_id, db)
+    if not is_admin and not is_mod:
+        raise HTTPException(status_code=403, detail="Only admin or moderators of this ground can block users")
+
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    cursor = await db.execute("SELECT id FROM users WHERE id = ?", (req.user_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Cannot block yourself
+    if req.user_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot block yourself")
+
+    # Cannot block another moderator of this ground (must remove as moderator first)
+    target_is_mod = await _is_moderator_for_ground(req.user_id, ground_id, db)
+    if target_is_mod:
+        raise HTTPException(status_code=400, detail="Cannot block a moderator of this ground. Remove their moderator role first.")
+
+    try:
+        await db.execute(
+            "INSERT INTO blocked_ground_users (user_id, ground_id, reason, blocked_by) VALUES (?, ?, ?, ?)",
+            (req.user_id, ground_id, req.reason, user_id)
+        )
+        await db.commit()
+    except Exception:
+        raise HTTPException(status_code=400, detail="User is already blocked for this ground")
+
+    return {"message": "User blocked for this ground"}
+
+
+@router.post("/grounds/{ground_id}/unblock-user")
+async def unblock_user_for_ground(
+    ground_id: int,
+    req: BlockUserRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator unblocks a user for a specific ground."""
+    is_admin_check = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+    )
+    is_admin = await is_admin_check.fetchone() is not None
+    is_mod = await _is_moderator_for_ground(user_id, ground_id, db)
+    if not is_admin and not is_mod:
+        raise HTTPException(status_code=403, detail="Only admin or moderators of this ground can unblock users")
+
+    await db.execute(
+        "DELETE FROM blocked_ground_users WHERE user_id = ? AND ground_id = ?",
+        (req.user_id, ground_id)
+    )
+    await db.commit()
+    return {"message": "User unblocked for this ground"}
+
+
+@router.get("/grounds/{ground_id}/blocked-users")
+async def list_blocked_users(
+    ground_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """List blocked users for a ground. Accessible by admin, ground mgmt, or moderator."""
+    is_admin_check = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'ground_management')", (user_id,)
+    )
+    is_admin_or_gm = await is_admin_check.fetchone() is not None
+    is_mod = await _is_moderator_for_ground(user_id, ground_id, db)
+    if not is_admin_or_gm and not is_mod:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    cursor = await db.execute(
+        """SELECT bgu.id, bgu.user_id, bgu.reason, bgu.created_at,
+                  u.name as user_name, u.phone as user_phone, u.email as user_email, u.user_code,
+                  b.name as blocked_by_name
+           FROM blocked_ground_users bgu
+           JOIN users u ON bgu.user_id = u.id
+           LEFT JOIN users b ON bgu.blocked_by = b.id
+           WHERE bgu.ground_id = ?
+           ORDER BY bgu.created_at DESC""",
+        (ground_id,)
+    )
+    rows = await cursor.fetchall()
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "user_phone": r["user_phone"],
+            "user_email": r["user_email"] or "",
+            "user_code": r["user_code"] or "",
+            "reason": r["reason"],
+            "blocked_by_name": r["blocked_by_name"] or "",
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
 # --- Ground Photos ---
 
 async def _can_manage_ground_photos(user_id: int, ground_id: int, db: aiosqlite.Connection) -> bool:

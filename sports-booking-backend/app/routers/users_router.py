@@ -40,6 +40,10 @@ class AssignGroundRoleRequest(BaseModel):
     sport_type: str = ""
 
 
+class DisableUserRequest(BaseModel):
+    reason: str = ""
+
+
 async def require_admin(user_id: int, db: aiosqlite.Connection):
     cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
     row = await cursor.fetchone()
@@ -84,7 +88,7 @@ async def list_users(
 ):
     await require_admin(user_id, db)
 
-    query = "SELECT id, user_code, first_name, last_name, name, phone, email, notification_preference, sports, locations, sport_positions, profile_pic, created_at FROM users WHERE 1=1"
+    query = "SELECT id, user_code, first_name, last_name, name, phone, email, notification_preference, sports, locations, sport_positions, profile_pic, is_disabled, disabled_reason, created_at FROM users WHERE 1=1"
     params: list = []
 
     if search:
@@ -194,6 +198,14 @@ async def list_users(
                 "ground_name": row["ground_name"], "location": row["location"],
             })
 
+        is_disabled = False
+        disabled_reason = ""
+        try:
+            is_disabled = bool(u["is_disabled"])
+            disabled_reason = u["disabled_reason"] or ""
+        except Exception:
+            pass
+
         result.append({
             "id": uid, "user_code": user_code,
             "first_name": first_name, "last_name": last_name,
@@ -204,6 +216,7 @@ async def list_users(
             "sport_positions": sport_positions,
             "profile_pic": profile_pic,
             "roles": roles, "is_super_admin": is_super,
+            "is_disabled": is_disabled, "disabled_reason": disabled_reason,
             "moderator_assignments": mod_assignments,
             "ground_management_assignments": gm_assignments,
             "created_at": u["created_at"]
@@ -416,3 +429,56 @@ async def remove_ground_role(
         return {"message": "Ground Management assignment removed"}
     else:
         raise HTTPException(status_code=400, detail="Invalid assignment type")
+
+
+@router.post("/{target_user_id}/disable")
+async def disable_user(
+    target_user_id: int,
+    req: DisableUserRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin disables a user on the platform."""
+    await require_admin(user_id, db)
+
+    cursor = await db.execute("SELECT id, email FROM users WHERE id = ?", (target_user_id,))
+    target = await cursor.fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Cannot disable super-admins
+    target_email = (target["email"] or "").lower()
+    if target_email in SUPER_ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Cannot disable a protected super-admin account")
+
+    # Cannot disable yourself
+    if target_user_id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
+
+    await db.execute(
+        "UPDATE users SET is_disabled = 1, disabled_reason = ?, disabled_at = CURRENT_TIMESTAMP, disabled_by = ? WHERE id = ?",
+        (req.reason, user_id, target_user_id)
+    )
+    await db.commit()
+    return {"message": "User disabled", "user_id": target_user_id}
+
+
+@router.post("/{target_user_id}/enable")
+async def enable_user(
+    target_user_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin re-enables a disabled user."""
+    await require_admin(user_id, db)
+
+    cursor = await db.execute("SELECT id FROM users WHERE id = ?", (target_user_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await db.execute(
+        "UPDATE users SET is_disabled = 0, disabled_reason = '', disabled_at = NULL, disabled_by = NULL WHERE id = ?",
+        (target_user_id,)
+    )
+    await db.commit()
+    return {"message": "User enabled", "user_id": target_user_id}

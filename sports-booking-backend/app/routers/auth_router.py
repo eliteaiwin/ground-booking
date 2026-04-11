@@ -159,6 +159,21 @@ async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
     if not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    # Check if user is disabled
+    try:
+        dis_cursor = await db.execute("SELECT is_disabled, disabled_reason FROM users WHERE id = ?", (user["id"],))
+        dis_row = await dis_cursor.fetchone()
+        if dis_row and dis_row["is_disabled"]:
+            reason = dis_row["disabled_reason"] or ""
+            detail = "Your account has been disabled by an administrator."
+            if reason:
+                detail += f" Reason: {reason}"
+            raise HTTPException(status_code=403, detail=detail)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     # Check force_password_change flag
     force_change = False
     try:
@@ -228,6 +243,21 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
     await db.execute("UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?", (user["id"],))
     await db.commit()
 
+    # Check if user is disabled
+    try:
+        dis_cursor = await db.execute("SELECT is_disabled, disabled_reason FROM users WHERE id = ?", (user["id"],))
+        dis_row = await dis_cursor.fetchone()
+        if dis_row and dis_row["is_disabled"]:
+            reason = dis_row["disabled_reason"] or ""
+            detail = "Your account has been disabled by an administrator."
+            if reason:
+                detail += f" Reason: {reason}"
+            raise HTTPException(status_code=403, detail=detail)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     token = create_access_token(user["id"])
     return {"token": token, "user_id": user["id"]}
 
@@ -277,6 +307,21 @@ async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends
             await db.commit()
 
     if user:
+        # Check if user is disabled
+        try:
+            dis_cursor = await db.execute("SELECT is_disabled, disabled_reason FROM users WHERE id = ?", (user["id"],))
+            dis_row = await dis_cursor.fetchone()
+            if dis_row and dis_row["is_disabled"]:
+                reason = dis_row["disabled_reason"] or ""
+                detail = "Your account has been disabled by an administrator."
+                if reason:
+                    detail += f" Reason: {reason}"
+                raise HTTPException(status_code=403, detail=detail)
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
         token = create_access_token(user["id"])
         return {"token": token, "user_id": user["id"]}
 

@@ -580,13 +580,47 @@ async def vote_join_game(
     if game["status"] != "voting_open":
         raise HTTPException(status_code=400, detail="Voting is not open for this game")
 
+    # Check if user is disabled
+    try:
+        dis_cursor = await db.execute("SELECT is_disabled FROM users WHERE id = ?", (user_id,))
+        dis_row = await dis_cursor.fetchone()
+        if dis_row and dis_row["is_disabled"]:
+            raise HTTPException(status_code=403, detail="Your account has been disabled. You cannot join games.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # Check if user is blocked for this ground
+    ground_name = game["ground_name"]
+    try:
+        parts = ground_name.split(" - ")
+        if len(parts) == 2:
+            gnd_cursor = await db.execute(
+                "SELECT id FROM grounds WHERE location = ? AND name = ?",
+                (parts[0].strip(), parts[1].strip())
+            )
+        else:
+            gnd_cursor = await db.execute("SELECT id FROM grounds WHERE name = ?", (ground_name,))
+        gnd_row = await gnd_cursor.fetchone()
+        if gnd_row:
+            block_cursor = await db.execute(
+                "SELECT 1 FROM blocked_ground_users WHERE user_id = ? AND ground_id = ?",
+                (user_id, gnd_row["id"])
+            )
+            if await block_cursor.fetchone():
+                raise HTTPException(status_code=403, detail="You have been blocked from this ground by a moderator.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     # Check if already joined
     cursor = await db.execute("SELECT id FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, user_id))
     if await cursor.fetchone():
         raise HTTPException(status_code=400, detail="Already joined this game")
 
     # Check nomination limit for this user on this ground
-    ground_name = game["ground_name"]
     try:
         # Find the ground_id from ground_name
         parts = ground_name.split(" - ")
@@ -834,13 +868,47 @@ async def nominate_player(
     if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Check if nominated user is disabled
+    try:
+        dis_cursor = await db.execute("SELECT is_disabled FROM users WHERE id = ?", (req.user_id,))
+        dis_row = await dis_cursor.fetchone()
+        if dis_row and dis_row["is_disabled"]:
+            raise HTTPException(status_code=400, detail="Cannot nominate a disabled user.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # Check if nominated user is blocked for this ground
+    ground_name = game["ground_name"]
+    try:
+        parts = ground_name.split(" - ")
+        if len(parts) == 2:
+            gnd_cursor = await db.execute(
+                "SELECT id FROM grounds WHERE location = ? AND name = ?",
+                (parts[0].strip(), parts[1].strip())
+            )
+        else:
+            gnd_cursor = await db.execute("SELECT id FROM grounds WHERE name = ?", (ground_name,))
+        gnd_row = await gnd_cursor.fetchone()
+        if gnd_row:
+            block_cursor = await db.execute(
+                "SELECT 1 FROM blocked_ground_users WHERE user_id = ? AND ground_id = ?",
+                (req.user_id, gnd_row["id"])
+            )
+            if await block_cursor.fetchone():
+                raise HTTPException(status_code=400, detail="This user is blocked from this ground.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     # Check if already joined
     cursor = await db.execute("SELECT id FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, req.user_id))
     if await cursor.fetchone():
         raise HTTPException(status_code=400, detail="User already in this game")
 
     # Check nomination limit for the nominator on this ground
-    ground_name = game["ground_name"]
     try:
         parts = ground_name.split(" - ")
         if len(parts) == 2:

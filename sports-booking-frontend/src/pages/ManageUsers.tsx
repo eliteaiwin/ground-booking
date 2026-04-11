@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Shield, Users, Search, Edit2, Key, X, Plus, Trash2, Lock } from 'lucide-react';
+import { ArrowLeft, Shield, Users, Search, Edit2, Key, X, Plus, Trash2, Lock, Ban, CheckCircle } from 'lucide-react';
 
 interface GroundItem {
   id: number;
@@ -41,6 +41,8 @@ interface UserItem {
   sport_positions: Record<string, string[]>;
   profile_pic: string;
   is_super_admin: boolean;
+  is_disabled: boolean;
+  disabled_reason: string;
   moderator_assignments: ModAssignment[];
   ground_management_assignments: GMAssignment[];
   created_at: string;
@@ -78,6 +80,11 @@ export default function ManageUsers({ onBack }: Props) {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
+
+  // Disable/Enable state
+  const [disableUser, setDisableUser] = useState<UserItem | null>(null);
+  const [disableReason, setDisableReason] = useState('');
+  const [disableLoading, setDisableLoading] = useState(false);
 
   // Ground role assignment state
   const [roleUser, setRoleUser] = useState<UserItem | null>(null);
@@ -227,6 +234,31 @@ export default function ManageUsers({ onBack }: Props) {
     }
   };
 
+  const handleDisableUser = async (user: UserItem) => {
+    setDisableLoading(true);
+    try {
+      await api.disableUser(user.id, disableReason);
+      setDisableUser(null);
+      setDisableReason('');
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to disable user';
+      alert(msg);
+    } finally {
+      setDisableLoading(false);
+    }
+  };
+
+  const handleEnableUser = async (user: UserItem) => {
+    try {
+      await api.enableUser(user.id);
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to enable user';
+      alert(msg);
+    }
+  };
+
   const roleColor = (role: string) => {
     switch (role) {
       case 'admin': return 'bg-red-100 text-red-700';
@@ -338,8 +370,12 @@ export default function ManageUsers({ onBack }: Props) {
                       <div className="font-semibold text-sm text-gray-800">
                         {u.first_name} {u.last_name}
                         {u.is_super_admin && <Lock size={12} className="inline ml-1 text-red-500" title="Protected Admin" />}
+                        {u.is_disabled && <Badge className="ml-1 bg-red-500 text-white text-[9px] px-1">Disabled</Badge>}
                       </div>
                       <div className="text-xs text-gray-400">{u.user_code}</div>
+                      {u.is_disabled && u.disabled_reason && (
+                        <div className="text-[10px] text-red-500 italic">Reason: {u.disabled_reason}</div>
+                      )}
                     </div>
                     <div className="col-span-2 text-sm text-gray-600">{u.phone}</div>
                     <div className="col-span-2 text-sm text-gray-600 truncate">{u.email || '-'}</div>
@@ -371,6 +407,19 @@ export default function ManageUsers({ onBack }: Props) {
                         onClick={() => setRoleUser(u)} title="Ground Roles">
                         <Shield size={12} />
                       </Button>
+                      {!u.is_super_admin && (
+                        u.is_disabled ? (
+                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 text-green-600 border-green-300 hover:bg-green-50"
+                            onClick={() => handleEnableUser(u)} title="Enable User">
+                            <CheckCircle size={12} />
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" className="text-xs h-7 px-2 text-red-600 border-red-300 hover:bg-red-50"
+                            onClick={() => { setDisableUser(u); setDisableReason(''); }} title="Disable User">
+                            <Ban size={12} />
+                          </Button>
+                        )
+                      )}
                     </div>
                   </div>
                   <div className="md:hidden mt-2 flex flex-wrap gap-1">
@@ -612,6 +661,46 @@ export default function ManageUsers({ onBack }: Props) {
                     {roleLoading ? 'Assigning...' : 'Assign Role'}
                   </Button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disable User Confirmation Modal */}
+      {disableUser && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm">
+            <div className="border-b p-4 flex justify-between items-center rounded-t-2xl">
+              <h3 className="font-bold text-red-700">Disable User: {disableUser.first_name} {disableUser.last_name}</h3>
+              <button onClick={() => setDisableUser(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-gray-600">
+                This will prevent <strong>{disableUser.first_name}</strong> from logging in or joining any games.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
+                <textarea
+                  value={disableReason}
+                  onChange={e => setDisableReason(e.target.value)}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  rows={2}
+                  placeholder="e.g. Violated community guidelines"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setDisableUser(null)} className="flex-1" size="sm">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => handleDisableUser(disableUser)}
+                  disabled={disableLoading}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white" size="sm">
+                  {disableLoading ? 'Disabling...' : 'Disable User'}
+                </Button>
               </div>
             </div>
           </div>

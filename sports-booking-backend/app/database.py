@@ -385,6 +385,19 @@ async def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS blocked_ground_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            blocked_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (blocked_by) REFERENCES users(id),
+            UNIQUE(user_id, ground_id)
+        );
+
         CREATE TABLE IF NOT EXISTS role_theme_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             role TEXT NOT NULL UNIQUE,
@@ -428,6 +441,10 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN password_reset_token TEXT",
         "ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP",
         "ALTER TABLE games ADD COLUMN potd_congrats_delay_minutes INTEGER NOT NULL DEFAULT 1440",
+        "ALTER TABLE users ADD COLUMN is_disabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN disabled_reason TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN disabled_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN disabled_by INTEGER",
     ]
     for migration in migrations:
         try:

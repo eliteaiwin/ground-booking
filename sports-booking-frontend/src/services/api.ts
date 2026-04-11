@@ -604,6 +604,29 @@ export const api = {
   removeGroundModerator: (groundId: number, assignmentId: number) =>
     request(`/api/locations/grounds/${groundId}/moderators/${assignmentId}`, { method: 'DELETE' }),
 
+  // Admin: Disable/Enable User
+  disableUser: (userId: number, reason: string = '') =>
+    request(`/api/users/${userId}/disable`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  enableUser: (userId: number) =>
+    request(`/api/users/${userId}/enable`, { method: 'POST' }),
+
+  // Moderator: Block/Unblock User for Ground
+  blockUserForGround: (groundId: number, userId: number, reason: string = '') =>
+    request(`/api/locations/grounds/${groundId}/block-user`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, reason }),
+    }),
+
+  unblockUserForGround: (groundId: number, userId: number) =>
+    request(`/api/locations/grounds/${groundId}/unblock-user`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+
+  listBlockedUsers: (groundId: number) =>
+    request(`/api/locations/grounds/${groundId}/blocked-users`),
+
   // Ground Photos
   listGroundPhotos: (groundId: number) =>
     request(`/api/locations/grounds/${groundId}/photos`),
