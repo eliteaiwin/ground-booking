@@ -369,7 +369,7 @@ export default function ManageUsers({ onBack }: Props) {
                     <div className="col-span-3">
                       <div className="font-semibold text-sm text-gray-800">
                         {u.first_name} {u.last_name}
-                        {u.is_super_admin && <Lock size={12} className="inline ml-1 text-red-500" title="Protected Admin" />}
+                        {u.is_super_admin && <span title="Protected Admin"><Lock size={12} className="inline ml-1 text-red-500" /></span>}
                         {u.is_disabled && <Badge className="ml-1 bg-red-500 text-white text-[9px] px-1">Disabled</Badge>}
                       </div>
                       <div className="text-xs text-gray-400">{u.user_code}</div>

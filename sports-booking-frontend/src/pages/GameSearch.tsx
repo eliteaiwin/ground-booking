@@ -160,8 +160,8 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
   // User's sports from profile
   const userSports: string[] = useMemo(() => {
     if (!user) return [];
-    const sports = (user as Record<string, unknown>).sports;
-    if (Array.isArray(sports)) return sports as string[];
+    const sports = user.sports;
+    if (Array.isArray(sports)) return sports;
     if (typeof sports === 'string' && sports) return (sports as string).split(',').filter(Boolean);
     return [];
   }, [user]);
@@ -173,9 +173,9 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
         const locs = await api.listLocations();
         setLocations(locs);
         // Default to user's first location
-        const userLocs = (user as Record<string, unknown>)?.locations;
+        const userLocs = user?.locations;
         let userLocList: string[] = [];
-        if (Array.isArray(userLocs)) userLocList = userLocs as string[];
+        if (Array.isArray(userLocs)) userLocList = userLocs;
         else if (typeof userLocs === 'string' && userLocs) userLocList = (userLocs as string).split(',').filter(Boolean);
         if (userLocList.length > 0) {
           const match = locs.find((l: LocationItem) => l.name.toLowerCase() === userLocList[0].toLowerCase());
