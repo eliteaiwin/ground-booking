@@ -1,4 +1,4 @@
-# Render.com deployment configuration for Ground Booking App
+# Render.com deployment configuration for Turf Booking App
 # Deploy at: https://dashboard.render.com/select-repo?type=web
 #
 # This deploys the backend (FastAPI) with the frontend built and served

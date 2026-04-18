@@ -344,7 +344,7 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
           <div className="mx-auto mb-4 w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
             <span className="text-white text-2xl">&#9917;</span>
           </div>
-          <CardTitle className="text-2xl font-bold">Ground Booking</CardTitle>
+          <CardTitle className="text-2xl font-bold">Turf Booking</CardTitle>
           <p className="text-gray-500 mt-1">Sign in to your account</p>
         </CardHeader>
         {loginContent}

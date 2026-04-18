@@ -138,7 +138,7 @@ export default function Dashboard({ onNavigate }: Props) {
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">&#9917;</span>
-            <h1 className="text-lg font-bold">Ground Booking</h1>
+            <h1 className="text-lg font-bold">Turf Booking</h1>
           </div>
           <div className="flex items-center gap-2">
             <button

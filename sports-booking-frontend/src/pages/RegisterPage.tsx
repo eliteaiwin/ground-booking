@@ -102,7 +102,7 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
           <div className="mx-auto mb-3 w-14 h-14 bg-green-600 rounded-full flex items-center justify-center">
             <span className="text-white text-xl">&#9917;</span>
           </div>
-          <CardTitle className="text-2xl font-bold">Ground Booking</CardTitle>
+          <CardTitle className="text-2xl font-bold">Turf Booking</CardTitle>
           <p className="text-gray-500 mt-1">Create your account</p>
         </CardHeader>
         <CardContent>

@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Ground Booking App", lifespan=lifespan)
+app = FastAPI(title="Turf Booking App", lifespan=lifespan)
 
 # Disable CORS. Do not remove this for full-stack development.
 app.add_middleware(
