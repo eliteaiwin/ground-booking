@@ -21,6 +21,7 @@ import HallOfFame from './pages/HallOfFame';
 import NotificationSettings from './pages/NotificationSettings';
 import ChangePassword from './pages/ChangePassword';
 import ForgotPassword from './pages/ForgotPassword';
+import DeleteAccount from './pages/DeleteAccount';
 
 type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
 
@@ -174,6 +175,18 @@ function ThemedApp() {
 }
 
 function App() {
+  // Public route: #delete-account (Play Store requirement)
+  const [hash, setHash] = useState(window.location.hash);
+  useEffect(() => {
+    const onHashChange = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  if (hash === '#delete-account') {
+    return <DeleteAccount />;
+  }
+
   return (
     <AuthProvider>
       <ThemedApp />

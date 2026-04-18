@@ -68,6 +68,12 @@ class GoogleAuthRequest(BaseModel):
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 
+class DeleteAccountRequest(BaseModel):
+    phone: str
+    password: str
+    reason: Optional[str] = None
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: Optional[str] = None
     new_password: str
@@ -1062,3 +1068,32 @@ async def get_user_persona(
         "grounds_played": grounds_played,
         "total_games_played": total_games,
     }
+
+
+@router.post("/delete-account")
+async def delete_account(req: DeleteAccountRequest, db: aiosqlite.Connection = Depends(get_db)):
+    """Public endpoint for account deletion (Play Store requirement).
+    Verifies phone + password, then permanently deletes the user and all related data."""
+    cursor = await db.execute("SELECT id, password_hash FROM users WHERE phone = ?", (req.phone,))
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found with this phone number")
+    if not user["password_hash"] or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    user_id = user["id"]
+
+    # Delete all related data
+    await db.execute("DELETE FROM game_players WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM potd_votes WHERE voter_id = ? OR voted_for_id = ?", (user_id, user_id))
+    await db.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM user_photos WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM ground_members WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM ground_join_requests WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM user_notification_settings WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM user_ground_alert_pauses WHERE user_id = ?", (user_id,))
+    await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    await db.commit()
+
+    return {"message": "Account deleted successfully"}

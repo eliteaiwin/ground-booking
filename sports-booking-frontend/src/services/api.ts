@@ -137,6 +137,10 @@ export const api = {
   resetPasswordToken: (data: { token: string; new_password: string }) =>
     request('/api/auth/reset-password-token', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Delete account (public, Play Store requirement)
+  deleteAccount: (data: { phone: string; password: string; reason?: string }) =>
+    request('/api/auth/delete-account', { method: 'POST', body: JSON.stringify(data) }),
+
   // Users (admin)
   searchUsers: (filters?: { search?: string; location?: string; ground_id?: number; role?: string; sport?: string }) => {
     const params = new URLSearchParams();
