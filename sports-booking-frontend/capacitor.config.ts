@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.groundbooking.app',
+  appId: 'com.elitedev.turfbooking',
   appName: 'Turf Booking',
   webDir: 'dist'
 };

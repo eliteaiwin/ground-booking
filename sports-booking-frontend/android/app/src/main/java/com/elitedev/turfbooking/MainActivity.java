@@ -1,4 +1,4 @@
-package com.groundbooking.app;
+package com.elitedev.turfbooking;
 
 import com.getcapacitor.BridgeActivity;
 
