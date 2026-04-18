@@ -83,6 +83,9 @@ export default function ProfilePage({ onBack }: Props) {
   const [uploadPurpose, setUploadPurpose] = useState('profile');
   const [uploadingMulti, setUploadingMulti] = useState(false);
   const multiFileRef = useRef<HTMLInputElement>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const loadUserPhotos = async () => {
     try {
@@ -241,6 +244,20 @@ export default function ProfilePage({ onBack }: Props) {
       console.error(err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteAccountAuth();
+      logout();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete account';
+      setDeleteError(msg);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -638,6 +655,52 @@ export default function ProfilePage({ onBack }: Props) {
               </div>
             ) : (
               <p className="text-sm text-gray-400">Loading...</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Delete Account */}
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2 text-red-600">
+              <Trash2 size={18} /> Delete Account
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Permanently delete your account and all associated data. Your data will be retained for 90 days — if you log back in within that period, your account will be restored. After 90 days, your phone number and email will be removed permanently.
+            </p>
+            {deleteError && <p className="text-red-500 text-sm">{deleteError}</p>}
+            {!deleteConfirm ? (
+              <Button
+                variant="outline"
+                className="w-full border-red-300 text-red-600 hover:bg-red-50"
+                onClick={() => setDeleteConfirm(true)}
+              >
+                <Trash2 size={14} className="mr-2" /> Delete My Account
+              </Button>
+            ) : (
+              <div className="space-y-3 bg-red-50 p-4 rounded-lg border border-red-200">
+                <p className="text-sm text-red-700 font-medium">
+                  Are you sure? This action cannot be undone. All your data (games, payments, votes, photos) will be scheduled for permanent deletion.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => { setDeleteConfirm(false); setDeleteError(''); }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                    disabled={deleting}
+                    onClick={handleDeleteAccount}
+                  >
+                    {deleting ? 'Deleting...' : 'Confirm Delete'}
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>

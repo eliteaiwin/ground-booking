@@ -445,6 +445,8 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN disabled_reason TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN disabled_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN disabled_by INTEGER",
+        "ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN deletion_reason TEXT NOT NULL DEFAULT ''",
     ]
     for migration in migrations:
         try:

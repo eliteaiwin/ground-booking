@@ -55,9 +55,9 @@ export default function DeleteAccount() {
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Trash2 className="text-green-600" size={24} />
               </div>
-              <div className="text-green-700 font-semibold mb-2">Account deleted successfully</div>
+              <div className="text-green-700 font-semibold mb-2">Account scheduled for deletion</div>
               <p className="text-sm text-gray-500">
-                Your account and all associated data have been permanently removed from Turf Booking.
+                Your data will be retained for 90 days. If you log back in within that period, your account will be restored automatically. After 90 days, your phone number and email will be permanently removed.
               </p>
             </div>
           ) : (
@@ -66,7 +66,7 @@ export default function DeleteAccount() {
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="text-amber-500 flex-shrink-0 mt-0.5" size={18} />
                   <div className="text-sm text-amber-800">
-                    <strong>Warning:</strong> This action is irreversible. Deleting your account will permanently remove:
+                    <strong>Warning:</strong> Deleting your account will schedule permanent removal of:
                     <ul className="list-disc ml-4 mt-1 space-y-0.5">
                       <li>Your profile and personal information</li>
                       <li>Game history and statistics</li>
@@ -74,6 +74,7 @@ export default function DeleteAccount() {
                       <li>Player of the Day votes and achievements</li>
                       <li>All photos and preferences</li>
                     </ul>
+                    <p className="mt-2 font-medium">Your data is kept for 90 days. Log back in within 90 days to restore your account.</p>
                   </div>
                 </div>
               </div>
@@ -120,7 +121,7 @@ export default function DeleteAccount() {
                 {confirmStep && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
                     <p className="text-sm text-red-700 font-medium">
-                      Are you sure? Click "Delete My Account" again to confirm permanent deletion.
+                      Are you sure? Click "Delete My Account" again to confirm. Your data will be kept for 90 days before permanent removal.
                     </p>
                   </div>
                 )}

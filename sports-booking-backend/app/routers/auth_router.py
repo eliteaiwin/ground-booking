@@ -167,7 +167,7 @@ async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
 
     # Check if user is disabled
     try:
-        dis_cursor = await db.execute("SELECT is_disabled, disabled_reason FROM users WHERE id = ?", (user["id"],))
+        dis_cursor = await db.execute("SELECT is_disabled, disabled_reason, deleted_at FROM users WHERE id = ?", (user["id"],))
         dis_row = await dis_cursor.fetchone()
         if dis_row and dis_row["is_disabled"]:
             reason = dis_row["disabled_reason"] or ""
@@ -175,6 +175,16 @@ async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
             if reason:
                 detail += f" Reason: {reason}"
             raise HTTPException(status_code=403, detail=detail)
+        # Re-activate soft-deleted account within 90 days
+        if dis_row and dis_row["deleted_at"]:
+            deleted_at = datetime.fromisoformat(dis_row["deleted_at"])
+            if datetime.now(timezone.utc) - deleted_at > timedelta(days=90):
+                raise HTTPException(status_code=403, detail="This account was permanently deleted.")
+            await db.execute(
+                "UPDATE users SET deleted_at = NULL, deletion_reason = '' WHERE id = ?",
+                (user["id"],)
+            )
+            await db.commit()
     except HTTPException:
         raise
     except Exception:
@@ -1073,27 +1083,96 @@ async def get_user_persona(
 @router.post("/delete-account")
 async def delete_account(req: DeleteAccountRequest, db: aiosqlite.Connection = Depends(get_db)):
     """Public endpoint for account deletion (Play Store requirement).
-    Verifies phone + password, then permanently deletes the user and all related data."""
-    cursor = await db.execute("SELECT id, password_hash FROM users WHERE phone = ?", (req.phone,))
+    Verifies phone + password, then soft-deletes the user.
+    Data is retained for 90 days (user can re-join). After 90 days,
+    phone and email are replaced with dummy values."""
+    cursor = await db.execute(
+        "SELECT id, password_hash, deleted_at FROM users WHERE phone = ?", (req.phone,)
+    )
     user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=404, detail="No account found with this phone number")
+    if user["deleted_at"]:
+        raise HTTPException(status_code=400, detail="This account is already marked for deletion")
     if not user["password_hash"] or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid password")
 
     user_id = user["id"]
+    now = datetime.now(timezone.utc).isoformat()
 
-    # Delete all related data
-    await db.execute("DELETE FROM game_players WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM potd_votes WHERE voter_id = ? OR voted_for_id = ?", (user_id, user_id))
-    await db.execute("DELETE FROM payments WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM user_photos WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM ground_members WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM ground_join_requests WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM user_notification_settings WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM user_ground_alert_pauses WHERE user_id = ?", (user_id,))
-    await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    # Soft-delete: mark the account as deleted, keep all data for 90 days
+    await db.execute(
+        "UPDATE users SET deleted_at = ?, deletion_reason = ? WHERE id = ?",
+        (now, req.reason or '', user_id)
+    )
     await db.commit()
 
-    return {"message": "Account deleted successfully"}
+    return {
+        "message": "Account scheduled for deletion. Your data will be retained for 90 days. "
+                   "If you log back in within 90 days, your account will be restored."
+    }
+
+
+@router.post("/delete-account-auth")
+async def delete_account_authenticated(
+    db: aiosqlite.Connection = Depends(get_db),
+    user_id: int = Depends(get_current_user_id)
+):
+    """Authenticated endpoint: delete the currently logged-in user's account."""
+    cursor = await db.execute(
+        "SELECT id, deleted_at FROM users WHERE id = ?", (user_id,)
+    )
+    user = await cursor.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user["deleted_at"]:
+        raise HTTPException(status_code=400, detail="Account is already marked for deletion")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE users SET deleted_at = ?, deletion_reason = 'User requested deletion from app' WHERE id = ?",
+        (now, user_id)
+    )
+    await db.commit()
+
+    return {
+        "message": "Account scheduled for deletion. Your data will be retained for 90 days. "
+                   "If you log back in within 90 days, your account will be restored."
+    }
+
+
+@router.post("/purge-deleted-accounts")
+async def purge_deleted_accounts(db: aiosqlite.Connection = Depends(get_db)):
+    """Purge accounts that were soft-deleted more than 90 days ago.
+    Replaces phone and email with dummy values so the user record becomes anonymous.
+    Call this periodically (e.g. via cron or on app startup)."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    cursor = await db.execute(
+        "SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?", (cutoff,)
+    )
+    rows = await cursor.fetchall()
+    purged = 0
+    for row in rows:
+        uid = row["id"]
+        dummy_phone = f"deleted_{uid}_{random.randint(10000,99999)}"
+        dummy_email = f"deleted_{uid}@purged.turfbooking.app"
+        await db.execute(
+            "UPDATE users SET phone = ?, email = ?, name = 'Deleted User', "
+            "first_name = 'Deleted', last_name = 'User', profile_pic = '', "
+            "password_hash = NULL, google_id = NULL WHERE id = ?",
+            (dummy_phone, dummy_email, uid)
+        )
+        # Clean up related data
+        await db.execute("DELETE FROM game_players WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM potd_votes WHERE voter_id = ? OR voted_for_id = ?", (uid, uid))
+        await db.execute("DELETE FROM payments WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM notifications WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM user_photos WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM ground_members WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM ground_join_requests WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM notification_settings WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM ground_alert_pauses WHERE user_id = ?", (uid,))
+        await db.execute("DELETE FROM user_roles WHERE user_id = ?", (uid,))
+        purged += 1
+    await db.commit()
+    return {"purged": purged}

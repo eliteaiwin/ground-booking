@@ -141,6 +141,10 @@ export const api = {
   deleteAccount: (data: { phone: string; password: string; reason?: string }) =>
     request('/api/auth/delete-account', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Delete account (authenticated, from in-app settings)
+  deleteAccountAuth: () =>
+    request('/api/auth/delete-account-auth', { method: 'POST' }),
+
   // Users (admin)
   searchUsers: (filters?: { search?: string; location?: string; ground_id?: number; role?: string; sport?: string }) => {
     const params = new URLSearchParams();
