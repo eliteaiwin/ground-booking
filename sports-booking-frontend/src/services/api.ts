@@ -64,7 +64,7 @@ function getToken(): string | null {
   return localStorage.getItem('token');
 }
 
-async function request(path: string, options: RequestInit = {}) {
+async function request(path: string, options: RequestInit = {}, retries = 2): Promise<ReturnType<typeof JSON.parse>> {
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -82,17 +82,26 @@ async function request(path: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Request failed' }));
-    throw new Error(err.detail || 'Request failed');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Request failed' }));
+      throw new Error(err.detail || 'Request failed');
+    }
+
+    return res.json();
+  } catch (err) {
+    // Retry on network errors (e.g. Render cold start timeout)
+    if (retries > 0 && err instanceof TypeError && err.message.includes('fetch')) {
+      await new Promise(r => setTimeout(r, 3000));
+      return request(path, options, retries - 1);
+    }
+    throw err;
   }
-
-  return res.json();
 }
 
 // Auth
@@ -112,6 +121,13 @@ export const api = {
 
   verifyOTP: (data: { phone: string; otp: string }) =>
     request('/api/auth/otp/verify', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Registration OTP (phone verification before account exists)
+  requestRegistrationOTP: (data: { phone: string }) =>
+    request('/api/auth/otp/request-registration', { method: 'POST', body: JSON.stringify(data) }),
+
+  verifyRegistrationOTP: (data: { phone: string; otp: string }) =>
+    request('/api/auth/otp/verify-registration', { method: 'POST', body: JSON.stringify(data) }),
 
   googleAuth: (data: { id_token: string }) =>
     request('/api/auth/google', { method: 'POST', body: JSON.stringify(data) }),

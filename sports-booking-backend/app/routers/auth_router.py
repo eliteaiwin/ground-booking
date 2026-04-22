@@ -67,6 +67,10 @@ class GoogleAuthRequest(BaseModel):
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
+# In-memory store for registration OTPs (phone -> {otp, expires_at})
+# In production, use Redis or a DB table.
+_registration_otps: dict[str, dict] = {}
+
 
 class DeleteAccountRequest(BaseModel):
     phone: str
@@ -202,6 +206,45 @@ async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
 
     token = create_access_token(user["id"])
     return {"token": token, "user_id": user["id"], "force_password_change": force_change}
+
+
+@router.post("/otp/request-registration")
+async def request_registration_otp(req: OTPRequestModel, db: aiosqlite.Connection = Depends(get_db)):
+    """Send OTP to verify phone number during registration (before account exists)."""
+    # Check if phone is already registered
+    cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (req.phone,))
+    existing = await cursor.fetchone()
+    if existing:
+        raise HTTPException(status_code=400, detail="Phone number already registered. Please log in instead.")
+
+    otp_code = ''.join(random.SystemRandom().choices(string.digits, k=6))
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    _registration_otps[req.phone] = {"otp": otp_code, "expires_at": expires_at}
+
+    # In production, send via SMS/WhatsApp. For demo, return the OTP.
+    return {"message": "OTP sent successfully", "otp_demo": otp_code}
+
+
+@router.post("/otp/verify-registration")
+async def verify_registration_otp(req: OTPVerifyRequest):
+    """Verify OTP for phone number during registration (no account needed)."""
+    entry = _registration_otps.get(req.phone)
+    if not entry:
+        raise HTTPException(status_code=401, detail="No OTP requested for this phone number")
+
+    if datetime.now(timezone.utc) > entry["expires_at"]:
+        del _registration_otps[req.phone]
+        raise HTTPException(status_code=401, detail="OTP expired. Please request a new one.")
+
+    import hmac as _hmac
+    if not _hmac.compare_digest(entry["otp"], req.otp):
+        del _registration_otps[req.phone]
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    # Mark as verified (keep entry so registration can proceed)
+    _registration_otps[req.phone]["verified"] = True
+    return {"message": "Phone number verified successfully"}
 
 
 @router.post("/otp/request")

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { X } from 'lucide-react';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin'];
@@ -46,6 +48,13 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // OTP verification state
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpDemo, setOtpDemo] = useState('');
+  const [otpVerified, setOtpVerified] = useState(false);
+
   const toggleSport = (sport: string) => {
     setSports(prev => {
       if (prev.includes(sport)) {
@@ -72,9 +81,51 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
     });
   };
 
+  const handleSendOtp = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await api.requestRegistrationOTP({ phone });
+      setOtpSent(true);
+      setOtpStep(true);
+      if (res.otp_demo) setOtpDemo(res.otp_demo);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to send OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await api.verifyRegistrationOTP({ phone, otp: otpCode });
+      setOtpVerified(true);
+      setOtpStep(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Invalid OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Validate phone is filled before checking OTP
+    if (!phone) {
+      setError('Phone number is required');
+      return;
+    }
+
+    // If phone not verified, send OTP first
+    if (!otpVerified) {
+      await handleSendOtp();
+      return;
+    }
+
     setLoading(true);
     try {
       await register({
@@ -97,7 +148,15 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md max-h-screen overflow-y-auto">
+      <Card className="w-full max-w-md max-h-screen overflow-y-auto relative">
+        <button
+          type="button"
+          onClick={onSwitchToLogin}
+          className="absolute top-3 right-3 z-10 p-1.5 rounded-full hover:bg-gray-100 text-gray-500"
+          aria-label="Close"
+        >
+          <X size={20} />
+        </button>
         <CardHeader className="text-center pb-3">
           <div className="mx-auto mb-3 w-14 h-14 bg-green-600 rounded-full flex items-center justify-center">
             <span className="text-white text-xl">&#9917;</span>
@@ -122,8 +181,61 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="reg-phone">Mobile Number</Label>
-              <Input id="reg-phone" type="tel" placeholder="Your mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+              <div className="flex gap-2">
+                <Input
+                  id="reg-phone"
+                  type="tel"
+                  placeholder="Your mobile number"
+                  value={phone}
+                  onChange={(e) => { setPhone(e.target.value); setOtpVerified(false); setOtpSent(false); setOtpStep(false); }}
+                  required
+                  disabled={otpVerified}
+                  className="flex-1"
+                />
+                {otpVerified ? (
+                  <span className="inline-flex items-center px-3 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-md border border-green-200">Verified</span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0 border-green-300 text-green-600 hover:bg-green-50"
+                    onClick={handleSendOtp}
+                    disabled={loading || !phone}
+                  >
+                    {otpSent ? 'Resend' : 'Verify'}
+                  </Button>
+                )}
+              </div>
             </div>
+
+            {/* OTP Verification */}
+            {otpStep && !otpVerified && (
+              <div className="space-y-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                {otpDemo && (
+                  <p className="text-sm text-blue-700">Demo OTP: <strong>{otpDemo}</strong></p>
+                )}
+                <Label htmlFor="reg-otp">Enter OTP</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="reg-otp"
+                    type="text"
+                    placeholder="6-digit OTP"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                    maxLength={6}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    className="shrink-0 bg-green-600 hover:bg-green-700"
+                    onClick={handleVerifyOtp}
+                    disabled={loading || otpCode.length < 6}
+                  >
+                    {loading ? 'Verifying...' : 'Verify OTP'}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="reg-email">Email Address</Label>
               <Input id="reg-email" type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -207,7 +319,7 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
             </div>
 
             <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? 'Creating account...' : (otpVerified ? 'Create Account' : 'Verify Phone & Register')}
             </Button>
             <p className="text-center text-sm text-gray-500">
               Already have an account?{' '}
