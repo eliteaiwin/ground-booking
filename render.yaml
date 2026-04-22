@@ -14,7 +14,7 @@ services:
     name: ground-booking
     runtime: python
     buildCommand: |
-      cd sports-booking-frontend && npm install && VITE_API_URL= npm run build && cd .. &&
+      cd sports-booking-frontend && npm install && VITE_API_URL= VITE_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID npm run build && cd .. &&
       cd sports-booking-backend && pip install poetry && poetry install --no-root
     startCommand: |
       cd sports-booking-backend && STATIC_DIR=../sports-booking-frontend/dist poetry run uvicorn app.main:app --host 0.0.0.0 --port $PORT
