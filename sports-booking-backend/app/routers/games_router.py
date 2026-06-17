@@ -122,10 +122,15 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     )
     players_rows = await cursor.fetchall()
 
-    # Build lookup of nominator names/phones
+    # Build lookup of nominator names/phones (also includes payment markers)
     nominator_ids = {p["nominated_by"] for p in players_rows if p["nominated_by"]}
+    try:
+        marker_ids = {p["payment_marked_by"] for p in players_rows if p["payment_marked_by"]}
+    except Exception:
+        marker_ids = set()
+    all_lookup_ids = nominator_ids | marker_ids
     nominator_map: dict[int, dict] = {}
-    for nid in nominator_ids:
+    for nid in all_lookup_ids:
         ncursor = await db.execute("SELECT name, phone FROM users WHERE id = ?", (nid,))
         nrow = await ncursor.fetchone()
         if nrow:
