@@ -219,7 +219,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     try {
       const [gameData, usersData] = await Promise.all([
         api.getGame(gameId),
-        api.listUsers(),
+        api.listUsers().catch(() => []),
       ]);
       setGame(gameData);
       setAllUsers(usersData);
