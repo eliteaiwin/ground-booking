@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/razorpay", tags=["razorpay"])
 
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
-PLATFORM_COMMISSION_PERCENT = 10  # Platform keeps 10%
+PLATFORM_COMMISSION_PERCENT = 3  # Platform keeps 3%, Razorpay takes ~2% separately
 
 
 def get_razorpay_client():
