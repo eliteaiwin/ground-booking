@@ -102,6 +102,7 @@ class UpdateProfileRequest(BaseModel):
     locations: Optional[List[str]] = None
     sport_positions: Optional[dict] = None
     currency: Optional[str] = None
+    timezone: Optional[str] = None
 
 
 async def _assign_roles(db: aiosqlite.Connection, user_id: int):
@@ -524,15 +525,17 @@ async def get_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Get currency and phone_verified safely
-    currency = "Rs"
+    # Get currency, timezone and phone_verified safely
+    currency = "₹"
+    user_timezone = "Asia/Kolkata"
     phone_verified = 0
     try:
-        cursor2 = await db.execute("SELECT currency, phone_verified FROM users WHERE id = ?", (user_id,))
+        cursor2 = await db.execute("SELECT currency, phone_verified, timezone FROM users WHERE id = ?", (user_id,))
         extra = await cursor2.fetchone()
         if extra:
-            currency = extra["currency"] or "Rs"
+            currency = extra["currency"] or "₹"
             phone_verified = extra["phone_verified"] or 0
+            user_timezone = extra["timezone"] or "Asia/Kolkata"
     except Exception:
         pass
 
@@ -577,6 +580,7 @@ async def get_profile(
         "sport_positions": sport_positions,
         "profile_pic": profile_pic,
         "currency": currency,
+        "timezone": user_timezone,
         "phone_verified": phone_verified,
         "roles": roles,
         "created_at": user["created_at"]
@@ -628,6 +632,9 @@ async def update_profile(
     if req.currency is not None:
         updates.append("currency = ?")
         params.append(req.currency)
+    if req.timezone is not None:
+        updates.append("timezone = ?")
+        params.append(req.timezone)
     if req.phone is not None:
         # Check phone uniqueness
         cursor = await db.execute("SELECT id FROM users WHERE phone = ? AND id != ?", (req.phone, user_id))

@@ -66,7 +66,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
 
-  const currency = user?.currency || 'Rs';
+  const currency = user?.currency || '₹';
 
   useEffect(() => {
     Promise.all([

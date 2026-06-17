@@ -193,6 +193,21 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
                 nom_info = f"Nominated by user #{nom_by}" + (f" on {joined_display}" if joined_display else "")
         else:
             nom_info = f"Self Nominated" + (f" on {joined_display}" if joined_display else "")
+        # Payment marker info
+        payment_marked_by_id = None
+        payment_marked_at_str = None
+        payment_marked_by_name = None
+        try:
+            payment_marked_by_id = p["payment_marked_by"]
+            payment_marked_at_str = p["payment_marked_at"]
+        except Exception:
+            pass
+        if payment_marked_by_id:
+            if payment_marked_by_id in nominator_map:
+                payment_marked_by_name = nominator_map[payment_marked_by_id]["name"]
+            elif payment_marked_by_id == p["user_id"]:
+                payment_marked_by_name = p["name"]
+
         player_data = {
             "id": p["id"],
             "user_id": p["user_id"],
@@ -202,6 +217,9 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "position": p["position"] or "",
             "team_id": p["team_id"],
             "payment_confirmed": p["payment_confirmed"],
+            "payment_marked_by": payment_marked_by_id,
+            "payment_marked_by_name": payment_marked_by_name,
+            "payment_marked_at": payment_marked_at_str,
             "nominated_by": p["nominated_by"],
             "nominated_by_info": nom_info,
             "joined_at": p["joined_at"],
@@ -1628,9 +1646,10 @@ async def mark_payment_made(
 
     # Always update player payment_confirmed (fixes inconsistency if payment was
     # already 'paid' but payment_confirmed was still 0 from a previous partial failure)
+    now_mark = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
-        (game_id, req.user_id)
+        "UPDATE game_players SET payment_confirmed = 1, payment_marked_by = ?, payment_marked_at = ? WHERE game_id = ? AND user_id = ?",
+        (user_id, now_mark, game_id, req.user_id)
     )
 
     # Notify user

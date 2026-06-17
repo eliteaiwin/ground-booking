@@ -53,8 +53,8 @@ async def record_payment(
 
     # Update player payment_confirmed so frontend shows correct status
     await db.execute(
-        "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
-        (req.game_id, user_id)
+        "UPDATE game_players SET payment_confirmed = 1, payment_marked_by = ?, payment_marked_at = ? WHERE game_id = ? AND user_id = ?",
+        (user_id, now, req.game_id, user_id)
     )
 
     # Notify user of payment confirmation
@@ -295,8 +295,8 @@ async def mark_paid_with_comment(
     # Always update player payment_confirmed (fixes inconsistency if payment was
     # already 'paid' but payment_confirmed was still 0 from a prior partial failure)
     await db.execute(
-        "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
-        (req.game_id, req.user_id)
+        "UPDATE game_players SET payment_confirmed = 1, payment_marked_by = ?, payment_marked_at = ? WHERE game_id = ? AND user_id = ?",
+        (user_id, now, req.game_id, req.user_id)
     )
 
     # Log the settlement record

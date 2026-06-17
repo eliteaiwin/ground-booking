@@ -155,7 +155,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
   const [expandedGame, setExpandedGame] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const currency = user?.currency || 'Rs';
+  const currency = user?.currency || '₹';
 
   // User's sports from profile
   const userSports: string[] = useMemo(() => {
