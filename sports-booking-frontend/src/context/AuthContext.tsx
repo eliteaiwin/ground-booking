@@ -14,6 +14,7 @@ interface User {
   locations: string[];
   sport_positions: Record<string, string[]>;
   currency: string;
+  timezone: string;
   phone_verified: number;
   profile_pic: string;
   roles: string[];

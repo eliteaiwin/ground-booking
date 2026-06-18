@@ -46,6 +46,9 @@ interface Player {
   position: string;
   team_id: number | null;
   payment_confirmed: number;
+  payment_marked_by: number | null;
+  payment_marked_by_name: string | null;
+  payment_marked_at: string | null;
   nominated_by: number | null;
   nominated_by_info: string | null;
   joined_at: string;
@@ -204,8 +207,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
+  const [showNominateSection, setShowNominateSection] = useState(false);
 
-  const currency = user?.currency || 'Rs';
+  const currency = user?.currency || '₹';
 
   useEffect(() => {
     loadGame();
@@ -215,7 +219,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     try {
       const [gameData, usersData] = await Promise.all([
         api.getGame(gameId),
-        api.listUsers(),
+        api.listUsers().catch(() => []),
       ]);
       setGame(gameData);
       setAllUsers(usersData);
@@ -258,6 +262,74 @@ export default function GameDetail({ gameId, onBack }: Props) {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
+      setActionLoading('');
+    }
+  };
+
+  const formatPaymentTooltip = (player: Player) => {
+    if (player.payment_confirmed !== 1) return 'Unpaid';
+    const markedAt = player.payment_marked_at;
+    let dateStr = '';
+    if (markedAt) {
+      try {
+        const dt = new Date(markedAt);
+        const tz = user?.timezone || 'Asia/Kolkata';
+        dateStr = dt.toLocaleString('en-IN', {
+          day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz,
+        });
+      } catch {
+        dateStr = markedAt.slice(0, 16);
+      }
+    }
+    if (player.payment_marked_by && player.payment_marked_by === player.user_id) {
+      return `Payment made by ${player.payment_marked_by_name || player.name} (self)${dateStr ? ` on ${dateStr}` : ''}`;
+    } else if (player.payment_marked_by && player.payment_marked_by_name) {
+      return `Marked as payment done by moderator ${player.payment_marked_by_name}${dateStr ? ` on ${dateStr}` : ''}`;
+    }
+    return 'Paid';
+  };
+
+  const handleRazorpayPayment = async () => {
+    if (!game) return;
+    setActionLoading('razorpay-pay');
+    setError('');
+    try {
+      const orderData = await api.createRazorpayOrder(game.id);
+      const options = {
+        key: orderData.key_id,
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        name: 'Turf Booking',
+        description: `Payment for ${game.title}`,
+        order_id: orderData.order_id,
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          try {
+            await api.verifyRazorpayPayment(
+              game.id,
+              response.razorpay_order_id,
+              response.razorpay_payment_id,
+              response.razorpay_signature,
+            );
+            await loadGame();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Payment verification failed');
+          } finally {
+            setActionLoading('');
+          }
+        },
+        prefill: {
+          name: user?.name || '',
+          contact: user?.phone || '',
+        },
+        theme: { color: '#16a34a' },
+        modal: {
+          ondismiss: () => { setActionLoading(''); },
+        },
+      };
+      const rzp = new (window as unknown as { Razorpay: new (opts: unknown) => { open: () => void } }).Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to initiate payment');
       setActionLoading('');
     }
   };
@@ -588,6 +660,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
           {game.status === 'voting_open' && !isReadOnly && (
             <Card className="border-green-200 bg-green-50">
               <CardContent className="p-4">
+                {!showNominateSection ? (
+                  <div className="text-center">
+                    <p className="text-sm text-gray-700 mb-2">Do you want to play or nominate someone?</p>
+                    <Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowNominateSection(true)}>
+                      Yes, I want to join / nominate
+                    </Button>
+                  </div>
+                ) : (
+                <>
                 {/* Radio buttons for Nominate Self / Nominate Others */}
                 <div className="flex gap-4 mb-3">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -686,6 +767,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, Number(nominateUserId), nominatePosition))}>
                     {actionLoading === 'nominate' ? 'Nominating...' : 'Nominate Player'}
                   </Button>
+                )}
+                </>
                 )}
               </CardContent>
             </Card>
@@ -998,11 +1081,18 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
                   </p>
                 )}
-                <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                  onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
-                  disabled={actionLoading === 'pay'}>
-                  {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button className="flex-1 bg-green-600 hover:bg-green-700"
+                    onClick={handleRazorpayPayment}
+                    disabled={actionLoading === 'razorpay-pay'}>
+                    {actionLoading === 'razorpay-pay' ? 'Processing...' : `Pay ${game.cost_per_person} ${currency} Online`}
+                  </Button>
+                  <Button variant="outline" className="flex-1 border-orange-300 text-orange-700"
+                    onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
+                    disabled={actionLoading === 'pay'}>
+                    {actionLoading === 'pay' ? 'Recording...' : 'Paid Offline'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1016,11 +1106,18 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
                 </p>
-                <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                  onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
-                  disabled={actionLoading === 'pay'}>
-                  {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button className="flex-1 bg-green-600 hover:bg-green-700"
+                    onClick={handleRazorpayPayment}
+                    disabled={actionLoading === 'razorpay-pay'}>
+                    {actionLoading === 'razorpay-pay' ? 'Processing...' : `Pay ${game.cost_per_person} ${currency} Online`}
+                  </Button>
+                  <Button variant="outline" className="flex-1 border-orange-300 text-orange-700"
+                    onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
+                    disabled={actionLoading === 'pay'}>
+                    {actionLoading === 'pay' ? 'Recording...' : 'Paid Offline'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1179,7 +1276,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         {!showPaymentDetails && (
                           <>
                             {player.payment_confirmed === 1 ? (
-                              <span className="text-green-600" title="Paid"><Banknote size={16} /></span>
+                              <span className="text-green-600" title={formatPaymentTooltip(player)}><Banknote size={16} /></span>
                             ) : (
                               <span className="text-gray-300" title="Unpaid"><Banknote size={16} /></span>
                             )}
@@ -1205,13 +1302,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               Mark as Paid
                             </Button>
                             <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-blue-600 border-blue-300"
-                              onClick={() => alert('Pay feature — Yet to come')}>
-                              <Wallet size={12} className="mr-0.5" /> Pay
+                              onClick={handleRazorpayPayment}
+                              disabled={actionLoading === 'razorpay-pay'}>
+                              <Wallet size={12} className="mr-0.5" /> Pay Online
                             </Button>
                           </>
                         )}
                         {showPaymentDetails && player.payment_confirmed === 1 && (
-                          <Badge className="bg-green-100 text-green-700 text-xs">Paid</Badge>
+                          <Badge className="bg-green-100 text-green-700 text-xs" title={formatPaymentTooltip(player)}>Paid</Badge>
                         )}
 
                         {player.user_id === user?.id && <Badge className="bg-green-100 text-green-700 text-xs">You</Badge>}

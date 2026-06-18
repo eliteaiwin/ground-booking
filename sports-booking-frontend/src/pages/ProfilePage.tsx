@@ -22,7 +22,7 @@ const SPORT_POSITIONS: Record<string, string[]> = {
 };
 
 const CURRENCIES = [
-  { value: 'Rs', label: 'Rs (Indian Rupee)' },
+  { value: '₹', label: '₹ (Indian Rupee)' },
   { value: '$', label: '$ (US Dollar)' },
   { value: '€', label: '€ (Euro)' },
   { value: '£', label: '£ (British Pound)' },
@@ -32,6 +32,22 @@ const CURRENCIES = [
   { value: 'CHF', label: 'CHF (Swiss Franc)' },
   { value: 'AED', label: 'AED (UAE Dirham)' },
   { value: 'SGD', label: 'SGD (Singapore Dollar)' },
+];
+
+const TIMEZONES = [
+  { value: 'Asia/Kolkata', label: 'GMT +5:30 (IST - India)' },
+  { value: 'America/New_York', label: 'GMT -5:00 (EST - US East)' },
+  { value: 'America/Chicago', label: 'GMT -6:00 (CST - US Central)' },
+  { value: 'America/Denver', label: 'GMT -7:00 (MST - US Mountain)' },
+  { value: 'America/Los_Angeles', label: 'GMT -8:00 (PST - US West)' },
+  { value: 'Europe/London', label: 'GMT +0:00 (GMT - UK)' },
+  { value: 'Europe/Paris', label: 'GMT +1:00 (CET - Europe)' },
+  { value: 'Asia/Dubai', label: 'GMT +4:00 (GST - UAE)' },
+  { value: 'Asia/Singapore', label: 'GMT +8:00 (SGT - Singapore)' },
+  { value: 'Australia/Sydney', label: 'GMT +11:00 (AEDT - Australia)' },
+  { value: 'Pacific/Auckland', label: 'GMT +13:00 (NZDT - New Zealand)' },
+  { value: 'Asia/Tokyo', label: 'GMT +9:00 (JST - Japan)' },
+  { value: 'Asia/Hong_Kong', label: 'GMT +8:00 (HKT - Hong Kong)' },
 ];
 
 interface Props {
@@ -70,7 +86,8 @@ export default function ProfilePage({ onBack }: Props) {
   const [sports, setSports] = useState<string[]>(user?.sports || []);
   const [locations, setLocations] = useState<string[]>(user?.locations || []);
   const [sportPositions, setSportPositions] = useState<Record<string, string[]>>(user?.sport_positions || {});
-  const [currency, setCurrency] = useState(user?.currency || 'Rs');
+  const [currency, setCurrency] = useState(user?.currency || '₹');
+  const [timezone, setTimezone] = useState(user?.timezone || 'Asia/Kolkata');
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState('');
@@ -232,6 +249,7 @@ export default function ProfilePage({ onBack }: Props) {
       const notifPrefStr = notifPrefs.join(',');
       if (notifPrefStr !== user?.notification_preference) data.notification_preference = notifPrefStr;
       if (currency !== user?.currency) data.currency = currency;
+      if (timezone !== user?.timezone) data.timezone = timezone;
       data.sports = sports;
       data.locations = locations;
       data.sport_positions = sportPositions;
@@ -480,6 +498,17 @@ export default function ProfilePage({ onBack }: Props) {
                 <SelectContent>
                   {CURRENCIES.map(c => (
                     <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Timezone</Label>
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map(tz => (
+                    <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

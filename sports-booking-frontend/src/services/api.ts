@@ -305,6 +305,26 @@ export const api = {
 
   getSettlements: () => request('/api/payments/settlements'),
 
+  // Razorpay
+  getRazorpayConfig: () => request('/api/razorpay/config'),
+
+  createRazorpayOrder: (gameId: number) =>
+    request('/api/razorpay/create-order', {
+      method: 'POST',
+      body: JSON.stringify({ game_id: gameId }),
+    }),
+
+  verifyRazorpayPayment: (gameId: number, razorpayOrderId: string, razorpayPaymentId: string, razorpaySignature: string) =>
+    request('/api/razorpay/verify-payment', {
+      method: 'POST',
+      body: JSON.stringify({
+        game_id: gameId,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_signature: razorpaySignature,
+      }),
+    }),
+
   // Notifications
   getNotifications: () => request('/api/notifications'),
 

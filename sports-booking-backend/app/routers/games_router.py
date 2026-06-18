@@ -122,10 +122,15 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     )
     players_rows = await cursor.fetchall()
 
-    # Build lookup of nominator names/phones
+    # Build lookup of nominator names/phones (also includes payment markers)
     nominator_ids = {p["nominated_by"] for p in players_rows if p["nominated_by"]}
+    try:
+        marker_ids = {p["payment_marked_by"] for p in players_rows if p["payment_marked_by"]}
+    except Exception:
+        marker_ids = set()
+    all_lookup_ids = nominator_ids | marker_ids
     nominator_map: dict[int, dict] = {}
-    for nid in nominator_ids:
+    for nid in all_lookup_ids:
         ncursor = await db.execute("SELECT name, phone FROM users WHERE id = ?", (nid,))
         nrow = await ncursor.fetchone()
         if nrow:
@@ -193,6 +198,21 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
                 nom_info = f"Nominated by user #{nom_by}" + (f" on {joined_display}" if joined_display else "")
         else:
             nom_info = f"Self Nominated" + (f" on {joined_display}" if joined_display else "")
+        # Payment marker info
+        payment_marked_by_id = None
+        payment_marked_at_str = None
+        payment_marked_by_name = None
+        try:
+            payment_marked_by_id = p["payment_marked_by"]
+            payment_marked_at_str = p["payment_marked_at"]
+        except Exception:
+            pass
+        if payment_marked_by_id:
+            if payment_marked_by_id in nominator_map:
+                payment_marked_by_name = nominator_map[payment_marked_by_id]["name"]
+            elif payment_marked_by_id == p["user_id"]:
+                payment_marked_by_name = p["name"]
+
         player_data = {
             "id": p["id"],
             "user_id": p["user_id"],
@@ -202,6 +222,9 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "position": p["position"] or "",
             "team_id": p["team_id"],
             "payment_confirmed": p["payment_confirmed"],
+            "payment_marked_by": payment_marked_by_id,
+            "payment_marked_by_name": payment_marked_by_name,
+            "payment_marked_at": payment_marked_at_str,
             "nominated_by": p["nominated_by"],
             "nominated_by_info": nom_info,
             "joined_at": p["joined_at"],
@@ -471,6 +494,308 @@ async def list_games(
         result.append(game_data)
     return result
 
+
+
+
+@router.get("/hall-of-fame")
+async def hall_of_fame(
+    sport: Optional[str] = Query(None, description="Filter by sport type"),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Hall of Fame: Player rankings by POTD points + goals scored.
+    Points: 1st preference = 3pts, 2nd = 2pts, 3rd = 1pt.
+    Also includes total goals scored across all games.
+    """
+    # Get POTD points per player
+    sport_filter = ""
+    sport_params: list = []
+    if sport:
+        sport_filter = " AND g.sport_type = ?"
+        sport_params = [sport]
+
+    cursor = await db.execute(
+        f"""SELECT pv.player_id, u.name, u.first_name, u.phone,
+                  SUM(CASE WHEN pv.preference = 1 THEN 3
+                           WHEN pv.preference = 2 THEN 2
+                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
+                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins,
+                  COUNT(DISTINCT pv.game_id) as games_voted_in
+           FROM potd_votes pv
+           JOIN users u ON pv.player_id = u.id
+           JOIN games g ON pv.game_id = g.id
+           WHERE g.status = 'completed'{sport_filter}
+           GROUP BY pv.player_id
+           ORDER BY potd_points DESC, first_pref_wins DESC""",
+        sport_params
+    )
+    potd_rows = await cursor.fetchall()
+
+    # Get goals scored per player
+    cursor = await db.execute(
+        f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
+                  SUM(gs.goals) as total_goals,
+                  COUNT(DISTINCT gs.game_id) as games_scored_in
+           FROM goal_scorers gs
+           JOIN users u ON gs.user_id = u.id
+           JOIN games g ON gs.game_id = g.id
+           WHERE g.status = 'completed'{sport_filter}
+           GROUP BY gs.user_id
+           ORDER BY total_goals DESC""",
+        sport_params
+    )
+    goals_rows = await cursor.fetchall()
+
+    # Get total games played per player
+    cursor = await db.execute(
+        f"""SELECT gp.user_id, COUNT(DISTINCT gp.game_id) as games_played
+           FROM game_players gp
+           JOIN games g ON gp.game_id = g.id
+           WHERE gp.status = 'selected' AND g.status = 'completed'{sport_filter}
+           GROUP BY gp.user_id""",
+        sport_params
+    )
+    games_played_rows = await cursor.fetchall()
+    games_played_map = {r["user_id"]: r["games_played"] for r in games_played_rows}
+
+    # Build goals map
+    goals_map = {}
+    for r in goals_rows:
+        goals_map[r["user_id"]] = {
+            "total_goals": r["total_goals"],
+            "games_scored_in": r["games_scored_in"],
+        }
+
+    # Build combined rankings
+    player_ids_seen = set()
+    rankings = []
+
+    for r in potd_rows:
+        pid = r["player_id"]
+        player_ids_seen.add(pid)
+        goal_data = goals_map.get(pid, {"total_goals": 0, "games_scored_in": 0})
+        rankings.append({
+            "user_id": pid,
+            "name": r["name"],
+            "first_name": r["first_name"],
+            "phone": r["phone"],
+            "potd_points": r["potd_points"],
+            "first_pref_wins": r["first_pref_wins"],
+            "total_goals": goal_data["total_goals"],
+            "games_played": games_played_map.get(pid, 0),
+            "combined_score": r["potd_points"] + goal_data["total_goals"],
+        })
+
+    # Add players who scored goals but didn't get POTD votes
+    for r in goals_rows:
+        pid = r["user_id"]
+        if pid not in player_ids_seen:
+            rankings.append({
+                "user_id": pid,
+                "name": r["name"],
+                "first_name": r["first_name"],
+                "phone": r["phone"],
+                "potd_points": 0,
+                "first_pref_wins": 0,
+                "total_goals": r["total_goals"],
+                "games_played": games_played_map.get(pid, 0),
+                "combined_score": r["total_goals"],
+            })
+
+    # Sort by combined score (POTD points + goals)
+    rankings.sort(key=lambda x: (-x["combined_score"], -x["potd_points"], -x["total_goals"]))
+
+    # Add rank
+    for i, r in enumerate(rankings, 1):
+        r["rank"] = i
+
+    return {"rankings": rankings, "sport_filter": sport}
+
+
+
+@router.get("/player/{player_id}/stats")
+async def get_player_stats(
+    player_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get a player's Hall of Fame stats for their profile."""
+    cursor = await db.execute("SELECT id, name, first_name, phone FROM users WHERE id = ?", (player_id,))
+    player = await cursor.fetchone()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    # POTD points by sport
+    cursor = await db.execute(
+        """SELECT g.sport_type,
+                  SUM(CASE WHEN pv.preference = 1 THEN 3
+                           WHEN pv.preference = 2 THEN 2
+                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points,
+                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins
+           FROM potd_votes pv
+           JOIN games g ON pv.game_id = g.id
+           WHERE pv.player_id = ? AND g.status = 'completed'
+           GROUP BY g.sport_type""",
+        (player_id,)
+    )
+    potd_by_sport = await cursor.fetchall()
+
+    # Goals by sport
+    cursor = await db.execute(
+        """SELECT g.sport_type, SUM(gs.goals) as total_goals
+           FROM goal_scorers gs
+           JOIN games g ON gs.game_id = g.id
+           WHERE gs.user_id = ? AND g.status = 'completed'
+           GROUP BY g.sport_type""",
+        (player_id,)
+    )
+    goals_by_sport = await cursor.fetchall()
+
+    # Games played by sport
+    cursor = await db.execute(
+        """SELECT g.sport_type, COUNT(DISTINCT gp.game_id) as games_played
+           FROM game_players gp
+           JOIN games g ON gp.game_id = g.id
+           WHERE gp.user_id = ? AND gp.status = 'selected' AND g.status = 'completed'
+           GROUP BY g.sport_type""",
+        (player_id,)
+    )
+    games_by_sport = await cursor.fetchall()
+
+    # Overall rank (by POTD points)
+    cursor = await db.execute(
+        """SELECT pv.player_id,
+                  SUM(CASE WHEN pv.preference = 1 THEN 3
+                           WHEN pv.preference = 2 THEN 2
+                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points
+           FROM potd_votes pv
+           JOIN games g ON pv.game_id = g.id
+           WHERE g.status = 'completed'
+           GROUP BY pv.player_id
+           ORDER BY points DESC"""
+    )
+    all_rankings = await cursor.fetchall()
+    rank = None
+    total_potd_points = 0
+    for i, r in enumerate(all_rankings, 1):
+        if r["player_id"] == player_id:
+            rank = i
+            total_potd_points = r["points"]
+            break
+
+    return {
+        "user_id": player_id,
+        "name": player["name"],
+        "first_name": player["first_name"],
+        "overall_potd_rank": rank,
+        "total_potd_points": total_potd_points,
+        "potd_by_sport": [
+            {"sport": r["sport_type"], "points": r["points"], "first_pref_wins": r["first_pref_wins"]}
+            for r in potd_by_sport
+        ],
+        "goals_by_sport": [
+            {"sport": r["sport_type"], "total_goals": r["total_goals"]}
+            for r in goals_by_sport
+        ],
+        "games_by_sport": [
+            {"sport": r["sport_type"], "games_played": r["games_played"]}
+            for r in games_by_sport
+        ],
+    }
+
+
+
+@router.get("/vote/{voting_token}")
+async def access_voting_page(
+    voting_token: str,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Resolve a voting token to a game and check if voting is open."""
+    # Look up game by stored voting_token column first (O(1) lookup)
+    try:
+        cursor = await db.execute(
+            "SELECT id, status FROM games WHERE voting_token = ?", (voting_token,)
+        )
+        game = await cursor.fetchone()
+        if game:
+            return {
+                "game_id": game["id"],
+                "voting_open": game["status"] == "voting_open",
+                "status": game["status"],
+            }
+    except Exception:
+        pass
+
+    # Fallback: check recent games only (limit to 100 most recent) for backwards compatibility
+    cursor = await db.execute("SELECT id, status FROM games ORDER BY id DESC LIMIT 100")
+    games = await cursor.fetchall()
+    for game in games:
+        expected_token = hashlib.sha256(f"{game['id']}-{VOTING_LINK_SECRET}".encode()).hexdigest()[:16]
+        if expected_token == voting_token:
+            # Store the token for future O(1) lookups
+            try:
+                await db.execute("UPDATE games SET voting_token = ? WHERE id = ?", (voting_token, game["id"]))
+                await db.commit()
+            except Exception:
+                pass
+            return {
+                "game_id": game["id"],
+                "voting_open": game["status"] == "voting_open",
+                "status": game["status"],
+            }
+    raise HTTPException(status_code=404, detail="Invalid voting link")
+
+
+
+@router.get("/search/games")
+async def search_games(
+    date: Optional[str] = Query(None, description="Filter by game date (YYYY-MM-DD)"),
+    date_from: Optional[str] = Query(None, description="Filter games from this date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter games up to this date (YYYY-MM-DD)"),
+    ground: Optional[str] = Query(None, description="Filter by ground name (partial match)"),
+    location: Optional[str] = Query(None, description="Filter by location name"),
+    status: Optional[str] = Query(None, description="Filter by game status"),
+    sport: Optional[str] = Query(None, description="Filter by sport type"),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Search games by date range, ground, location, status, sport. Any user can search."""
+    query = "SELECT id FROM games WHERE 1=1"
+    params: list[str] = []
+
+    if date:
+        query += " AND game_date = ?"
+        params.append(date)
+    if date_from:
+        query += " AND game_date >= ?"
+        params.append(date_from)
+    if date_to:
+        query += " AND game_date <= ?"
+        params.append(date_to)
+    if ground:
+        query += " AND LOWER(ground_name) LIKE LOWER(?)"
+        params.append(f"%{ground}%")
+    if location:
+        # Join with grounds table to filter by location
+        query += " AND ground_name IN (SELECT (g2.location || ' - ' || g2.name) FROM grounds g2 WHERE LOWER(g2.location) = LOWER(?))"
+        params.append(location)
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if sport:
+        query += " AND LOWER(sport_type) LIKE LOWER(?)"
+        params.append(f"%{sport}%")
+
+    query += " ORDER BY game_date ASC, game_time ASC"
+
+    cursor = await db.execute(query, params)
+    games = await cursor.fetchall()
+
+    result = []
+    for g in games:
+        game_data = await get_game_dict(db, g["id"])
+        result.append(game_data)
+    return result
 
 @router.get("/{game_id}")
 async def get_game(
@@ -1628,9 +1953,10 @@ async def mark_payment_made(
 
     # Always update player payment_confirmed (fixes inconsistency if payment was
     # already 'paid' but payment_confirmed was still 0 from a previous partial failure)
+    now_mark = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
-        (game_id, req.user_id)
+        "UPDATE game_players SET payment_confirmed = 1, payment_marked_by = ?, payment_marked_at = ? WHERE game_id = ? AND user_id = ?",
+        (user_id, now_mark, game_id, req.user_id)
     )
 
     # Notify user
@@ -1707,212 +2033,6 @@ async def remind_unpaid_players(
     }
 
 
-@router.get("/hall-of-fame")
-async def hall_of_fame(
-    sport: Optional[str] = Query(None, description="Filter by sport type"),
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Hall of Fame: Player rankings by POTD points + goals scored.
-    Points: 1st preference = 3pts, 2nd = 2pts, 3rd = 1pt.
-    Also includes total goals scored across all games.
-    """
-    # Get POTD points per player
-    sport_filter = ""
-    sport_params: list = []
-    if sport:
-        sport_filter = " AND g.sport_type = ?"
-        sport_params = [sport]
-
-    cursor = await db.execute(
-        f"""SELECT pv.player_id, u.name, u.first_name, u.phone,
-                  SUM(CASE WHEN pv.preference = 1 THEN 3
-                           WHEN pv.preference = 2 THEN 2
-                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
-                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins,
-                  COUNT(DISTINCT pv.game_id) as games_voted_in
-           FROM potd_votes pv
-           JOIN users u ON pv.player_id = u.id
-           JOIN games g ON pv.game_id = g.id
-           WHERE g.status = 'completed'{sport_filter}
-           GROUP BY pv.player_id
-           ORDER BY potd_points DESC, first_pref_wins DESC""",
-        sport_params
-    )
-    potd_rows = await cursor.fetchall()
-
-    # Get goals scored per player
-    cursor = await db.execute(
-        f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
-                  SUM(gs.goals) as total_goals,
-                  COUNT(DISTINCT gs.game_id) as games_scored_in
-           FROM goal_scorers gs
-           JOIN users u ON gs.user_id = u.id
-           JOIN games g ON gs.game_id = g.id
-           WHERE g.status = 'completed'{sport_filter}
-           GROUP BY gs.user_id
-           ORDER BY total_goals DESC""",
-        sport_params
-    )
-    goals_rows = await cursor.fetchall()
-
-    # Get total games played per player
-    cursor = await db.execute(
-        f"""SELECT gp.user_id, COUNT(DISTINCT gp.game_id) as games_played
-           FROM game_players gp
-           JOIN games g ON gp.game_id = g.id
-           WHERE gp.status = 'selected' AND g.status = 'completed'{sport_filter}
-           GROUP BY gp.user_id""",
-        sport_params
-    )
-    games_played_rows = await cursor.fetchall()
-    games_played_map = {r["user_id"]: r["games_played"] for r in games_played_rows}
-
-    # Build goals map
-    goals_map = {}
-    for r in goals_rows:
-        goals_map[r["user_id"]] = {
-            "total_goals": r["total_goals"],
-            "games_scored_in": r["games_scored_in"],
-        }
-
-    # Build combined rankings
-    player_ids_seen = set()
-    rankings = []
-
-    for r in potd_rows:
-        pid = r["player_id"]
-        player_ids_seen.add(pid)
-        goal_data = goals_map.get(pid, {"total_goals": 0, "games_scored_in": 0})
-        rankings.append({
-            "user_id": pid,
-            "name": r["name"],
-            "first_name": r["first_name"],
-            "phone": r["phone"],
-            "potd_points": r["potd_points"],
-            "first_pref_wins": r["first_pref_wins"],
-            "total_goals": goal_data["total_goals"],
-            "games_played": games_played_map.get(pid, 0),
-            "combined_score": r["potd_points"] + goal_data["total_goals"],
-        })
-
-    # Add players who scored goals but didn't get POTD votes
-    for r in goals_rows:
-        pid = r["user_id"]
-        if pid not in player_ids_seen:
-            rankings.append({
-                "user_id": pid,
-                "name": r["name"],
-                "first_name": r["first_name"],
-                "phone": r["phone"],
-                "potd_points": 0,
-                "first_pref_wins": 0,
-                "total_goals": r["total_goals"],
-                "games_played": games_played_map.get(pid, 0),
-                "combined_score": r["total_goals"],
-            })
-
-    # Sort by combined score (POTD points + goals)
-    rankings.sort(key=lambda x: (-x["combined_score"], -x["potd_points"], -x["total_goals"]))
-
-    # Add rank
-    for i, r in enumerate(rankings, 1):
-        r["rank"] = i
-
-    return {"rankings": rankings, "sport_filter": sport}
-
-
-@router.get("/player/{player_id}/stats")
-async def get_player_stats(
-    player_id: int,
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Get a player's Hall of Fame stats for their profile."""
-    cursor = await db.execute("SELECT id, name, first_name, phone FROM users WHERE id = ?", (player_id,))
-    player = await cursor.fetchone()
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found")
-
-    # POTD points by sport
-    cursor = await db.execute(
-        """SELECT g.sport_type,
-                  SUM(CASE WHEN pv.preference = 1 THEN 3
-                           WHEN pv.preference = 2 THEN 2
-                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points,
-                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins
-           FROM potd_votes pv
-           JOIN games g ON pv.game_id = g.id
-           WHERE pv.player_id = ? AND g.status = 'completed'
-           GROUP BY g.sport_type""",
-        (player_id,)
-    )
-    potd_by_sport = await cursor.fetchall()
-
-    # Goals by sport
-    cursor = await db.execute(
-        """SELECT g.sport_type, SUM(gs.goals) as total_goals
-           FROM goal_scorers gs
-           JOIN games g ON gs.game_id = g.id
-           WHERE gs.user_id = ? AND g.status = 'completed'
-           GROUP BY g.sport_type""",
-        (player_id,)
-    )
-    goals_by_sport = await cursor.fetchall()
-
-    # Games played by sport
-    cursor = await db.execute(
-        """SELECT g.sport_type, COUNT(DISTINCT gp.game_id) as games_played
-           FROM game_players gp
-           JOIN games g ON gp.game_id = g.id
-           WHERE gp.user_id = ? AND gp.status = 'selected' AND g.status = 'completed'
-           GROUP BY g.sport_type""",
-        (player_id,)
-    )
-    games_by_sport = await cursor.fetchall()
-
-    # Overall rank (by POTD points)
-    cursor = await db.execute(
-        """SELECT pv.player_id,
-                  SUM(CASE WHEN pv.preference = 1 THEN 3
-                           WHEN pv.preference = 2 THEN 2
-                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points
-           FROM potd_votes pv
-           JOIN games g ON pv.game_id = g.id
-           WHERE g.status = 'completed'
-           GROUP BY pv.player_id
-           ORDER BY points DESC"""
-    )
-    all_rankings = await cursor.fetchall()
-    rank = None
-    total_potd_points = 0
-    for i, r in enumerate(all_rankings, 1):
-        if r["player_id"] == player_id:
-            rank = i
-            total_potd_points = r["points"]
-            break
-
-    return {
-        "user_id": player_id,
-        "name": player["name"],
-        "first_name": player["first_name"],
-        "overall_potd_rank": rank,
-        "total_potd_points": total_potd_points,
-        "potd_by_sport": [
-            {"sport": r["sport_type"], "points": r["points"], "first_pref_wins": r["first_pref_wins"]}
-            for r in potd_by_sport
-        ],
-        "goals_by_sport": [
-            {"sport": r["sport_type"], "total_goals": r["total_goals"]}
-            for r in goals_by_sport
-        ],
-        "games_by_sport": [
-            {"sport": r["sport_type"], "games_played": r["games_played"]}
-            for r in games_by_sport
-        ],
-    }
-
-
 @router.get("/{game_id}/voting-link")
 async def get_voting_link(
     game_id: int,
@@ -1941,95 +2061,3 @@ async def get_voting_link(
         "voting_open": game["status"] == "voting_open",
         "status": game["status"],
     }
-
-
-@router.get("/vote/{voting_token}")
-async def access_voting_page(
-    voting_token: str,
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Resolve a voting token to a game and check if voting is open."""
-    # Look up game by stored voting_token column first (O(1) lookup)
-    try:
-        cursor = await db.execute(
-            "SELECT id, status FROM games WHERE voting_token = ?", (voting_token,)
-        )
-        game = await cursor.fetchone()
-        if game:
-            return {
-                "game_id": game["id"],
-                "voting_open": game["status"] == "voting_open",
-                "status": game["status"],
-            }
-    except Exception:
-        pass
-
-    # Fallback: check recent games only (limit to 100 most recent) for backwards compatibility
-    cursor = await db.execute("SELECT id, status FROM games ORDER BY id DESC LIMIT 100")
-    games = await cursor.fetchall()
-    for game in games:
-        expected_token = hashlib.sha256(f"{game['id']}-{VOTING_LINK_SECRET}".encode()).hexdigest()[:16]
-        if expected_token == voting_token:
-            # Store the token for future O(1) lookups
-            try:
-                await db.execute("UPDATE games SET voting_token = ? WHERE id = ?", (voting_token, game["id"]))
-                await db.commit()
-            except Exception:
-                pass
-            return {
-                "game_id": game["id"],
-                "voting_open": game["status"] == "voting_open",
-                "status": game["status"],
-            }
-    raise HTTPException(status_code=404, detail="Invalid voting link")
-
-
-@router.get("/search/games")
-async def search_games(
-    date: Optional[str] = Query(None, description="Filter by game date (YYYY-MM-DD)"),
-    date_from: Optional[str] = Query(None, description="Filter games from this date (YYYY-MM-DD)"),
-    date_to: Optional[str] = Query(None, description="Filter games up to this date (YYYY-MM-DD)"),
-    ground: Optional[str] = Query(None, description="Filter by ground name (partial match)"),
-    location: Optional[str] = Query(None, description="Filter by location name"),
-    status: Optional[str] = Query(None, description="Filter by game status"),
-    sport: Optional[str] = Query(None, description="Filter by sport type"),
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Search games by date range, ground, location, status, sport. Any user can search."""
-    query = "SELECT id FROM games WHERE 1=1"
-    params: list[str] = []
-
-    if date:
-        query += " AND game_date = ?"
-        params.append(date)
-    if date_from:
-        query += " AND game_date >= ?"
-        params.append(date_from)
-    if date_to:
-        query += " AND game_date <= ?"
-        params.append(date_to)
-    if ground:
-        query += " AND LOWER(ground_name) LIKE LOWER(?)"
-        params.append(f"%{ground}%")
-    if location:
-        # Join with grounds table to filter by location
-        query += " AND ground_name IN (SELECT (g2.location || ' - ' || g2.name) FROM grounds g2 WHERE LOWER(g2.location) = LOWER(?))"
-        params.append(location)
-    if status:
-        query += " AND status = ?"
-        params.append(status)
-    if sport:
-        query += " AND LOWER(sport_type) LIKE LOWER(?)"
-        params.append(f"%{sport}%")
-
-    query += " ORDER BY game_date ASC, game_time ASC"
-
-    cursor = await db.execute(query, params)
-    games = await cursor.fetchall()
-
-    result = []
-    for g in games:
-        game_data = await get_game_dict(db, g["id"])
-        result.append(game_data)
-    return result

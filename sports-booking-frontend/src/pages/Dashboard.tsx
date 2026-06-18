@@ -102,7 +102,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [showSwitchRole, setShowSwitchRole] = useState(false);
 
-  const currency = user?.currency || 'Rs';
+  const currency = user?.currency || '₹';
   const otherAccounts = storedAccounts.filter(a => a.userId !== user?.id);
 
   useEffect(() => {

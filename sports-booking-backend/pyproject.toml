@@ -17,6 +17,7 @@ passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 python-dotenv = "^1.2.1"
 google-auth = ">=2.0.0"
 requests = ">=2.0.0"
+razorpay = "^2.0.1"
 
 
 [build-system]

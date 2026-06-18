@@ -410,6 +410,20 @@ async def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (updated_by) REFERENCES users(id)
         );
+
+        CREATE TABLE IF NOT EXISTS razorpay_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            razorpay_order_id TEXT NOT NULL UNIQUE,
+            razorpay_payment_id TEXT,
+            game_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'created',
+            created_at TIMESTAMP,
+            paid_at TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
     """)
 
     # Migration: add columns if they don't exist (for existing databases)
@@ -426,7 +440,7 @@ async def init_db():
         "ALTER TABLE game_players ADD COLUMN position TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE game_players ADD COLUMN team_id INTEGER",
         "ALTER TABLE game_players ADD COLUMN payment_confirmed INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'Rs'",
+        "ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT '₹'",
         "ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN duration_minutes INTEGER NOT NULL DEFAULT 90",
         "ALTER TABLE moderator_locations ADD COLUMN sport_type TEXT NOT NULL DEFAULT ''",
@@ -447,6 +461,10 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN disabled_by INTEGER",
         "ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN deletion_reason TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Kolkata'",
+        "ALTER TABLE game_players ADD COLUMN payment_marked_by INTEGER",
+        "ALTER TABLE game_players ADD COLUMN payment_marked_at TEXT",
+        "ALTER TABLE users ADD COLUMN razorpay_account_id TEXT",
     ]
     for migration in migrations:
         try:
