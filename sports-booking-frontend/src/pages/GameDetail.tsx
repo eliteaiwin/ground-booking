@@ -12,6 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet } from 'lucide-react';
 import Discussion from './Discussion';
+import CompleteGameDialog from './CompleteGameDialog';
+import { Player, formatPlayerDisplay } from '@/lib/player';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -19,13 +21,6 @@ const SPORT_POSITIONS: Record<string, string[]> = {
   badminton: ['Anywhere', 'Singles', 'Doubles'],
   basketball: ['Anywhere', 'Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
   hockey: ['Anywhere', 'Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
-};
-
-const formatPlayerDisplay = (name: string, phone: string) => {
-  const firstName = name.split(' ')[0];
-  if (!phone || phone.length < 4) return firstName;
-  const masked = phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
-  return `${firstName} - ${masked}`;
 };
 
 const sportIconSmall = (type: string) => {
@@ -36,21 +31,6 @@ const sportIconSmall = (type: string) => {
   if (type === 'hockey') return '\uD83C\uDFD2';
   return '\uD83C\uDFC5';
 };
-
-interface Player {
-  id: number;
-  user_id: number;
-  name: string;
-  phone: string;
-  status: string;
-  position: string;
-  team_id: number | null;
-  payment_confirmed: number;
-  nominated_by: number | null;
-  nominated_by_info: string | null;
-  joined_at: string;
-  photo: string;
-}
 
 interface Team {
   id: number;
@@ -76,6 +56,8 @@ interface Game {
   game_time: string;
   max_players: number;
   cost_per_person: number;
+  ground_cost: number;
+  per_person_amount: number;
   payment_timing: string;
   status: string;
   quit_penalty_hours: number;
@@ -201,6 +183,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [teamBScore, setTeamBScore] = useState(0);
   const [goalScorers, setGoalScorers] = useState<Record<number, number>>({});
   const [scoreStep, setScoreStep] = useState<'scores' | 'scorers'>('scores');
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [pendingPlayedUserIds, setPendingPlayedUserIds] = useState<number[] | null>(null);
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
@@ -279,6 +263,19 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const confirmQuit = () => {
     setShowQuitConfirm(false);
     handleAction('quit', () => api.quitGame(game!.id));
+  };
+
+  const handlePlayersSelected = (playedUserIds: number[]) => {
+    if (game?.sport_type === 'soccer' && game?.teams.length >= 2) {
+      setPendingPlayedUserIds(playedUserIds);
+      setTeamAScore(0);
+      setTeamBScore(0);
+      setGoalScorers({});
+      setScoreStep('scores');
+      setShowScoreDialog(true);
+    } else {
+      handleAction('complete', () => api.completeGame(game!.id, { played_user_ids: playedUserIds }));
+    }
   };
 
   const handleCreateTeams = async () => {
@@ -368,7 +365,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `Date: ${formatGameDate(game!.game_date)}\n`;
     msg += `Start Time: ${formatTime12h(game!.game_time)} (Duration: ${duration} mins)\n`;
     msg += `Reporting Time: ${getReportingTime(game!.game_time)}\n`;
-    msg += `Per Person Cost: ${game!.cost_per_person} ${currency}\n\n`;
+    msg += `Per Person Cost: ${perPerson.toFixed(2)} ${currency}\n\n`;
 
     msg += `Confirmed:\n------------\n`;
     game!.selected_players.forEach((p, i) => {
@@ -416,6 +413,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.status === 'pending');
   const paidPlayers = (game.payment_details || []).filter(pd => pd.status === 'paid');
   const totalReceived = paidPlayers.reduce((sum, p) => sum + p.amount, 0);
+  const perPerson = game.per_person_amount ?? game.cost_per_person;
+  const totalOutstanding = perPerson * game.selected_players.length;
+  const pendingAmount = Math.max(0, totalOutstanding - totalReceived);
+  const allParticipants = [...game.selected_players, ...game.waiting_list];
+  const playedParticipants = pendingPlayedUserIds
+    ? allParticipants.filter(p => pendingPlayedUserIds.includes(p.user_id))
+    : game.selected_players;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -560,7 +564,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             )}
             <div className="flex items-center gap-2 text-gray-600"><Users size={16} /> <span>Max {game.max_players} players</span></div>
             <div className="flex items-center gap-2 text-gray-600">
-              <DollarSign size={16} /> <span>{game.cost_per_person} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})</span>
+              <DollarSign size={16} /> <span>{perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})</span>
             </div>
             {game.quit_penalty_hours > 0 && (
               <div className="flex items-center gap-2 text-orange-600">
@@ -857,17 +861,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           {(isModerator || isAdmin) && game.status === 'in_progress' && (
             <>
               <Button className="w-full bg-purple-600 hover:bg-purple-700"
-                onClick={() => {
-                  if (game.sport_type === 'soccer' && game.teams.length >= 2) {
-                    setTeamAScore(0);
-                    setTeamBScore(0);
-                    setGoalScorers({});
-                    setScoreStep('scores');
-                    setShowScoreDialog(true);
-                  } else {
-                    handleAction('complete', () => api.completeGame(game.id));
-                  }
-                }}
+                onClick={() => setShowCompleteDialog(true)}
                 disabled={actionLoading === 'complete'}>
                 {actionLoading === 'complete' ? 'Completing...' : 'Mark Game as Completed'}
               </Button>
@@ -916,6 +910,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               disabled={actionLoading === 'complete'}
                               onClick={() => {
                                 handleAction('complete', () => api.completeGame(game.id, {
+                                  played_user_ids: pendingPlayedUserIds ?? game.selected_players.map(p => p.user_id),
                                   team_a_score: teamAScore, team_b_score: teamBScore, goal_scorers: []
                                 }));
                                 setShowScoreDialog(false);
@@ -936,7 +931,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                             ` (${teamAScore + teamBScore - Object.values(goalScorers).reduce((a, b) => a + b, 0)} unattributed — may include self-goals)`}
                         </p>
                         <div className="space-y-2 max-h-64 overflow-y-auto">
-                          {game.selected_players.map(player => {
+                          {playedParticipants.map(player => {
                             const currentGoals = goalScorers[player.user_id] || 0;
                             const totalAttributed = Object.values(goalScorers).reduce((a, b) => a + b, 0);
                             const totalGoals = teamAScore + teamBScore;
@@ -970,6 +965,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                                 .filter(([, goals]) => goals > 0)
                                 .map(([userId, goals]) => ({ user_id: Number(userId), goals }));
                               handleAction('complete', () => api.completeGame(game.id, {
+                                played_user_ids: pendingPlayedUserIds ?? game.selected_players.map(p => p.user_id),
                                 team_a_score: teamAScore, team_b_score: teamBScore, goal_scorers: scorersList
                               }));
                               setShowScoreDialog(false);
@@ -982,6 +978,18 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </CardContent>
                 </Card>
               )}
+
+              <CompleteGameDialog
+                open={showCompleteDialog}
+                onOpenChange={setShowCompleteDialog}
+                onComplete={handlePlayersSelected}
+                selectedPlayers={game.selected_players}
+                waitingList={game.waiting_list}
+                maxPlayers={game.max_players}
+                groundCost={game.ground_cost}
+                currency={currency}
+                isSoccer={game.sport_type === 'soccer' && game.teams.length >= 2}
+              />
             </>
           )}
 
@@ -1012,7 +1020,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
                 <h4 className="font-semibold text-orange-800 mb-1">Payment Due</h4>
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{game.cost_per_person} {currency}</strong></p>
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{perPerson.toFixed(2)} {currency}</strong></p>
                 <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
                 </p>
@@ -1301,15 +1309,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <CardContent className="p-4 pt-0">
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{game.cost_per_person * game.selected_players.length} {currency}</p>
+                  <p className="text-lg font-bold text-gray-800">{totalOutstanding.toFixed(2)} {currency}</p>
                   <p className="text-xs text-gray-500">Total Outstanding</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-green-600">{totalReceived} {currency}</p>
+                  <p className="text-lg font-bold text-green-600">{totalReceived.toFixed(2)} {currency}</p>
                   <p className="text-xs text-gray-500">Received</p>
                 </div>
                 <div className="bg-red-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-red-600">{game.cost_per_person * game.selected_players.length - totalReceived} {currency}</p>
+                  <p className="text-lg font-bold text-red-600">{pendingAmount.toFixed(2)} {currency}</p>
                   <p className="text-xs text-gray-500">Pending</p>
                 </div>
               </div>
@@ -1326,13 +1334,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     {unpaidPlayers.map(p => (
                       <div key={p.user_id} className="flex items-center gap-2 text-sm bg-red-50 p-2 rounded">
                         <span className="flex-1">{p.name}</span>
-                        <span className="text-red-600 font-medium">{p.amount} {currency}</span>
+                        <span className="text-red-600 font-medium">{p.amount.toFixed(2)} {currency}</span>
                       </div>
                     ))}
                   </div>
                   <Button className="w-full mt-3 bg-green-600 hover:bg-green-700"
                     onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount: ${game.cost_per_person} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${game.payee.phone})` : ''}`;
+                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(2)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(2)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${game.payee.phone})` : ''}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
                       handleAction('remind', () => api.remindUnpaid(game.id));
                     }}

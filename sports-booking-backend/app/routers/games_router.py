@@ -77,6 +77,7 @@ class CompleteGameRequest(BaseModel):
     team_a_score: Optional[int] = None
     team_b_score: Optional[int] = None
     goal_scorers: Optional[List[dict]] = None  # [{"user_id": int, "goals": int}]
+    played_user_ids: Optional[List[int]] = None  # players who actually played and should pay
 
 
 class MarkPaymentRequest(BaseModel):
@@ -202,6 +203,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "position": p["position"] or "",
             "team_id": p["team_id"],
             "payment_confirmed": p["payment_confirmed"],
+            "played": bool(p["played"]),
             "nominated_by": p["nominated_by"],
             "nominated_by_info": nom_info,
             "joined_at": p["joined_at"],
@@ -220,9 +222,12 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         if payee:
             payee_info = {"id": payee["id"], "name": payee["name"], "phone": payee["phone"]}
 
-    # Get payment summary
+    # Get payment summary for players who actually played/are selected
     cursor = await db.execute(
-        "SELECT COUNT(*) as total, SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as paid FROM payments WHERE game_id = ?",
+        """SELECT COUNT(*) as total, SUM(CASE WHEN p.status='paid' THEN 1 ELSE 0 END) as paid
+           FROM payments p
+           JOIN game_players gp ON p.user_id = gp.user_id AND p.game_id = gp.game_id
+           WHERE p.game_id = ? AND (gp.status = 'selected' OR gp.played = 1)""",
         (game_id,)
     )
     pay_summary = await cursor.fetchone()
@@ -298,11 +303,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             except Exception:
                 pass
 
-    # Get per-player payment details
+    # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
         """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_at, u.name
-           FROM payments p JOIN users u ON p.user_id = u.id
-           WHERE p.game_id = ?""",
+           FROM payments p
+           JOIN users u ON p.user_id = u.id
+           JOIN game_players gp ON p.user_id = gp.user_id AND p.game_id = gp.game_id
+           WHERE p.game_id = ? AND (gp.status = 'selected' OR gp.played = 1)""",
         (game_id,)
     )
     payment_rows = await cursor.fetchall()
@@ -324,6 +331,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     except Exception:
         pass
 
+    # Calculate ground cost and per-person amount
+    ground_cost = game["cost_per_person"] * game["max_players"]
+    if game["status"] == "completed" and selected:
+        per_person_amount = ground_cost / len(selected)
+    else:
+        per_person_amount = game["cost_per_person"]
+
     result = {
         "id": game["id"],
         "game_code": game_code,
@@ -334,6 +348,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "game_time": game["game_time"],
         "max_players": game["max_players"],
         "cost_per_person": game["cost_per_person"],
+        "ground_cost": ground_cost,
+        "per_person_amount": per_person_amount,
         "payment_timing": game["payment_timing"],
         "status": game["status"],
         "payee": payee_info,
@@ -1071,6 +1087,36 @@ async def complete_game(
 
     await db.execute("UPDATE games SET status = 'completed' WHERE id = ?", (game_id,))
 
+    # Determine who actually played. Defaults to currently selected players for backward compatibility.
+    cursor = await db.execute("SELECT user_id, status FROM game_players WHERE game_id = ?", (game_id,))
+    all_players = await cursor.fetchall()
+    all_player_ids = {p["user_id"] for p in all_players}
+
+    if req.played_user_ids is not None:
+        played_user_ids = [uid for uid in req.played_user_ids if uid in all_player_ids]
+    else:
+        played_user_ids = [p["user_id"] for p in all_players if p["status"] == "selected"]
+
+    if not played_user_ids:
+        raise HTTPException(status_code=400, detail="At least one player must have played to complete the game")
+
+    played_set = set(played_user_ids)
+
+    # Mark played players as selected and unplayed as waiting/not played.
+    # payment_confirmed is reset only for unplayed players.
+    await db.execute(
+        """UPDATE game_players
+           SET status = CASE WHEN user_id IN ({}) THEN 'selected' ELSE 'waiting' END,
+               played = CASE WHEN user_id IN ({}) THEN 1 ELSE 0 END,
+               payment_confirmed = CASE WHEN user_id IN ({}) THEN payment_confirmed ELSE 0 END
+           WHERE game_id = ?""".format(
+            ",".join("?" * len(played_user_ids)),
+            ",".join("?" * len(played_user_ids)),
+            ",".join("?" * len(played_user_ids))
+        ),
+        (*played_user_ids, *played_user_ids, *played_user_ids, game_id)
+    )
+
     # Get payee info
     payee_name = ""
     payee_phone = ""
@@ -1081,32 +1127,46 @@ async def complete_game(
             payee_name = payee["name"]
             payee_phone = payee["phone"]
 
-    # If payment timing is 'after', create payment records and notify
-    if game["payment_timing"] == "after":
-        cursor = await db.execute(
-            "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'",
-            (game_id,)
+    # Calculate per-person amount based on ground booking cost (cost_per_person * max_players)
+    # split among the players who actually played.
+    ground_cost = game["cost_per_person"] * game["max_players"]
+    per_person_amount = ground_cost / len(played_user_ids)
+
+    # Remove pending payment obligations for unplayed players.
+    unplayed_ids = [uid for uid in all_player_ids if uid not in played_set]
+    if unplayed_ids:
+        placeholders = ",".join("?" * len(unplayed_ids))
+        await db.execute(
+            f"DELETE FROM payments WHERE game_id = ? AND user_id IN ({placeholders}) AND status = 'pending'",
+            (game_id, *unplayed_ids)
         )
-        selected = await cursor.fetchall()
-        for p in selected:
-            await db.execute(
-                "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
-                (game_id, p["user_id"], game["cost_per_person"])
-            )
+
+    # Update/insert payment records for players who played.
+    placeholders = ",".join("?" * len(played_user_ids))
+    # Update existing pending payments to the recalculated per-person amount.
+    await db.execute(
+        f"""UPDATE payments SET amount = ?
+            WHERE game_id = ? AND user_id IN ({placeholders}) AND status = 'pending'""",
+        (per_person_amount, game_id, *played_user_ids)
+    )
+    # Insert pending payments for played players that do not yet have one.
+    for uid in played_user_ids:
+        await db.execute(
+            "INSERT OR IGNORE INTO payments (game_id, user_id, amount, status) VALUES (?, ?, ?, 'pending')",
+            (game_id, uid, per_person_amount)
+        )
+
+    # Notify players about the completed game and payment due.
+    if game["payment_timing"] == "after":
+        for uid in played_user_ids:
             await create_notification(
-                db, p["user_id"], game_id, "payment_due",
-                f"Game completed! Payment of ${game['cost_per_person']:.2f} is due for {game['title']}. Pay to {payee_name} ({payee_phone})"
+                db, uid, game_id, "payment_due",
+                f"Game completed! Payment of {per_person_amount:.2f} is due for {game['title']}. Pay to {payee_name} ({payee_phone})"
             )
     else:
-        # Notify about game completion
-        cursor = await db.execute(
-            "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'",
-            (game_id,)
-        )
-        selected = await cursor.fetchall()
-        for p in selected:
+        for uid in played_user_ids:
             await create_notification(
-                db, p["user_id"], game_id, "game_completed",
+                db, uid, game_id, "game_completed",
                 f"Game '{game['title']}' has been completed! Vote for Player of the Day."
             )
 

@@ -233,13 +233,14 @@ export const api = {
   startGame: (gameId: number) =>
     request(`/api/games/${gameId}/start`, { method: 'POST' }),
 
-  completeGame: (id: number, scores?: {
+  completeGame: (id: number, payload?: {
+    played_user_ids?: number[];
     team_a_score?: number; team_b_score?: number;
     goal_scorers?: { user_id: number; goals: number }[];
   }) =>
     request(`/api/games/${id}/complete`, {
       method: 'POST',
-      body: scores ? JSON.stringify(scores) : JSON.stringify({}),
+      body: payload ? JSON.stringify(payload) : JSON.stringify({}),
     }),
 
   cancelGamePreview: (id: number) =>
