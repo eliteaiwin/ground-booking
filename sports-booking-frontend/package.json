@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:mobile": "tsc -b && vite build && cap copy ios && cap copy android",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:ios": "cap sync ios",
+    "sync:android": "cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
