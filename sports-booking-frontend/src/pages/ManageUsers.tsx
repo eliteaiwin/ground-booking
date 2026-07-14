@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Shield, Users, Search, Edit2, Key, X, Plus, Trash2, Lock, Ban, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Shield, Users, Search, Edit2, Key, X, Plus, Trash2, Lock, Ban, CheckCircle, Upload } from 'lucide-react';
 
 interface GroundItem {
   id: number;
@@ -93,6 +93,73 @@ export default function ManageUsers({ onBack }: Props) {
   const [selectedSportType, setSelectedSportType] = useState('');
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState('');
+
+  // Bulk import state
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [bulkImportText, setBulkImportText] = useState('');
+  const [bulkImportPassword, setBulkImportPassword] = useState('');
+  const [bulkParsed, setBulkParsed] = useState<{ first_name: string; last_name: string; phone: string; valid: boolean }[]>([]);
+  const [bulkImportLoading, setBulkImportLoading] = useState(false);
+  const [bulkImportError, setBulkImportError] = useState('');
+  const [bulkImportResult, setBulkImportResult] = useState<{ created: number; skipped: number; results: { phone: string; name: string; status: string; reason?: string }[] } | null>(null);
+
+  const parseBulkImport = (text: string) => {
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    const parsed = lines.map(line => {
+      let namePart = '';
+      let phonePart = '';
+      if (line.includes(',')) {
+        const parts = line.split(',').map(s => s.trim()).filter(Boolean);
+        if (parts.length >= 2) {
+          namePart = parts[0];
+          phonePart = parts[parts.length - 1];
+        }
+      } else {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          phonePart = parts[parts.length - 1];
+          namePart = parts.slice(0, -1).join(' ');
+        }
+      }
+      const names = namePart.split(/\s+/).filter(Boolean);
+      const first = names[0] || '';
+      const last = names.slice(1).join(' ') || '';
+      const digits = phonePart.replace(/\D/g, '');
+      return { first_name: first, last_name: last, phone: phonePart.replace(/\s/g, ''), valid: first.length > 0 && digits.length >= 8 };
+    });
+    setBulkParsed(parsed);
+  };
+
+  const handleBulkImport = async () => {
+    setBulkImportLoading(true);
+    setBulkImportError('');
+    setBulkImportResult(null);
+    try {
+      const users = bulkParsed.filter(p => p.valid).map(({ first_name, last_name, phone }) => ({ first_name, last_name, phone }));
+      if (users.length === 0) {
+        setBulkImportError('No valid entries to import. Each line must have a name and a phone number with at least 8 digits.');
+        setBulkImportLoading(false);
+        return;
+      }
+      if (bulkImportPassword.length < 6) {
+        setBulkImportError('Default password must be at least 6 characters');
+        setBulkImportLoading(false);
+        return;
+      }
+      const res = await api.bulkImportUsers({ users, default_password: bulkImportPassword });
+      setBulkImportResult(res);
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to import users';
+      setBulkImportError(msg);
+    } finally {
+      setBulkImportLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    parseBulkImport(bulkImportText);
+  }, [bulkImportText]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -279,9 +346,14 @@ export default function ManageUsers({ onBack }: Props) {
           <button onClick={onBack} className="flex items-center gap-1 text-sm mb-2 hover:underline">
             <ArrowLeft size={16} /> Back
           </button>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <Users size={20} /> Admin User Management
-          </h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <Users size={20} /> Admin User Management
+            </h1>
+            <Button size="sm" onClick={() => setBulkImportOpen(true)} className="bg-white text-green-700 hover:bg-green-50 border-0">
+              <Upload size={14} className="mr-1" /> Bulk Import
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -662,6 +734,69 @@ export default function ManageUsers({ onBack }: Props) {
                   </Button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {bulkImportOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center rounded-t-2xl">
+              <h3 className="font-bold text-lg">Bulk Import Users</h3>
+              <button onClick={() => { setBulkImportOpen(false); setBulkImportResult(null); setBulkImportError(''); }} className="p-1 hover:bg-gray-100 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-gray-500">
+                Paste names and phone numbers from your WhatsApp group. One per line.
+                Supported formats: <code>First Last, 9876543210</code> or <code>First Last 9876543210</code>.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">User List</label>
+                <textarea
+                  value={bulkImportText}
+                  onChange={e => { setBulkImportText(e.target.value); setBulkImportResult(null); setBulkImportError(''); }}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  rows={6}
+                  placeholder="Rahul Sharma, 9876543210\nSneha Iyer 9123456789"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Default Password</label>
+                <input
+                  type="text"
+                  value={bulkImportPassword}
+                  onChange={e => setBulkImportPassword(e.target.value)}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  placeholder="All imported users will log in with this password"
+                />
+              </div>
+              {bulkParsed.length > 0 && (
+                <div className="text-xs text-gray-600">
+                  Valid entries: {bulkParsed.filter(p => p.valid).length} / {bulkParsed.length}
+                  {bulkParsed.some(p => !p.valid) && <span className="text-red-500 ml-1">(invalid rows will be skipped)</span>}
+                </div>
+              )}
+              {bulkImportError && <p className="text-red-500 text-sm">{bulkImportError}</p>}
+              {bulkImportResult && (
+                <div className="bg-green-50 text-green-700 text-sm p-3 rounded">
+                  <p className="font-semibold">Imported {bulkImportResult.created} user(s), skipped {bulkImportResult.skipped}.</p>
+                  <p className="mt-1">Share the default password with users: <span className="font-mono font-bold">{bulkImportPassword}</span></p>
+                  {bulkImportResult.skipped > 0 && (
+                    <ul className="mt-2 text-xs list-disc list-inside max-h-32 overflow-y-auto">
+                      {bulkImportResult.results.filter(r => r.status === 'skipped').map((r, i) => (
+                        <li key={i}>{r.name || r.phone}: {r.reason}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              <Button onClick={handleBulkImport} disabled={bulkImportLoading} className="w-full">
+                {bulkImportLoading ? 'Importing...' : `Import ${bulkParsed.filter(p => p.valid).length} User(s)`}
+              </Button>
             </div>
           </div>
         </div>

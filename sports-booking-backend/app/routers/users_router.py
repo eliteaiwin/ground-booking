@@ -6,6 +6,7 @@ import json as json_lib
 
 from ..database import get_db
 from ..auth import get_current_user_id, hash_password
+from ..routers.auth_router import generate_user_code, _assign_roles
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -42,6 +43,18 @@ class AssignGroundRoleRequest(BaseModel):
 
 class DisableUserRequest(BaseModel):
     reason: str = ""
+
+
+class BulkImportUserItem(BaseModel):
+    first_name: str
+    last_name: str = ""
+    phone: str
+
+
+class BulkImportRequest(BaseModel):
+    users: List[BulkImportUserItem]
+    default_password: str
+    notification_preference: str = "whatsapp"
 
 
 async def require_admin(user_id: int, db: aiosqlite.Connection):
@@ -223,6 +236,71 @@ async def list_users(
         })
 
     return result
+
+
+@router.post("/bulk-import")
+async def bulk_import_users(
+    req: BulkImportRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin bulk-imports users from a WhatsApp group (or any list) with a default password.
+
+    New users are forced to change their password on first login and can add an email
+    in their profile afterwards.
+    """
+    await require_admin(user_id, db)
+
+    if len(req.default_password) < 6:
+        raise HTTPException(status_code=400, detail="Default password must be at least 6 characters")
+
+    if len(req.users) > 500:
+        raise HTTPException(status_code=400, detail="Cannot import more than 500 users at once")
+
+    password_hash = hash_password(req.default_password)
+    sports_str = ""
+    locations_str = ""
+    positions_str = json_lib.dumps({})
+    results = []
+    created = 0
+    skipped = 0
+
+    for item in req.users:
+        phone = item.phone.strip()
+        if not phone:
+            results.append({"phone": phone, "status": "skipped", "reason": "Empty phone number"})
+            skipped += 1
+            continue
+
+        # Skip duplicates within this batch or already in DB
+        cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (phone,))
+        if await cursor.fetchone():
+            results.append({"phone": phone, "status": "skipped", "reason": "Phone number already registered"})
+            skipped += 1
+            continue
+
+        first = item.first_name.strip()
+        last = (item.last_name or "").strip()
+        full_name = f"{first} {last}".strip() or first
+        user_code = await generate_user_code(db)
+
+        cursor = await db.execute(
+            """INSERT INTO users (user_code, first_name, last_name, name, phone, email,
+               password_hash, notification_preference, sports, locations, sport_positions,
+               force_password_change)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_code, first, last, full_name, phone, None,
+             password_hash, req.notification_preference, sports_str, locations_str,
+             positions_str, 1)
+        )
+        new_user_id = cursor.lastrowid
+        await _assign_roles(db, new_user_id)
+
+        results.append({"phone": phone, "name": full_name, "status": "created", "user_id": new_user_id})
+        created += 1
+
+    await db.commit()
+    return {"created": created, "skipped": skipped, "results": results}
 
 
 @router.put("/{target_user_id}/roles")

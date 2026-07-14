@@ -175,6 +175,12 @@ export const api = {
 
   listUsers: () => request('/api/users'),
 
+  bulkImportUsers: (data: {
+    users: { first_name: string; last_name?: string; phone: string }[];
+    default_password: string;
+  }) =>
+    request('/api/users/bulk-import', { method: 'POST', body: JSON.stringify(data) }),
+
   updateUserRoles: (userId: number, roles: string[]) =>
     request(`/api/users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ roles }) }),
 
