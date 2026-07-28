@@ -13,7 +13,7 @@ workflows:
         VITE_API_URL: "https://your-production-backend.example.com"
         XCODE_PROJECT: "sports-booking-frontend/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
-        APP_STORE_APPLE_ID: 1234567890
+        APP_STORE_APPLE_ID: 6795659906
       node: 22
       xcode: latest
     cache:
