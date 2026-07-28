@@ -1,0 +1,65 @@
+workflows:
+  turf-booking-ios:
+    name: Turf Booking iOS Build & Upload
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.elitedev.turfbooking
+      vars:
+        VITE_API_URL: "https://your-production-backend.example.com"
+        XCODE_PROJECT: "sports-booking-frontend/ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        APP_STORE_APPLE_ID: 1234567890
+      node: 22
+      xcode: latest
+    cache:
+      cache_paths:
+        - sports-booking-frontend/node_modules
+        - $HOME/.npm
+    scripts:
+      - name: Install Node dependencies
+        script: |
+          cd sports-booking-frontend
+          npm install
+      - name: Build web assets
+        script: |
+          cd sports-booking-frontend
+          npm run build
+      - name: Sync Capacitor iOS project
+        script: |
+          cd sports-booking-frontend
+          npx cap sync ios
+      - name: Set code signing profiles
+        script: |
+          xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
+      - name: Increment build number
+        script: |
+          cd "$CM_BUILD_DIR/sports-booking-frontend/ios/App"
+          agvtool new-version -all $(($BUILD_NUMBER + 1))
+          agvtool new-marketing-version 1.0.$(($BUILD_NUMBER + 1))
+      - name: Build iOS .ipa
+        script: |
+          cd "$CM_BUILD_DIR/sports-booking-frontend/ios/App"
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - sports-booking-frontend/ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Upload build to App Store Connect; set to false if you only want the .ipa artifact
+        submit_to_testflight: true
+        # Do not auto-submit to App Store review; you can enable this after testing
+        submit_to_app_store: false
+      email:
+        recipients:
+          - eliteaiwin@gmail.com
+        notify:
+          success: true
+          failure: true
