@@ -51,7 +51,7 @@ workflows:
       - sports-booking-frontend/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
     publishing:
-      app_store_connect: com.elitedev.turfbooking
+      app_store_connect: 
         auth: integration
         # Upload build to App Store Connect; set to false if you only want the .ipa artifact
         submit_to_testflight: true
