@@ -6,14 +6,12 @@ workflows:
     integrations:
       app_store_connect: codemagic
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.elitedev.turfbooking
       vars:
         VITE_API_URL: "https://your-production-backend.example.com"
         XCODE_PROJECT: "sports-booking-frontend/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
         APP_STORE_APPLE_ID: 1234567890
+        BUNDLE_ID: "com.elitedev.turfbooking"
       node: 22
       xcode: latest
     cache:
@@ -33,6 +31,15 @@ workflows:
         script: |
           cd sports-booking-frontend
           npx cap sync ios
+      - name: Fetch or create signing files
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+      - name: Add certificates to keychain
+        script: |
+          keychain add-certificates
       - name: Set code signing profiles
         script: |
           xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
