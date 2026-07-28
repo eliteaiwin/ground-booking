@@ -10,7 +10,7 @@ workflows:
         VITE_API_URL: "https://your-production-backend.example.com"
         XCODE_PROJECT: "sports-booking-frontend/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
-        APP_STORE_APPLE_ID: 1234567890
+        APP_STORE_APPLE_ID: 6795659906
         BUNDLE_ID: "com.elitedev.turfbooking"
       node: 22
       xcode: latest
@@ -60,9 +60,7 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        # Upload build to App Store Connect; set to false if you only want the .ipa artifact
         submit_to_testflight: true
-        # Do not auto-submit to App Store review; you can enable this after testing
         submit_to_app_store: false
       email:
         recipients:
