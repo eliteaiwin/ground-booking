@@ -39,10 +39,10 @@ workflows:
           rm -f "$CERT_KEY_PATH" "$CERT_KEY_PATH.pub"
           if [ -n "${FCI_CERTIFICATE_PRIVATE_KEY:-}" ]; then
             printf '%s' "$FCI_CERTIFICATE_PRIVATE_KEY" | openssl base64 -d -out "$CERT_KEY_PATH" 2>/dev/null || true
-            if grep -q "BEGIN.*PRIVATE KEY" "$CERT_KEY_PATH" 2>/dev/null; then
+            if openssl rsa -in "$CERT_KEY_PATH" -check -noout >/dev/null 2>&1; then
               echo "Using provided certificate private key"
             else
-              echo "FCI_CERTIFICATE_PRIVATE_KEY is not a valid base64 PEM private key; generating a new one"
+              echo "FCI_CERTIFICATE_PRIVATE_KEY is not a valid base64 RSA private key; generating a new one"
               rm -f "$CERT_KEY_PATH" "$CERT_KEY_PATH.pub"
               ssh-keygen -t rsa -b 2048 -m PEM -f "$CERT_KEY_PATH" -q -N ""
               rm -f "$CERT_KEY_PATH.pub"
