@@ -47,13 +47,13 @@ workflows:
               ssh-keygen -t rsa -b 2048 -m PEM -f "$CERT_KEY_PATH" -q -N ""
               rm -f "$CERT_KEY_PATH.pub"
               echo "SAVE THIS PRIVATE KEY AS FCI_CERTIFICATE_PRIVATE_KEY (base64) IN CODEMAGIC:"
-              base64 "$CERT_KEY_PATH"
+              openssl base64 -in "$CERT_KEY_PATH"
             fi
           else
             ssh-keygen -t rsa -b 2048 -m PEM -f "$CERT_KEY_PATH" -q -N ""
             rm -f "$CERT_KEY_PATH.pub"
             echo "SAVE THIS PRIVATE KEY AS FCI_CERTIFICATE_PRIVATE_KEY (base64) IN CODEMAGIC:"
-            base64 "$CERT_KEY_PATH"
+            openssl base64 -in "$CERT_KEY_PATH"
           fi
       - name: Fetch or create signing files
         script: |
