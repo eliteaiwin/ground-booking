@@ -3,9 +3,9 @@ workflows:
     name: Turf Booking iOS Build & Upload
     max_build_duration: 120
     instance_type: mac_mini_m2
-    integrations:
-      app_store_connect: codemagic
     environment:
+      groups:
+        - appstore_credentials
       vars:
         VITE_API_URL: "https://your-production-backend.example.com"
         XCODE_PROJECT: "sports-booking-frontend/ios/App/App.xcodeproj"
@@ -59,7 +59,9 @@ workflows:
       - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:
-        auth: integration
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
         submit_to_app_store: false
       email:
