@@ -1,7 +1,7 @@
 workflows:
   turf-booking-ios:
     name: Turf Booking iOS Build & Upload
-    max_build_duration: 120
+    max_build_duration: 180
     instance_type: mac_mini_m2
     environment:
       groups:
