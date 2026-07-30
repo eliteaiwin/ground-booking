@@ -31,12 +31,24 @@ workflows:
         script: |
           cd sports-booking-frontend
           npx cap sync ios
+      - name: Prepare certificate signing key
+        script: |
+          set -e
+          CERT_KEY_PATH="$CM_BUILD_DIR/cert_key.pem"
+          if [ -n "${FCI_CERTIFICATE_PRIVATE_KEY:-}" ]; then
+            echo "$FCI_CERTIFICATE_PRIVATE_KEY" | base64 -d > "$CERT_KEY_PATH"
+          else
+            openssl genrsa -out "$CERT_KEY_PATH" 2048
+            echo "SAVE THIS PRIVATE KEY AS FCI_CERTIFICATE_PRIVATE_KEY (base64) IN CODEMAGIC:"
+            base64 "$CERT_KEY_PATH"
+          fi
       - name: Fetch or create signing files
         script: |
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
-            --create
+            --create \
+            --certificate-key=@file:"$CM_BUILD_DIR/cert_key.pem"
       - name: Add certificates to keychain
         script: |
           keychain add-certificates
