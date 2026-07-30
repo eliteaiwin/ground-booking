@@ -36,15 +36,17 @@ workflows:
           set -e
           CERT_KEY_PATH="$CM_BUILD_DIR/cert_key.pem"
           mkdir -p "$(dirname "$CERT_KEY_PATH")"
+          rm -f "$CERT_KEY_PATH" "$CERT_KEY_PATH.pub"
           if [ -n "${FCI_CERTIFICATE_PRIVATE_KEY:-}" ]; then
-            if printf '%s' "$FCI_CERTIFICATE_PRIVATE_KEY" | base64 -d > "$CERT_KEY_PATH" 2>/dev/null && \
-               grep -q "BEGIN.*PRIVATE KEY" "$CERT_KEY_PATH"; then
+            printf '%s' "$FCI_CERTIFICATE_PRIVATE_KEY" | openssl base64 -d -out "$CERT_KEY_PATH" 2>/dev/null || true
+            if grep -q "BEGIN.*PRIVATE KEY" "$CERT_KEY_PATH" 2>/dev/null; then
               echo "Using provided certificate private key"
             else
-              echo "FCI_CERTIFICATE_PRIVATE_KEY is not a valid base64 private key; generating a new one"
+              echo "FCI_CERTIFICATE_PRIVATE_KEY is not a valid base64 PEM private key; generating a new one"
+              rm -f "$CERT_KEY_PATH" "$CERT_KEY_PATH.pub"
               ssh-keygen -t rsa -b 2048 -m PEM -f "$CERT_KEY_PATH" -q -N ""
               rm -f "$CERT_KEY_PATH.pub"
-              echo "SAVE THIS AS FCI_CERTIFICATE_PRIVATE_KEY (base64) IN CODEMAGIC:"
+              echo "SAVE THIS PRIVATE KEY AS FCI_CERTIFICATE_PRIVATE_KEY (base64) IN CODEMAGIC:"
               base64 "$CERT_KEY_PATH"
             fi
           else
