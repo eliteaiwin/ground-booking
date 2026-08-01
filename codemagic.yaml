@@ -7,7 +7,6 @@ workflows:
       groups:
         - appstore_credentials
       vars:
-        VITE_API_URL: "https://your-production-backend.example.com"
         XCODE_PROJECT: "sports-booking-frontend/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
         APP_STORE_APPLE_ID: 6795659906
@@ -26,6 +25,10 @@ workflows:
       - name: Build web assets
         script: |
           cd sports-booking-frontend
+          if [ -z "${VITE_API_URL:-}" ]; then
+            echo "VITE_API_URL=https://your-production-backend.example.com" > .env
+            echo "Warning: VITE_API_URL not set; using placeholder. Set it in the appstore_credentials group."
+          fi
           npm run build
       - name: Sync Capacitor iOS project
         script: |
