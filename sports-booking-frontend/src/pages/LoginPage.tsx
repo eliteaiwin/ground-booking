@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Phone, Lock, Smartphone, Chrome } from 'lucide-react';
+import { Smartphone, Chrome, Mail, Lock, ArrowLeft, Phone } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -35,12 +35,12 @@ interface Props {
   isAddUserMode?: boolean;
 }
 
-type LoginMode = 'password' | 'otp' | 'google';
+type LoginMode = 'choose' | 'password' | 'otp' | 'google';
 
 export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddUserMode }: Props) {
   const { login, loginWithOTP, requestOTP, loginWithGoogle } = useAuth();
-  const [loginMode, setLoginMode] = useState<LoginMode>('password');
-  const [phone, setPhone] = useState('');
+  const [loginMode, setLoginMode] = useState<LoginMode>('choose');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -49,11 +49,18 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
   const [loading, setLoading] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
 
+  // Pre-fill the last used identifier (phone or email)
+  useEffect(() => {
+    const last = localStorage.getItem('last_login_identifier') || '';
+    setIdentifier(last);
+  }, []);
+
   const handleGoogleCallback = useCallback(async (response: { credential: string }) => {
     setError('');
     setLoading(true);
     try {
       await loginWithGoogle(response.credential);
+      localStorage.removeItem('last_login_identifier');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Google login failed');
     } finally {
@@ -78,7 +85,6 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
       });
     };
 
-    // GIS script may already be loaded or still loading
     if (window.google) {
       renderGoogleButton();
     } else {
@@ -97,7 +103,8 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
     setError('');
     setLoading(true);
     try {
-      await login(phone, password);
+      await login(identifier, password);
+      localStorage.setItem('last_login_identifier', identifier);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -107,10 +114,15 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
 
   const handleRequestOTP = async () => {
     setError('');
+    if (!identifier.trim()) {
+      setError('Please enter your phone number');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await requestOTP(phone);
+      const res = await requestOTP(identifier);
       setOtpSent(true);
+      localStorage.setItem('last_login_identifier', identifier);
       if (res.otp_demo) {
         setOtpDemo(res.otp_demo);
       }
@@ -126,7 +138,8 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
     setError('');
     setLoading(true);
     try {
-      await loginWithOTP(phone, otp);
+      await loginWithOTP(identifier, otp);
+      localStorage.setItem('last_login_identifier', identifier);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'OTP verification failed');
     } finally {
@@ -134,197 +147,208 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
     }
   };
 
+  const OptionButton = ({ icon, label, sublabel, active, onClick }: { icon: React.ReactNode; label: string; sublabel: string; active?: boolean; onClick: () => void }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-4 w-full p-4 rounded-xl border-2 transition-all text-left ${
+        active ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white hover:border-green-400'
+      }`}
+    >
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${active ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700'}`}>
+        {icon}
+      </div>
+      <div>
+        <p className="font-semibold text-gray-900">{label}</p>
+        <p className="text-xs text-gray-500">{sublabel}</p>
+      </div>
+    </button>
+  );
 
   const loginContent = (
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>
-          )}
+    <CardContent className="space-y-5">
+      {error && (
+        <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>
+      )}
 
-          {/* Login Mode Tabs */}
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => { setLoginMode('password'); setError(''); }}
-              className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all text-xs font-medium ${
-                loginMode === 'password' ? 'border-green-600 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}
-            >
-              <Lock size={18} />
-              Password
-            </button>
-            <button
-              type="button"
-              onClick={() => { setLoginMode('otp'); setError(''); setOtpSent(false); setOtpDemo(''); }}
-              className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all text-xs font-medium ${
-                loginMode === 'otp' ? 'border-green-600 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}
-            >
-              <Smartphone size={18} />
-              Mobile OTP
-            </button>
-            <button
-              type="button"
-              onClick={() => { setLoginMode('google'); setError(''); }}
-              className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all text-xs font-medium ${
-                loginMode === 'google' ? 'border-green-600 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-              }`}
-            >
-              <Chrome size={18} />
-              Google
-            </button>
+      {loginMode === 'choose' && (
+        <div className="space-y-3">
+          <OptionButton
+            icon={<Smartphone size={22} />}
+            label="Login with OTP"
+            sublabel="We will send a one-time code to your phone"
+            onClick={() => setLoginMode('otp')}
+          />
+          <OptionButton
+            icon={<Chrome size={22} />}
+            label="Login with Google"
+            sublabel="Use your Google account"
+            onClick={() => setLoginMode('google')}
+          />
+          <OptionButton
+            icon={<Mail size={22} />}
+            label="Login with Email / Phone"
+            sublabel="Use your phone number or email and password"
+            onClick={() => setLoginMode('password')}
+          />
+        </div>
+      )}
+
+      {loginMode !== 'choose' && (
+        <button
+          type="button"
+          onClick={() => { setLoginMode('choose'); setError(''); setOtpSent(false); setOtpDemo(''); }}
+          className="flex items-center gap-1 text-sm text-green-600 hover:underline"
+        >
+          <ArrowLeft size={16} /> Back to options
+        </button>
+      )}
+
+      {loginMode === 'password' && (
+        <form onSubmit={handlePasswordLogin} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="identifier">Phone or Email</Label>
+            <div className="relative">
+              <Phone size={16} className="absolute left-3 top-3 text-gray-400" />
+              <Input
+                id="identifier"
+                type="text"
+                placeholder="Enter phone number or email"
+                className="pl-10"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                required
+              />
+            </div>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
+              <Lock size={16} className="absolute left-3 top-3 text-gray-400" />
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                className="pl-10"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign In'}
+          </Button>
+          {onForgotPassword && (
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              className="text-sm text-green-600 hover:underline w-full text-center mt-2"
+            >
+              Forgot Password?
+            </button>
+          )}
+        </form>
+      )}
 
-          <Separator />
-
-          {/* Password Login */}
-          {loginMode === 'password' && (
-            <form onSubmit={handlePasswordLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
-                <div className="relative">
-                  <Phone size={16} className="absolute left-3 top-3 text-gray-400" />
-                  <Input
-                    id="phone"
-                    type="tel"
-                    placeholder="Enter your phone number"
-                    className="pl-10"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    required
-                  />
+      {loginMode === 'otp' && (
+        <form onSubmit={handleOTPLogin} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="otp-phone">Phone Number</Label>
+            <div className="relative">
+              <Phone size={16} className="absolute left-3 top-3 text-gray-400" />
+              <Input
+                id="otp-phone"
+                type="tel"
+                placeholder="Enter your phone number"
+                className="pl-10"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                required
+                disabled={otpSent}
+              />
+            </div>
+          </div>
+          {!otpSent ? (
+            <Button
+              type="button"
+              className="w-full bg-green-600 hover:bg-green-700"
+              onClick={handleRequestOTP}
+              disabled={loading || !identifier}
+            >
+              {loading ? 'Sending OTP...' : 'Send OTP'}
+            </Button>
+          ) : (
+            <>
+              {otpDemo && (
+                <div className="bg-blue-50 text-blue-700 p-3 rounded-md text-sm">
+                  Demo OTP: <strong>{otpDemo}</strong> (In production, this would be sent via SMS)
                 </div>
-              </div>
+              )}
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Lock size={16} className="absolute left-3 top-3 text-gray-400" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    className="pl-10"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
+                <Label htmlFor="otp">Enter OTP</Label>
+                <Input
+                  id="otp"
+                  type="text"
+                  placeholder="Enter 6-digit OTP"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  maxLength={6}
+                  required
+                />
               </div>
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign In'}
+                {loading ? 'Verifying...' : 'Verify & Sign In'}
               </Button>
-              {onForgotPassword && (
-                <button
-                  type="button"
-                  onClick={onForgotPassword}
-                  className="text-sm text-green-600 hover:underline w-full text-center mt-2"
-                >
-                  Forgot Password?
-                </button>
-              )}
-            </form>
-          )}
-
-          {/* OTP Login */}
-          {loginMode === 'otp' && (
-            <form onSubmit={handleOTPLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="otp-phone">Phone Number</Label>
-                <div className="relative">
-                  <Phone size={16} className="absolute left-3 top-3 text-gray-400" />
-                  <Input
-                    id="otp-phone"
-                    type="tel"
-                    placeholder="Enter your phone number"
-                    className="pl-10"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    required
-                    disabled={otpSent}
-                  />
-                </div>
-              </div>
-              {!otpSent ? (
-                <Button
-                  type="button"
-                  className="w-full bg-green-600 hover:bg-green-700"
-                  onClick={handleRequestOTP}
-                  disabled={loading || !phone}
-                >
-                  {loading ? 'Sending OTP...' : 'Send OTP'}
-                </Button>
-              ) : (
-                <>
-                  {otpDemo && (
-                    <div className="bg-blue-50 text-blue-700 p-3 rounded-md text-sm">
-                      Demo OTP: <strong>{otpDemo}</strong> (In production, this would be sent via SMS)
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <Label htmlFor="otp">Enter OTP</Label>
-                    <Input
-                      id="otp"
-                      type="text"
-                      placeholder="Enter 6-digit OTP"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
-                      maxLength={6}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
-                    {loading ? 'Verifying...' : 'Verify & Sign In'}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => { setOtpSent(false); setOtpDemo(''); setOtp(''); }}
-                    className="text-sm text-green-600 hover:underline w-full text-center"
-                  >
-                    Change phone number
-                  </button>
-                </>
-              )}
-            </form>
-          )}
-
-          {/* Google Login */}
-          {loginMode === 'google' && (
-            <div className="space-y-4 text-center py-6">
-              {GOOGLE_CLIENT_ID ? (
-                <>
-                  <div ref={googleBtnRef} className="flex justify-center" />
-                  {loading && <p className="text-sm text-gray-500">Signing in with Google...</p>}
-                </>
-              ) : (
-                <>
-                  <Chrome size={40} className="mx-auto text-gray-400" />
-                  <p className="text-sm text-gray-500">
-                    Google Sign-In is not configured.
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    Set VITE_GOOGLE_CLIENT_ID to enable Google login.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
-
-          {!isAddUserMode && (
-            <>
-              <Separator />
-              <p className="text-center text-sm text-gray-500">
-                Don't have an account?{' '}
-                <button type="button" onClick={onSwitchToRegister} className="text-green-600 hover:underline font-medium">
-                  Register
-                </button>
-              </p>
+              <button
+                type="button"
+                onClick={() => { setOtpSent(false); setOtpDemo(''); setOtp(''); }}
+                className="text-sm text-green-600 hover:underline w-full text-center"
+              >
+                Change phone number
+              </button>
             </>
           )}
-        </CardContent>
+        </form>
+      )}
+
+      {loginMode === 'google' && (
+        <div className="space-y-4 text-center py-4">
+          {GOOGLE_CLIENT_ID ? (
+            <>
+              <div ref={googleBtnRef} className="flex justify-center" />
+              {loading && <p className="text-sm text-gray-500">Signing in with Google...</p>}
+            </>
+          ) : (
+            <>
+              <Chrome size={40} className="mx-auto text-gray-400" />
+              <p className="text-sm text-gray-500">Google Sign-In is not configured.</p>
+              <p className="text-xs text-gray-400">Set VITE_GOOGLE_CLIENT_ID to enable Google login.</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {!isAddUserMode && loginMode === 'choose' && (
+        <>
+          <Separator />
+          <p className="text-center text-sm text-gray-500">
+            Don't have an account?{' '}
+            <button type="button" onClick={onSwitchToRegister} className="text-green-600 hover:underline font-medium">
+              Register
+            </button>
+          </p>
+        </>
+      )}
+    </CardContent>
   );
 
   if (isAddUserMode) {
-    return loginContent;
+    return (
+      <Card className="w-full max-w-md relative">
+        {loginContent}
+      </Card>
+    );
   }
 
   return (
@@ -340,13 +364,13 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
       </div>
       <div className="absolute inset-0 bg-gradient-to-br from-green-900/70 to-blue-900/70" />
       <Card className="w-full max-w-md relative z-10 shadow-2xl">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 w-16 h-16 bg-green-600 rounded-full flex items-center justify-center">
-            <span className="text-white text-2xl">&#9917;</span>
+        <div className="text-center pt-8">
+          <div className="mx-auto mb-4 w-24 h-24 bg-white rounded-2xl shadow-lg overflow-hidden">
+            <img src="/turf-icon.png" alt="Turf Booking" className="w-full h-full object-cover" />
           </div>
-          <CardTitle className="text-2xl font-bold">Turf Booking</CardTitle>
+          <h1 className="text-2xl font-bold text-gray-900">Turf Booking</h1>
           <p className="text-gray-500 mt-1">Sign in to your account</p>
-        </CardHeader>
+        </div>
         {loginContent}
       </Card>
     </div>

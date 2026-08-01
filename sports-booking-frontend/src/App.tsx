@@ -19,7 +19,7 @@ import GameSearch from './pages/GameSearch';
 import GroundManagement from './pages/GroundManagement';
 import HallOfFame from './pages/HallOfFame';
 import NotificationSettings from './pages/NotificationSettings';
-import ChangePassword from './pages/ChangePassword';
+import OnboardingProfile from './pages/OnboardingProfile';
 import ForgotPassword from './pages/ForgotPassword';
 import DeleteAccount from './pages/DeleteAccount';
 
@@ -71,11 +71,10 @@ function AppContent() {
     return <RegisterPage onSwitchToLogin={() => setAuthMode('login')} />;
   }
 
-  // Force password change flow
+  // Force password change / first-time profile flow
   if (forcePasswordChange) {
     return (
-      <ChangePassword
-        isForced
+      <OnboardingProfile
         onComplete={() => {
           setForcePasswordChange(false);
           localStorage.removeItem('force_password_change');

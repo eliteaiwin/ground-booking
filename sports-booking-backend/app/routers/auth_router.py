@@ -48,7 +48,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    phone: str
+    identifier: str  # phone number or email address
     password: str
 
 
@@ -158,7 +158,11 @@ async def register(req: RegisterRequest, db: aiosqlite.Connection = Depends(get_
 
 @router.post("/login")
 async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
-    cursor = await db.execute("SELECT id, password_hash FROM users WHERE phone = ?", (req.phone,))
+    identifier = req.identifier.strip()
+    cursor = await db.execute(
+        "SELECT id, password_hash FROM users WHERE phone = ? OR email = ?",
+        (identifier, identifier),
+    )
     user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")

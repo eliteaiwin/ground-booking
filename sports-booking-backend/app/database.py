@@ -616,8 +616,8 @@ async def _seed_production_data(db: aiosqlite.Connection):
         full_name = f"{admin['first_name']} {admin['last_name']}"
         cursor = await db.execute(
             """INSERT INTO users (first_name, last_name, name, phone, email, password_hash,
-               notification_preference, sports, locations, sport_positions)
-               VALUES (?, ?, ?, ?, ?, ?, 'whatsapp', ?, ?, ?)""",
+               notification_preference, sports, locations, sport_positions, force_password_change)
+               VALUES (?, ?, ?, ?, ?, ?, 'whatsapp', ?, ?, ?, 0)""",
             (admin["first_name"], admin["last_name"], full_name,
              admin["phone"], admin["email"], password_hash,
              admin["sports"], admin["locations"], admin["sport_positions"])
@@ -657,8 +657,8 @@ async def _seed_production_data(db: aiosqlite.Connection):
         full_name = f"{user['first_name']} {user['last_name']}"
         cursor = await db.execute(
             """INSERT INTO users (first_name, last_name, name, phone, email, password_hash,
-               notification_preference, sports, locations, sport_positions)
-               VALUES (?, ?, ?, ?, ?, ?, 'whatsapp', ?, 'Bangalore', '')""",
+               notification_preference, sports, locations, sport_positions, force_password_change)
+               VALUES (?, ?, ?, ?, ?, ?, 'whatsapp', ?, 'Bangalore', '', 1)""",
             (user["first_name"], user["last_name"], full_name,
              phone, f"{user['first_name'].lower()}.{user['last_name'].lower()}@test.com",
              password_hash, user["sports"])

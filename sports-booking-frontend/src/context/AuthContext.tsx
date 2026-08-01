@@ -43,7 +43,7 @@ interface RegisterData {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (phone: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   loginWithOTP: (phone: string, otp: string) => Promise<void>;
   requestOTP: (phone: string) => Promise<{ otp_demo?: string }>;
   loginWithGoogle: (idToken: string) => Promise<void>;
@@ -163,8 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = async (phone: string, password: string) => {
-    const res = await api.login({ phone, password });
+  const login = async (identifier: string, password: string) => {
+    const res = await api.login({ identifier, password });
     localStorage.setItem('token', res.token);
     if (res.force_password_change) {
       localStorage.setItem('force_password_change', '1');
@@ -242,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     const ownerId = user.id;
     // Login as the new account to get their token and profile
-    const res = await api.login({ phone, password });
+    const res = await api.login({ identifier: phone, password });
     const newToken = res.token;
 
     // Save the original token so we can restore on failure

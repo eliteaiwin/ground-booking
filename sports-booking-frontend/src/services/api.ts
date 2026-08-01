@@ -113,7 +113,7 @@ export const api = {
   }) =>
     request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
-  login: (data: { phone: string; password: string }) =>
+  login: (data: { identifier: string; password: string }) =>
     request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
   requestOTP: (data: { phone: string }) =>
