@@ -658,8 +658,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "player_of_the_day": potd_info,
         "game_score": None,
         "goal_scorers": [],
-        "series_name": game.get("series_name") or "",
-        "series_day": game.get("series_day") or "",
+        "series_name": game["series_name"] if "series_name" in game.keys() else "",
+        "series_day": game["series_day"] if "series_day" in game.keys() else "",
     }
 
     # Add score data if available
@@ -882,7 +882,7 @@ async def list_games(
     return result
 
 
-@router.get("/{game_id}")
+@router.get("/{game_id:int}")
 async def get_game(
     game_id: int,
     user_id: int = Depends(get_current_user_id),
