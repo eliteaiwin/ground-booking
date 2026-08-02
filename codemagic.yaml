@@ -26,8 +26,8 @@ workflows:
         script: |
           cd sports-booking-frontend
           if [ -z "${VITE_API_URL:-}" ]; then
-            echo "VITE_API_URL=https://your-production-backend.example.com" > .env
-            echo "Warning: VITE_API_URL not set; using placeholder. Set it in the appstore_credentials group."
+            echo "VITE_API_URL=https://ground-booking-eleg.onrender.com" > .env
+            echo "Warning: VITE_API_URL not set; using production Render URL."
           fi
           npm run build
       - name: Sync Capacitor iOS project
