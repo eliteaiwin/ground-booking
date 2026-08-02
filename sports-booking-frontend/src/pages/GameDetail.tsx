@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2 } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
@@ -144,7 +144,7 @@ interface Props {
 }
 
 export default function GameDetail({ gameId, onBack }: Props) {
-  const { user, isAdmin, isModerator, isReadOnly } = useAuth();
+  const { user, isAdmin, isModerator, isGroundManagement, isReadOnly } = useAuth();
   const [game, setGame] = useState<Game | null>(null);
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [nominateUserId, setNominateUserId] = useState('');
@@ -174,6 +174,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [firstTimeAlert, setFirstTimeAlert] = useState<string | null>(null);
   const [showCancelPreview, setShowCancelPreview] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [cancelPreview, setCancelPreview] = useState<{
     confirmed_players: number; total_players: number; paid_players: number; refund_amount: number;
     title: string; ground_name: string; game_date: string; game_time: string;
@@ -241,6 +242,20 @@ export default function GameDetail({ gameId, onBack }: Props) {
       await loadGame();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const handleDelete = async () => {
+    setActionLoading('delete');
+    setError('');
+    try {
+      await api.deleteGame(game!.id);
+      setShowDeleteConfirm(false);
+      onBack();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setActionLoading('');
     }
@@ -850,6 +865,42 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           setCancelPreview(null);
                         }}>
                         {actionLoading === 'cancel' ? 'Cancelling...' : 'Confirm Cancel'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+
+          {/* Delete Game - for Admin/Moderator/Ground Management on draft or cancelled games */}
+          {(isAdmin || isModerator || isGroundManagement) && (game.status === 'draft' || game.status === 'cancelled') && (
+            <>
+              <Button variant="outline" className="w-full border-red-700 text-red-700 hover:bg-red-50"
+                disabled={actionLoading === 'delete'}
+                onClick={() => setShowDeleteConfirm(true)}>
+                <Trash2 size={16} className="mr-2" />
+                Delete Game
+              </Button>
+
+              {showDeleteConfirm && (
+                <Card className="border-red-300 bg-red-50">
+                  <CardContent className="p-4 space-y-3">
+                    <h4 className="font-semibold text-red-800 flex items-center gap-2">
+                      <Trash2 size={16} /> Delete Game Permanently
+                    </h4>
+                    <p className="text-sm text-red-700">
+                      This will permanently remove the game and all nominations, votes, teams, payments, and messages associated with it.
+                    </p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1"
+                        onClick={() => setShowDeleteConfirm(false)}>
+                        Cancel
+                      </Button>
+                      <Button className="flex-1 bg-red-700 hover:bg-red-800 text-white"
+                        disabled={actionLoading === 'delete'}
+                        onClick={handleDelete}>
+                        {actionLoading === 'delete' ? 'Deleting...' : 'Delete'}
                       </Button>
                     </div>
                   </CardContent>

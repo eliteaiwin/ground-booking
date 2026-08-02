@@ -255,6 +255,9 @@ export const api = {
   cancelGame: (id: number) =>
     request(`/api/games/${id}/cancel`, { method: 'POST' }),
 
+  deleteGame: (id: number) =>
+    request(`/api/games/${id}`, { method: 'DELETE' }),
+
   votePOTD: (gameId: number, playerId: number) =>
     request(`/api/games/${gameId}/vote-potd`, { method: 'POST', body: JSON.stringify({ player_id: playerId }) }),
 

@@ -126,6 +126,16 @@ async def require_admin_or_moderator(user_id: int, db: aiosqlite.Connection):
         raise HTTPException(status_code=403, detail="Admin or Moderator access required")
 
 
+async def require_admin_moderator_or_ground_management(user_id: int, db: aiosqlite.Connection):
+    cursor = await db.execute(
+        "SELECT role FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator', 'ground_management')",
+        (user_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=403, detail="Admin, Moderator, or Ground Management access required")
+
+
 def _parse_game_datetime(game_date: str, game_time: str) -> datetime:
     """Parse a game date and time string into a naive datetime."""
     return datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M")
@@ -1720,6 +1730,40 @@ async def cancel_game(
 
     await db.commit()
     return await get_game_dict(db, game_id)
+
+
+@router.delete("/{game_id:int}")
+async def delete_game(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Permanently delete a draft or cancelled game and all related records."""
+    await require_admin_moderator_or_ground_management(user_id, db)
+
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] not in ("draft", "cancelled"):
+        raise HTTPException(status_code=400, detail="Only draft or cancelled games can be deleted")
+
+    # Delete all related records
+    await db.execute("DELETE FROM potd_votes WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM game_scores WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM game_teams WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM game_players WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM payments WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM payment_reminders WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM notifications WHERE game_id = ?", (game_id,))
+    # Delete discussion media and messages for this game
+    await db.execute("DELETE FROM discussion_media WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM discussion_messages WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM games WHERE id = ?", (game_id,))
+
+    await db.commit()
+    return {"message": "Game deleted permanently", "game_id": game_id}
 
 
 @router.post("/{game_id}/vote-potd")
