@@ -27,6 +27,8 @@ class CreateGameRequest(BaseModel):
     quit_penalty_hours: int = 0
     payment_mode: str = "postpaid"  # prepaid, postpaid
     potd_congrats_delay_minutes: int = 1440  # default 24 hours
+    series_name: Optional[str] = None
+    series_day: Optional[str] = None
 
 
 class EditGameRequest(BaseModel):
@@ -42,6 +44,29 @@ class EditGameRequest(BaseModel):
     quit_penalty_hours: Optional[int] = None
     payment_mode: Optional[str] = None  # prepaid, postpaid
     potd_congrats_delay_minutes: Optional[int] = None
+    series_name: Optional[str] = None
+    series_day: Optional[str] = None
+
+
+class SeriesDay(BaseModel):
+    day: str  # Monday, Tuesday, ...
+    time: str  # HH:MM
+
+
+class CreateSeriesRequest(BaseModel):
+    series_name: str
+    sport_type: str
+    ground_name: str
+    max_players: int
+    cost_per_person: float
+    duration_minutes: int = 90
+    payee_user_id: Optional[int] = None
+    quit_penalty_hours: int = 0
+    payment_mode: str = "postpaid"
+    potd_congrats_delay_minutes: int = 1440
+    recurrence_days: List[SeriesDay]
+    weeks: int = 4
+    start_date: Optional[str] = None  # YYYY-MM-DD; defaults to today
 
 
 class NominateRequest(BaseModel):
@@ -146,6 +171,220 @@ async def _check_ground_time_overlap(
                         f"Only cancelled games can overlap."
                     )
                 )
+
+
+async def _build_rankings(
+    db: aiosqlite.Connection,
+    *,
+    sport_type: Optional[str] = None,
+    ground_name: Optional[str] = None,
+    series_name: Optional[str] = None,
+    series_day: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+) -> list[dict]:
+    """Build player rankings by POTD points + goals for a given filter scope."""
+    conditions = ["g.status = 'completed'"]
+    params: list = []
+    if sport_type:
+        conditions.append("g.sport_type = ?")
+        params.append(sport_type)
+    if ground_name:
+        conditions.append("g.ground_name = ?")
+        params.append(ground_name)
+    if series_name:
+        conditions.append("g.series_name = ?")
+        params.append(series_name)
+    if series_day:
+        conditions.append("g.series_day = ?")
+        params.append(series_day)
+    if from_date:
+        conditions.append("g.game_date >= ?")
+        params.append(from_date)
+    if to_date:
+        conditions.append("g.game_date <= ?")
+        params.append(to_date)
+    where = " AND ".join(conditions)
+
+    # POTD points
+    cursor = await db.execute(
+        f"""SELECT pv.player_id, u.name, u.first_name, u.phone,
+                   SUM(CASE WHEN pv.preference = 1 THEN 3
+                            WHEN pv.preference = 2 THEN 2
+                            WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
+                   SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins,
+                   COUNT(DISTINCT pv.game_id) as games_voted_in
+            FROM potd_votes pv
+            JOIN users u ON pv.player_id = u.id
+            JOIN games g ON pv.game_id = g.id
+            WHERE {where}
+            GROUP BY pv.player_id
+            ORDER BY potd_points DESC, first_pref_wins DESC""",
+        params,
+    )
+    potd_rows = await cursor.fetchall()
+
+    # Goals
+    cursor = await db.execute(
+        f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
+                   SUM(gs.goals) as total_goals,
+                   COUNT(DISTINCT gs.game_id) as games_scored_in
+            FROM goal_scorers gs
+            JOIN users u ON gs.user_id = u.id
+            JOIN games g ON gs.game_id = g.id
+            WHERE {where}
+            GROUP BY gs.user_id
+            ORDER BY total_goals DESC""",
+        params,
+    )
+    goals_rows = await cursor.fetchall()
+
+    # Games played
+    cursor = await db.execute(
+        f"""SELECT gp.user_id, COUNT(DISTINCT gp.game_id) as games_played
+            FROM game_players gp
+            JOIN games g ON gp.game_id = g.id
+            WHERE gp.status = 'selected' AND {where}
+            GROUP BY gp.user_id""",
+        params,
+    )
+    games_played_rows = await cursor.fetchall()
+    games_played_map = {r["user_id"]: r["games_played"] for r in games_played_rows}
+
+    goals_map = {}
+    for r in goals_rows:
+        goals_map[r["user_id"]] = {
+            "total_goals": r["total_goals"],
+            "games_scored_in": r["games_scored_in"],
+        }
+
+    player_ids_seen = set()
+    rankings = []
+    for r in potd_rows:
+        pid = r["player_id"]
+        player_ids_seen.add(pid)
+        goal_data = goals_map.get(pid, {"total_goals": 0, "games_scored_in": 0})
+        rankings.append({
+            "user_id": pid,
+            "name": r["name"],
+            "first_name": r["first_name"],
+            "phone": r["phone"],
+            "potd_points": r["potd_points"],
+            "first_pref_wins": r["first_pref_wins"],
+            "total_goals": goal_data["total_goals"],
+            "games_played": games_played_map.get(pid, 0),
+            "combined_score": r["potd_points"] + goal_data["total_goals"],
+        })
+
+    for r in goals_rows:
+        pid = r["user_id"]
+        if pid not in player_ids_seen:
+            rankings.append({
+                "user_id": pid,
+                "name": r["name"],
+                "first_name": r["first_name"],
+                "phone": r["phone"],
+                "potd_points": 0,
+                "first_pref_wins": 0,
+                "total_goals": r["total_goals"],
+                "games_played": games_played_map.get(pid, 0),
+                "combined_score": r["total_goals"],
+            })
+
+    rankings.sort(key=lambda x: (-x["combined_score"], -x["potd_points"], -x["total_goals"]))
+    for i, r in enumerate(rankings, 1):
+        r["rank"] = i
+
+    return rankings
+
+
+def _outcome_for_player(row: aiosqlite.Row) -> Optional[str]:
+    """Return 'win', 'loss', 'draw', or None for a player's completed game row."""
+    team_id = row["team_id"]
+    if not team_id:
+        return None
+    team_a_id = row["team_a_id"]
+    team_b_id = row["team_b_id"]
+    if team_id == team_a_id:
+        team_score = row["team_a_score"]
+        opp_score = row["team_b_score"]
+    elif team_id == team_b_id:
+        team_score = row["team_b_score"]
+        opp_score = row["team_a_score"]
+    else:
+        return None
+    if team_score is None or opp_score is None:
+        return None
+    if team_score > opp_score:
+        return "win"
+    if team_score < opp_score:
+        return "loss"
+    return "draw"
+
+
+async def _compute_streaks(
+    db: aiosqlite.Connection,
+    player_id: int,
+    since_date: Optional[str] = None,
+) -> dict:
+    """Compute win/loss streaks for a player across completed games."""
+    conditions = ["g.status = 'completed'", "gp.user_id = ?", "gp.status = 'selected'"]
+    params = [player_id]
+    if since_date:
+        conditions.append("g.game_date >= ?")
+        params.append(since_date)
+
+    cursor = await db.execute(
+        f"""SELECT g.id, g.game_date, g.game_time, gp.team_id,
+                   gs.team_a_id, gs.team_a_score, gs.team_b_id, gs.team_b_score
+            FROM game_players gp
+            JOIN games g ON gp.game_id = g.id
+            LEFT JOIN game_scores gs ON gs.game_id = g.id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY g.game_date ASC, g.game_time ASC""",
+        params,
+    )
+    games = await cursor.fetchall()
+
+    outcomes = []
+    for row in games:
+        outcome = _outcome_for_player(row)
+        if outcome:
+            outcomes.append(outcome)
+
+    # Current streaks from the most recent games
+    current_win_streak = 0
+    current_loss_streak = 0
+    for o in reversed(outcomes):
+        if o == "win":
+            current_win_streak += 1
+        else:
+            break
+    for o in reversed(outcomes):
+        if o == "loss":
+            current_loss_streak += 1
+        else:
+            break
+
+    # Longest streaks within the date range
+    def longest_streak(seq: list[str], target: str) -> int:
+        best = 0
+        current = 0
+        for o in seq:
+            if o == target:
+                current += 1
+                best = max(best, current)
+            else:
+                current = 0
+        return best
+
+    return {
+        "games_considered": len(outcomes),
+        "current_win_streak": current_win_streak,
+        "current_loss_streak": current_loss_streak,
+        "longest_win_streak": longest_streak(outcomes, "win"),
+        "longest_loss_streak": longest_streak(outcomes, "loss"),
+    }
 
 
 async def create_notification(db: aiosqlite.Connection, user_id: int, game_id: int, notif_type: str, message: str):
@@ -418,7 +657,9 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "payment_details": payment_details,
         "player_of_the_day": potd_info,
         "game_score": None,
-        "goal_scorers": []
+        "goal_scorers": [],
+        "series_name": game.get("series_name") or "",
+        "series_day": game.get("series_day") or "",
     }
 
     # Add score data if available
@@ -506,19 +747,120 @@ async def create_game(
         if prev_row and prev_row["potd_congrats_delay_minutes"]:
             potd_delay = prev_row["potd_congrats_delay_minutes"]
 
+    series_name = (req.series_name or req.ground_name).strip()
+    series_day = (req.series_day or "").strip()
     cursor = await db.execute(
-        """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time, 
+        """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
            max_players, cost_per_person, payment_timing, created_by, duration_minutes,
-           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, series_name, series_day)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
          req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
-         req.payee_user_id, req.quit_penalty_hours, potd_delay)
+         req.payee_user_id, req.quit_penalty_hours, potd_delay, series_name, series_day)
     )
     game_id = cursor.lastrowid
     await db.commit()
 
     return await get_game_dict(db, game_id)
+
+
+@router.post("/series")
+async def create_game_series(
+    req: CreateSeriesRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Create multiple game instances for a recurring series.
+
+    For each recurrence day (e.g. Wednesday 20:00, Sunday 19:00), this creates
+    `weeks` consecutive weekly game instances on the same ground.
+    """
+    await require_admin_or_moderator(user_id, db)
+
+    day_map = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+    }
+
+    start = datetime.now()
+    if req.start_date:
+        try:
+            start = datetime.strptime(req.start_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD")
+
+    payment_timing = "before" if req.payment_mode == "prepaid" else "after"
+    from .locations_router import generate_game_code
+    created_games = []
+    skipped = []
+
+    for rd in req.recurrence_days:
+        day_key = rd.day.lower()
+        if day_key not in day_map:
+            skipped.append({"day": rd.day, "reason": "Invalid day name"})
+            continue
+        target_wd = day_map[day_key]
+        try:
+            hour, minute = map(int, rd.time.split(":"))
+        except ValueError:
+            skipped.append({"day": rd.day, "reason": "time must be HH:MM"})
+            continue
+
+        # Find first occurrence on or after start
+        days_ahead = (target_wd - start.weekday()) % 7
+        first_date = start + timedelta(days=days_ahead)
+        # If the first occurrence is before right now on the same day, move to next week
+        if first_date.date() < start.date():
+            first_date += timedelta(weeks=1)
+        first_date = first_date.replace(hour=hour, minute=minute)
+
+        for w in range(req.weeks):
+            game_date = first_date + timedelta(weeks=w)
+            date_str = game_date.strftime("%Y-%m-%d")
+            time_str = game_date.strftime("%H:%M")
+
+            try:
+                await _check_ground_time_overlap(
+                    db, req.ground_name, date_str, time_str, req.duration_minutes
+                )
+            except HTTPException as e:
+                skipped.append({"date": date_str, "time": time_str, "reason": e.detail})
+                continue
+
+            game_code = await generate_game_code(db, req.sport_type)
+            ground_parts = req.ground_name.replace(' - ', '-').replace(' ', '')
+            game_code_display = f"{game_code}-{ground_parts}"
+            title = f"{req.series_name} - {rd.day}"
+
+            series_name = req.series_name.strip()
+            series_day = rd.day.strip()
+
+            # Use last created POTD delay for consistency
+            potd_delay = req.potd_congrats_delay_minutes
+            if potd_delay == 1440:
+                prev_cursor = await db.execute(
+                    """SELECT potd_congrats_delay_minutes FROM games
+                       WHERE created_by = ? AND potd_congrats_delay_minutes IS NOT NULL
+                       ORDER BY id DESC LIMIT 1""",
+                    (user_id,)
+                )
+                prev_row = await prev_cursor.fetchone()
+                if prev_row and prev_row["potd_congrats_delay_minutes"]:
+                    potd_delay = prev_row["potd_congrats_delay_minutes"]
+
+            cursor = await db.execute(
+                """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
+                   max_players, cost_per_person, payment_timing, created_by, duration_minutes,
+                   payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, series_name, series_day)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (title, game_code_display, req.sport_type, req.ground_name, date_str, time_str,
+                 req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
+                 req.payee_user_id, req.quit_penalty_hours, potd_delay, series_name, series_day)
+            )
+            created_games.append(await get_game_dict(db, cursor.lastrowid))
+
+    await db.commit()
+    return {"created": created_games, "skipped": skipped}
 
 
 @router.get("")
@@ -570,9 +912,12 @@ async def edit_game(
 
     for field in ("title", "sport_type", "ground_name", "game_date", "game_time",
                   "max_players", "cost_per_person", "duration_minutes",
-                  "payee_user_id", "quit_penalty_hours", "potd_congrats_delay_minutes"):
+                  "payee_user_id", "quit_penalty_hours", "potd_congrats_delay_minutes",
+                  "series_name", "series_day"):
         val = getattr(req, field, None)
         if val is not None:
+            if field in ("series_name", "series_day"):
+                val = str(val).strip()
             updates.append(f"{field} = ?")
             params.append(val)
 
@@ -1831,116 +2176,38 @@ async def remind_unpaid_players(
 @router.get("/hall-of-fame")
 async def hall_of_fame(
     sport: Optional[str] = Query(None, description="Filter by sport type"),
+    ground_name: Optional[str] = Query(None, description="Filter by ground"),
+    series_name: Optional[str] = Query(None, description="Filter by series"),
+    series_day: Optional[str] = Query(None, description="Filter by series day"),
+    from_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    to_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Hall of Fame: Player rankings by POTD points + goals scored.
     Points: 1st preference = 3pts, 2nd = 2pts, 3rd = 1pt.
-    Also includes total goals scored across all games.
+    Supports filters by sport, ground, series, and series day.
     """
-    # Get POTD points per player
-    sport_filter = ""
-    sport_params: list = []
-    if sport:
-        sport_filter = " AND g.sport_type = ?"
-        sport_params = [sport]
-
-    cursor = await db.execute(
-        f"""SELECT pv.player_id, u.name, u.first_name, u.phone,
-                  SUM(CASE WHEN pv.preference = 1 THEN 3
-                           WHEN pv.preference = 2 THEN 2
-                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
-                  SUM(CASE WHEN pv.preference = 1 THEN 1 ELSE 0 END) as first_pref_wins,
-                  COUNT(DISTINCT pv.game_id) as games_voted_in
-           FROM potd_votes pv
-           JOIN users u ON pv.player_id = u.id
-           JOIN games g ON pv.game_id = g.id
-           WHERE g.status = 'completed'{sport_filter}
-           GROUP BY pv.player_id
-           ORDER BY potd_points DESC, first_pref_wins DESC""",
-        sport_params
+    rankings = await _build_rankings(
+        db,
+        sport_type=sport,
+        ground_name=ground_name,
+        series_name=series_name,
+        series_day=series_day,
+        from_date=from_date,
+        to_date=to_date,
     )
-    potd_rows = await cursor.fetchall()
-
-    # Get goals scored per player
-    cursor = await db.execute(
-        f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
-                  SUM(gs.goals) as total_goals,
-                  COUNT(DISTINCT gs.game_id) as games_scored_in
-           FROM goal_scorers gs
-           JOIN users u ON gs.user_id = u.id
-           JOIN games g ON gs.game_id = g.id
-           WHERE g.status = 'completed'{sport_filter}
-           GROUP BY gs.user_id
-           ORDER BY total_goals DESC""",
-        sport_params
-    )
-    goals_rows = await cursor.fetchall()
-
-    # Get total games played per player
-    cursor = await db.execute(
-        f"""SELECT gp.user_id, COUNT(DISTINCT gp.game_id) as games_played
-           FROM game_players gp
-           JOIN games g ON gp.game_id = g.id
-           WHERE gp.status = 'selected' AND g.status = 'completed'{sport_filter}
-           GROUP BY gp.user_id""",
-        sport_params
-    )
-    games_played_rows = await cursor.fetchall()
-    games_played_map = {r["user_id"]: r["games_played"] for r in games_played_rows}
-
-    # Build goals map
-    goals_map = {}
-    for r in goals_rows:
-        goals_map[r["user_id"]] = {
-            "total_goals": r["total_goals"],
-            "games_scored_in": r["games_scored_in"],
-        }
-
-    # Build combined rankings
-    player_ids_seen = set()
-    rankings = []
-
-    for r in potd_rows:
-        pid = r["player_id"]
-        player_ids_seen.add(pid)
-        goal_data = goals_map.get(pid, {"total_goals": 0, "games_scored_in": 0})
-        rankings.append({
-            "user_id": pid,
-            "name": r["name"],
-            "first_name": r["first_name"],
-            "phone": r["phone"],
-            "potd_points": r["potd_points"],
-            "first_pref_wins": r["first_pref_wins"],
-            "total_goals": goal_data["total_goals"],
-            "games_played": games_played_map.get(pid, 0),
-            "combined_score": r["potd_points"] + goal_data["total_goals"],
-        })
-
-    # Add players who scored goals but didn't get POTD votes
-    for r in goals_rows:
-        pid = r["user_id"]
-        if pid not in player_ids_seen:
-            rankings.append({
-                "user_id": pid,
-                "name": r["name"],
-                "first_name": r["first_name"],
-                "phone": r["phone"],
-                "potd_points": 0,
-                "first_pref_wins": 0,
-                "total_goals": r["total_goals"],
-                "games_played": games_played_map.get(pid, 0),
-                "combined_score": r["total_goals"],
-            })
-
-    # Sort by combined score (POTD points + goals)
-    rankings.sort(key=lambda x: (-x["combined_score"], -x["potd_points"], -x["total_goals"]))
-
-    # Add rank
-    for i, r in enumerate(rankings, 1):
-        r["rank"] = i
-
-    return {"rankings": rankings, "sport_filter": sport}
+    return {
+        "rankings": rankings,
+        "filters": {
+            "sport": sport,
+            "ground_name": ground_name,
+            "series_name": series_name,
+            "series_day": series_day,
+            "from_date": from_date,
+            "to_date": to_date,
+        },
+    }
 
 
 @router.get("/player/{player_id}/stats")
@@ -1949,11 +2216,64 @@ async def get_player_stats(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    """Get a player's Hall of Fame stats for their profile."""
+    """Get a player's Hall of Fame stats, ranks, and streaks for their profile."""
     cursor = await db.execute("SELECT id, name, first_name, phone FROM users WHERE id = ?", (player_id,))
     player = await cursor.fetchone()
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
+
+    # Aggregate rankings across scopes
+    scopes = {
+        "overall": {},
+    }
+
+    # Build a few useful scope rankings by player's known contexts
+    # Sport/ground/series groups the player has actually played in
+    cursor = await db.execute(
+        """SELECT DISTINCT g.sport_type, g.ground_name, g.series_name, g.series_day
+           FROM game_players gp
+           JOIN games g ON gp.game_id = g.id
+           WHERE gp.user_id = ? AND g.status = 'completed'""",
+        (player_id,)
+    )
+    contexts = await cursor.fetchall()
+
+    def _rank_from(rankings: list[dict]) -> Optional[int]:
+        for r in rankings:
+            if r["user_id"] == player_id:
+                return r["rank"]
+        return None
+
+    overall_rankings = await _build_rankings(db)
+    scopes["overall"]["rank"] = _rank_from(overall_rankings)
+    player_overall = next((r for r in overall_rankings if r["user_id"] == player_id), {})
+    scopes["overall"]["potd_points"] = player_overall.get("potd_points", 0)
+    scopes["overall"]["total_goals"] = player_overall.get("total_goals", 0)
+    scopes["overall"]["games_played"] = player_overall.get("games_played", 0)
+    scopes["overall"]["combined_score"] = player_overall.get("combined_score", 0)
+
+    # Collect distinct scope rankings the player appears in
+    sport_ranks = {}
+    ground_ranks = {}
+    series_ranks = {}
+    for ctx in contexts:
+        sport = ctx["sport_type"]
+        ground = ctx["ground_name"]
+        series = ctx["series_name"]
+        day = ctx["series_day"]
+        if sport and sport not in sport_ranks:
+            rankings = await _build_rankings(db, sport_type=sport)
+            sport_ranks[sport] = _rank_from(rankings)
+        if ground and ground not in ground_ranks:
+            rankings = await _build_rankings(db, ground_name=ground)
+            ground_ranks[ground] = _rank_from(rankings)
+        if series and day and f"{series}::{day}" not in series_ranks:
+            rankings = await _build_rankings(db, series_name=series, series_day=day)
+            series_ranks[f"{series}::{day}"] = _rank_from(rankings)
+
+    scopes["by_sport"] = sport_ranks
+    scopes["by_ground"] = ground_ranks
+    scopes["by_series_day"] = {k: v for k, v in series_ranks.items() if v is not None}
 
     # POTD points by sport
     cursor = await db.execute(
@@ -1992,33 +2312,19 @@ async def get_player_stats(
     )
     games_by_sport = await cursor.fetchall()
 
-    # Overall rank (by POTD points)
-    cursor = await db.execute(
-        """SELECT pv.player_id,
-                  SUM(CASE WHEN pv.preference = 1 THEN 3
-                           WHEN pv.preference = 2 THEN 2
-                           WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points
-           FROM potd_votes pv
-           JOIN games g ON pv.game_id = g.id
-           WHERE g.status = 'completed'
-           GROUP BY pv.player_id
-           ORDER BY points DESC"""
-    )
-    all_rankings = await cursor.fetchall()
-    rank = None
-    total_potd_points = 0
-    for i, r in enumerate(all_rankings, 1):
-        if r["player_id"] == player_id:
-            rank = i
-            total_potd_points = r["points"]
-            break
+    # Streaks (overall and since a fixed start date)
+    streaks = await _compute_streaks(db, player_id)
+    streaks_since_jan = await _compute_streaks(db, player_id, since_date="2026-01-01")
 
     return {
         "user_id": player_id,
         "name": player["name"],
         "first_name": player["first_name"],
-        "overall_potd_rank": rank,
-        "total_potd_points": total_potd_points,
+        "overall_potd_rank": scopes["overall"]["rank"],
+        "total_potd_points": scopes["overall"]["potd_points"],
+        "total_goals": scopes["overall"]["total_goals"],
+        "games_played": scopes["overall"]["games_played"],
+        "combined_score": scopes["overall"]["combined_score"],
         "potd_by_sport": [
             {"sport": r["sport_type"], "points": r["points"], "first_pref_wins": r["first_pref_wins"]}
             for r in potd_by_sport
@@ -2031,6 +2337,11 @@ async def get_player_stats(
             {"sport": r["sport_type"], "games_played": r["games_played"]}
             for r in games_by_sport
         ],
+        "ranks": scopes,
+        "streaks": {
+            "overall": streaks,
+            "since_2026_01_01": streaks_since_jan,
+        },
     }
 
 
