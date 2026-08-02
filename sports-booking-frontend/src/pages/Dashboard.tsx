@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, BarChart3, RefreshCw } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, BarChart3, RefreshCw, CalendarDays } from 'lucide-react';
 
 interface Game {
   id: number;
@@ -318,17 +318,28 @@ export default function Dashboard({ onNavigate }: Props) {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          {/* Admin-only actions */}
-          {isAdmin && (
-            <button
-              onClick={() => onNavigate('create-game')}
-              className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
-            >
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <Plus size={20} className="text-green-600" />
-              </div>
-              <span className="text-xs font-medium text-gray-700">New Game</span>
-            </button>
+          {/* Admin/Moderator/Ground Management actions */}
+          {(isAdmin || isModerator || isGroundManagement) && (
+            <>
+              <button
+                onClick={() => onNavigate('create-game')}
+                className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <Plus size={20} className="text-green-600" />
+                </div>
+                <span className="text-xs font-medium text-gray-700">New Game</span>
+              </button>
+              <button
+                onClick={() => onNavigate('create-series')}
+                className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <CalendarDays size={20} className="text-green-600" />
+                </div>
+                <span className="text-xs font-medium text-gray-700">New Series</span>
+              </button>
+            </>
           )}
           {!isReadOnly && (
             <button

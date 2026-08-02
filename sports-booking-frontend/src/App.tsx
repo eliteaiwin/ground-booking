@@ -6,6 +6,7 @@ import RegisterPage from './pages/RegisterPage';
 import Dashboard from './pages/Dashboard';
 import GameDetail from './pages/GameDetail';
 import CreateGame from './pages/CreateGame';
+import CreateSeries from './pages/CreateSeries';
 import MyPayments from './pages/MyPayments';
 import AdminSummary from './pages/AdminSummary';
 import ManageUsers from './pages/ManageUsers';
@@ -23,7 +24,7 @@ import OnboardingProfile from './pages/OnboardingProfile';
 import ForgotPassword from './pages/ForgotPassword';
 import DeleteAccount from './pages/DeleteAccount';
 
-type Page = 'dashboard' | 'game-detail' | 'create-game' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
+type Page = 'dashboard' | 'game-detail' | 'create-game' | 'create-series' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
 
 function AppContent() {
   const { user, loading, isAddingAccount, setIsAddingAccount } = useAuth();
@@ -133,6 +134,8 @@ function AppContent() {
           }}
         />
       );
+    case 'create-series':
+      return <CreateSeries onBack={goHome} />;
     case 'my-payments':
       return <MyPayments onBack={goHome} />;
     case 'admin-summary':
