@@ -77,6 +77,8 @@ export default function AdminSummary({ onBack }: Props) {
   const [markPaidComment, setMarkPaidComment] = useState('');
   const [markingPaid, setMarkingPaid] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
+  const [appSettings, setAppSettings] = useState<{ payments_enabled: boolean; payment_surcharge_percent: number } | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -98,6 +100,37 @@ export default function AdminSummary({ onBack }: Props) {
   }, [showPaid, showUnpaid, gameStatus, dateRange, selectedGameId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    api.getAppSettings().then(setAppSettings).catch(() => setAppSettings({ payments_enabled: false, payment_surcharge_percent: 7 }));
+  }, []);
+
+  const handleTogglePayments = async (enabled: boolean) => {
+    if (!appSettings) return;
+    setSettingsLoading(true);
+    try {
+      const updated = await api.updateAppSettings({ payments_enabled: enabled, payment_surcharge_percent: appSettings.payment_surcharge_percent });
+      setAppSettings(updated);
+    } catch {
+      alert('Failed to update settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleSurchargeChange = async (value: string) => {
+    const pct = parseFloat(value);
+    if (!appSettings || isNaN(pct)) return;
+    setSettingsLoading(true);
+    try {
+      const updated = await api.updateAppSettings({ payments_enabled: appSettings.payments_enabled, payment_surcharge_percent: pct });
+      setAppSettings(updated);
+    } catch {
+      alert('Failed to update settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
 
   const totalCollected = perGame.reduce((s, g) => s + g.total_collected, 0);
   const totalPendingAmount = perGame.reduce((s, g) => s + g.total_pending, 0);
@@ -179,6 +212,40 @@ export default function AdminSummary({ onBack }: Props) {
             </div>
           </CardContent>
         </Card>
+
+        {/* App Settings */}
+        {appSettings && (
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-700">App Settings</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={appSettings.payments_enabled}
+                  onChange={e => handleTogglePayments(e.target.checked)}
+                  disabled={settingsLoading}
+                  className="rounded border-gray-300"
+                />
+                In-App Payments Enabled
+              </label>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Payment Surcharge (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={appSettings.payment_surcharge_percent}
+                  onChange={e => handleSurchargeChange(e.target.value)}
+                  disabled={settingsLoading}
+                  className="w-full border rounded-md p-2 text-sm"
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                When disabled, players cannot pay through the app and moderators mark payments offline. When enabled, costs include the surcharge (default 7% = ~2% gateway + 5% dev share).
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {loading ? (
           <p className="text-center text-gray-500 py-8">Loading...</p>

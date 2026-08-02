@@ -56,8 +56,11 @@ interface Game {
   game_time: string;
   max_players: number;
   cost_per_person: number;
+  base_ground_cost: number;
   ground_cost: number;
   per_person_amount: number;
+  payments_enabled: boolean;
+  payment_surcharge_percent: number;
   payment_timing: string;
   status: string;
   quit_penalty_hours: number;
@@ -579,8 +582,17 @@ export default function GameDetail({ gameId, onBack }: Props) {
             )}
             <div className="flex items-center gap-2 text-gray-600"><Users size={16} /> <span>Max {game.max_players} players</span></div>
             <div className="flex items-center gap-2 text-gray-600">
-              <DollarSign size={16} /> <span>{perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})</span>
+              <DollarSign size={16} />
+              <span>
+                {perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
+                {game.payments_enabled && (
+                  <span className="text-xs text-orange-600 ml-1">(incl. {game.payment_surcharge_percent}% surcharge)</span>
+                )}
+              </span>
             </div>
+            {game.payments_enabled && game.base_ground_cost > 0 && game.ground_cost !== game.base_ground_cost && (
+              <div className="text-xs text-gray-500 ml-6">Base ground cost {game.base_ground_cost.toFixed(2)} {currency}, with surcharge {game.ground_cost.toFixed(2)} {currency}</div>
+            )}
             {game.quit_penalty_hours > 0 && (
               <div className="flex items-center gap-2 text-orange-600">
                 <AlertTriangle size={16} /> <span>Quit penalty: Must pay if quitting within {game.quit_penalty_hours}h of game</span>
@@ -1263,10 +1275,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               }}>
                               Mark as Paid
                             </Button>
-                            <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-blue-600 border-blue-300"
-                              onClick={() => alert('Pay feature — Yet to come')}>
-                              <Wallet size={12} className="mr-0.5" /> Pay
-                            </Button>
+                            {game.payments_enabled && (
+                              <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-blue-600 border-blue-300"
+                                onClick={() => alert('Pay feature — Yet to come')}>
+                                <Wallet size={12} className="mr-0.5" /> Pay
+                              </Button>
+                            )}
                           </>
                         )}
                         {showPaymentDetails && player.payment_confirmed === 1 && (

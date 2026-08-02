@@ -27,6 +27,20 @@ async def get_db():
         await db.close()
 
 
+async def get_app_setting(db: aiosqlite.Connection, key: str, default: str = '') -> str:
+    cursor = await db.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+    row = await cursor.fetchone()
+    return row["value"] if row else default
+
+
+async def set_app_setting(db: aiosqlite.Connection, key: str, value: str) -> None:
+    await db.execute(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
+    await db.commit()
+
+
 async def init_db():
     db = await aiosqlite.connect(DATABASE_PATH)
     db.row_factory = aiosqlite.Row
@@ -451,6 +465,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN deletion_reason TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE games ADD COLUMN series_name TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE games ADD COLUMN series_day TEXT NOT NULL DEFAULT ''",
+        "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     ]
     for migration in migrations:
         try:

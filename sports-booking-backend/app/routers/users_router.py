@@ -4,7 +4,7 @@ from typing import List, Optional
 import aiosqlite
 import json as json_lib
 
-from ..database import get_db
+from ..database import get_db, get_app_setting, set_app_setting
 from ..auth import get_current_user_id, hash_password
 from ..routers.auth_router import generate_user_code, _assign_roles
 
@@ -55,6 +55,11 @@ class BulkImportRequest(BaseModel):
     users: List[BulkImportUserItem]
     default_password: str
     notification_preference: str = "whatsapp"
+
+
+class AppSettingsRequest(BaseModel):
+    payments_enabled: Optional[bool] = None
+    payment_surcharge_percent: Optional[float] = None
 
 
 async def require_admin(user_id: int, db: aiosqlite.Connection):
@@ -560,3 +565,36 @@ async def enable_user(
     )
     await db.commit()
     return {"message": "User enabled", "user_id": target_user_id}
+
+
+@router.get("/app-settings")
+async def get_app_settings(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get app-wide settings. Public keys are readable by any logged-in user."""
+    payments_enabled = (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true'
+    surcharge = float(await get_app_setting(db, 'payment_surcharge_percent', '7'))
+    gateway = float(await get_app_setting(db, 'payment_gateway_percent', '2'))
+    dev_share = float(await get_app_setting(db, 'payment_dev_share_percent', '5'))
+    return {
+        "payments_enabled": payments_enabled,
+        "payment_surcharge_percent": surcharge,
+        "payment_gateway_percent": gateway,
+        "payment_dev_share_percent": dev_share,
+    }
+
+
+@router.put("/app-settings")
+async def update_app_settings(
+    req: AppSettingsRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin only: update app-wide settings."""
+    await require_admin(user_id, db)
+    if req.payments_enabled is not None:
+        await set_app_setting(db, 'payments_enabled', 'true' if req.payments_enabled else 'false')
+    if req.payment_surcharge_percent is not None:
+        await set_app_setting(db, 'payment_surcharge_percent', str(req.payment_surcharge_percent))
+    return await get_app_settings(user_id, db)

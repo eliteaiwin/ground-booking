@@ -5,7 +5,7 @@ import aiosqlite
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from ..database import get_db
+from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
@@ -139,6 +139,16 @@ async def require_admin_moderator_or_ground_management(user_id: int, db: aiosqli
 def _parse_game_datetime(game_date: str, game_time: str) -> datetime:
     """Parse a game date and time string into a naive datetime."""
     return datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M")
+
+
+async def _payment_settings(db: aiosqlite.Connection) -> dict:
+    enabled = (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true'
+    surcharge = float(await get_app_setting(db, 'payment_surcharge_percent', '7'))
+    return {"enabled": enabled, "surcharge_percent": surcharge}
+
+
+def _with_surcharge(amount: float, surcharge_percent: float) -> float:
+    return amount * (1 + surcharge_percent / 100)
 
 
 async def _check_ground_time_overlap(
@@ -628,11 +638,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         pass
 
     # Calculate ground cost and per-person amount
-    ground_cost = game["cost_per_person"] * game["max_players"]
+    pay_settings = await _payment_settings(db)
+    base_ground_cost = game["cost_per_person"] * game["max_players"]
+    ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
     if game["status"] == "completed" and selected:
         per_person_amount = ground_cost / len(selected)
     else:
-        per_person_amount = game["cost_per_person"]
+        per_person_amount = _with_surcharge(game["cost_per_person"], pay_settings["surcharge_percent"]) if pay_settings["enabled"] else game["cost_per_person"]
 
     result = {
         "id": game["id"],
@@ -644,8 +656,11 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "game_time": game["game_time"],
         "max_players": game["max_players"],
         "cost_per_person": game["cost_per_person"],
+        "base_ground_cost": base_ground_cost,
         "ground_cost": ground_cost,
         "per_person_amount": per_person_amount,
+        "payments_enabled": pay_settings["enabled"],
+        "payment_surcharge_percent": pay_settings["surcharge_percent"],
         "payment_timing": game["payment_timing"],
         "status": game["status"],
         "payee": payee_info,
@@ -1544,8 +1559,10 @@ async def complete_game(
             payee_phone = payee["phone"]
 
     # Calculate per-person amount based on ground booking cost (cost_per_person * max_players)
-    # split among the players who actually played.
-    ground_cost = game["cost_per_person"] * game["max_players"]
+    # split among the players who actually played. If in-app payments are enabled, include surcharge.
+    pay_settings = await _payment_settings(db)
+    base_ground_cost = game["cost_per_person"] * game["max_players"]
+    ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
     per_person_amount = ground_cost / len(played_user_ids)
 
     # Remove pending payment obligations for unplayed players.

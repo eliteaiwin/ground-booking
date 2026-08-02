@@ -332,8 +332,11 @@ export const api = {
   markAllRead: () =>
     request('/api/notifications/read-all', { method: 'PUT' }),
 
-  // Preferences
+  // Preferences & App Settings
   getPreferences: () => request('/api/preferences'),
+  getAppSettings: () => request('/api/users/app-settings'),
+  updateAppSettings: (data: { payments_enabled?: boolean; payment_surcharge_percent?: number }) =>
+    request('/api/users/app-settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   updatePreference: (sportType: string, defaultMaxPlayers: number) =>
     request('/api/preferences', {
