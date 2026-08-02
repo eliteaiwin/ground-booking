@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ..database import get_db
 from ..auth import get_current_user_id
@@ -99,6 +99,53 @@ async def require_admin_or_moderator(user_id: int, db: aiosqlite.Connection):
     row = await cursor.fetchone()
     if not row:
         raise HTTPException(status_code=403, detail="Admin or Moderator access required")
+
+
+def _parse_game_datetime(game_date: str, game_time: str) -> datetime:
+    """Parse a game date and time string into a naive datetime."""
+    return datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M")
+
+
+async def _check_ground_time_overlap(
+    db: aiosqlite.Connection,
+    ground_name: str,
+    game_date: str,
+    game_time: str,
+    duration_minutes: int,
+    exclude_game_id: Optional[int] = None
+):
+    """Block creation/editing of a game if another non-cancelled game overlaps on the same ground."""
+    try:
+        new_start = _parse_game_datetime(game_date, game_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid game date or time format")
+    new_end = new_start + timedelta(minutes=duration_minutes)
+
+    query = """SELECT id, title, game_date, game_time, duration_minutes, status
+               FROM games
+               WHERE ground_name = ? AND status != 'cancelled'"""
+    params: list = [ground_name]
+    if exclude_game_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_game_id)
+
+    cursor = await db.execute(query, params)
+    async with cursor:
+        async for row in cursor:
+            try:
+                existing_start = _parse_game_datetime(row["game_date"], row["game_time"])
+            except ValueError:
+                continue
+            existing_end = existing_start + timedelta(minutes=row["duration_minutes"] or 90)
+            if new_start < existing_end and new_end > existing_start:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Time slot conflict: '{row['title']}' ({row['game_date']} "
+                        f"{row['game_time']}, status: {row['status']}) already occupies this ground. "
+                        f"Only cancelled games can overlap."
+                    )
+                )
 
 
 async def create_notification(db: aiosqlite.Connection, user_id: int, game_id: int, notif_type: str, message: str):
@@ -430,6 +477,11 @@ async def create_game(
 ):
     await require_admin_or_moderator(user_id, db)
 
+    # Prevent overlapping games on the same ground unless the existing game is cancelled
+    await _check_ground_time_overlap(
+        db, req.ground_name, req.game_date, req.game_time, req.duration_minutes
+    )
+
     # Derive payment_timing from payment_mode
     payment_timing = "before" if req.payment_mode == "prepaid" else req.payment_timing
 
@@ -531,6 +583,15 @@ async def edit_game(
 
     if not updates:
         return await get_game_dict(db, game_id)
+
+    # Prevent moving a game into an occupied time slot on the same ground
+    final_ground = req.ground_name if req.ground_name is not None else game["ground_name"]
+    final_date = req.game_date if req.game_date is not None else game["game_date"]
+    final_time = req.game_time if req.game_time is not None else game["game_time"]
+    final_duration = req.duration_minutes if req.duration_minutes is not None else game["duration_minutes"]
+    await _check_ground_time_overlap(
+        db, final_ground, final_date, final_time, final_duration, exclude_game_id=game_id
+    )
 
     params.append(game_id)
     await db.execute(f"UPDATE games SET {', '.join(updates)} WHERE id = ?", params)
