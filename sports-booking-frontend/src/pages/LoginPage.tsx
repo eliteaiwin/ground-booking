@@ -179,18 +179,23 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
             sublabel="We will send a one-time code to your phone"
             onClick={() => setLoginMode('otp')}
           />
-          <OptionButton
-            icon={<Chrome size={22} />}
-            label="Login with Google"
-            sublabel="Use your Google account"
-            onClick={() => setLoginMode('google')}
-          />
+          {GOOGLE_CLIENT_ID && (
+            <OptionButton
+              icon={<Chrome size={22} />}
+              label="Login with Google"
+              sublabel="Use your Google account"
+              onClick={() => setLoginMode('google')}
+            />
+          )}
           <OptionButton
             icon={<Mail size={22} />}
             label="Login with Email / Phone"
             sublabel="Use your phone number or email and password"
             onClick={() => setLoginMode('password')}
           />
+          {!GOOGLE_CLIENT_ID && !isAddUserMode && (
+            <p className="text-xs text-gray-400 text-center">Google login is not configured yet. Use OTP or password.</p>
+          )}
         </div>
       )}
 

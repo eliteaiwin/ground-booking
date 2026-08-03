@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { User, Phone, Mail, MapPin, Trophy } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Trophy, Camera } from 'lucide-react';
 
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
@@ -25,8 +25,11 @@ export default function OnboardingProfile({ onComplete }: Props) {
   const [locations, setLocations] = useState<string[]>(user?.locations || []);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [profilePic, setProfilePic] = useState(user?.profile_pic || '');
+  const [uploadingPic, setUploadingPic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -41,6 +44,7 @@ export default function OnboardingProfile({ onComplete }: Props) {
       });
       setSports(normalized);
       setLocations(user.locations || []);
+      setProfilePic(user.profile_pic || '');
     }
   }, [user]);
 
@@ -58,6 +62,21 @@ export default function OnboardingProfile({ onComplete }: Props) {
     setLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]);
   };
 
+  const handleProfilePicChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPic(true);
+    setError('');
+    try {
+      const res = await api.uploadProfilePic(file);
+      setProfilePic(res.filename);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to upload profile picture');
+    } finally {
+      setUploadingPic(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -66,11 +85,9 @@ export default function OnboardingProfile({ onComplete }: Props) {
     if (!phone.trim()) return setError('Phone number is required');
     if (sports.length === 0) return setError('Select at least one sport');
     if (locations.length === 0) return setError('Select at least one location');
-
-    if (newPassword) {
-      if (newPassword.length < 6) return setError('Password must be at least 6 characters');
-      if (newPassword !== confirmPassword) return setError('Passwords do not match');
-    }
+    if (!newPassword.trim()) return setError('Please set a new password to continue');
+    if (newPassword.length < 6) return setError('Password must be at least 6 characters');
+    if (newPassword !== confirmPassword) return setError('Passwords do not match');
 
     setSaving(true);
     try {
@@ -115,6 +132,33 @@ export default function OnboardingProfile({ onComplete }: Props) {
             </CardHeader>
             <CardContent className="space-y-4">
               {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>}
+
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-24 h-24 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center border-2 border-green-200">
+                  {profilePic ? (
+                    <img src={api.getProfilePicUrl(profilePic)} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={40} className="text-gray-400" />
+                  )}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={handleProfilePicChange}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingPic}
+                  className="flex items-center gap-2"
+                >
+                  <Camera size={14} /> {uploadingPic ? 'Uploading...' : 'Upload Photo'}
+                </Button>
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
