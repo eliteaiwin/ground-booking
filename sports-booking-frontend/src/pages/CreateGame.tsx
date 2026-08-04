@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Search, X, UserPlus } from 'lucide-react';
 
 interface UserItem {
   id: number;
@@ -65,6 +65,10 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [paymentMode, setPaymentMode] = useState('postpaid');
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<UserItem[]>([]);
+  const [selectedPlayers, setSelectedPlayers] = useState<UserItem[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const currency = user?.currency || 'Rs';
 
@@ -90,6 +94,21 @@ export default function CreateGame({ onBack, onCreated }: Props) {
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!playerSearch.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSearching(true);
+      api.searchUsers({ search: playerSearch.trim() })
+        .then((users: UserItem[]) => setSearchResults(users.filter(u => !selectedPlayers.some(p => p.id === u.id))))
+        .catch(() => {})
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [playerSearch, selectedPlayers]);
 
   const handleSportChange = (val: string) => {
     setSportType(val);
@@ -134,6 +153,18 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         payment_mode: paymentMode,
         potd_congrats_delay_minutes: parseInt(potdDelayMinutes) || 1440,
       });
+
+      // Pre-add selected players while game is still in draft
+      if (selectedPlayers.length > 0) {
+        const max = parseInt(maxPlayers) || 10;
+        const toAdd = selectedPlayers.slice(0, max);
+        await Promise.all(
+          toAdd.map(p =>
+            api.nominatePlayer(game.id, p.id).catch(() => null)
+          )
+        );
+      }
+
       onCreated(game.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create game');
@@ -246,6 +277,52 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                 <Input id="potdDelay" type="number" min="1" max="10080" value={potdDelayMinutes}
                   onChange={(e) => setPotdDelayMinutes(e.target.value)} />
                 <p className="text-xs text-gray-400">Default: 1440 minutes (24 hours). Time after game completion to announce POTD winner.</p>
+              </div>
+              <Separator className="my-2" />
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2"><UserPlus size={16} /> Pre-Add Players</h3>
+              <div className="space-y-2">
+                <Label>Search players by name or phone</Label>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-3 text-gray-400" />
+                  <Input
+                    placeholder="Type first few characters..."
+                    value={playerSearch}
+                    onChange={(e) => setPlayerSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                {searching && <p className="text-xs text-gray-500">Searching...</p>}
+                {searchResults.length > 0 && (
+                  <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
+                    {searchResults.map(u => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPlayers(prev => [...prev, u]);
+                          setPlayerSearch('');
+                          setSearchResults([]);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex justify-between items-center"
+                      >
+                        <span>{u.name || u.phone}</span>
+                        <span className="text-xs text-gray-400">{u.phone}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedPlayers.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {selectedPlayers.map(p => (
+                      <span key={p.id} className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                        {p.name || p.phone}
+                        <button type="button" onClick={() => setSelectedPlayers(prev => prev.filter(x => x.id !== p.id))}>
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <Separator className="my-2" />
               <h3 className="text-sm font-semibold text-gray-700">Payment & Rules</h3>

@@ -1307,7 +1307,7 @@ async def nominate_player(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] != "voting_open":
+    if game["status"] not in ("voting_open", "draft"):
         raise HTTPException(status_code=400, detail="Voting is not open")
 
     # Check if user exists
@@ -1407,11 +1407,12 @@ async def nominate_player(
             (game_id, req.user_id, game["cost_per_person"])
         )
 
-    # Notify nominated user
-    await create_notification(
-        db, req.user_id, game_id, "nominated",
-        f"You've been nominated for {game['title']} at {game['ground_name']}!"
-    )
+    # Notify nominated user only if the game is already open
+    if game["status"] == "voting_open":
+        await create_notification(
+            db, req.user_id, game_id, "nominated",
+            f"You've been nominated for {game['title']} at {game['ground_name']}!"
+        )
 
     await db.commit()
     return {"status": player_status, "message": f"User nominated as {player_status}"}
