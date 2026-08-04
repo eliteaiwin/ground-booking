@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, X } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, X, Copy } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
@@ -43,6 +43,8 @@ interface PaymentDetail {
   name: string;
   status: string;
   amount: number;
+  paid_amount: number;
+  pending: number;
   paid_at: string | null;
 }
 
@@ -80,6 +82,8 @@ interface Game {
     team_b_id: number | null; team_b_name: string; team_b_score: number;
   } | null;
   goal_scorers: { user_id: number; name: string; phone: string; goals: number }[];
+  note_before_players: string;
+  note_after_players: string;
 }
 
 interface UserItem {
@@ -172,7 +176,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
-  const [editCostPerPerson, setEditCostPerPerson] = useState('');
+  const [editGroundCost, setEditGroundCost] = useState('');
+  const [editNoteBefore, setEditNoteBefore] = useState('');
+  const [editNoteAfter, setEditNoteAfter] = useState('');
   const [teamCount, setTeamCount] = useState('2');
   const [teamNames, setTeamNames] = useState<string[]>(['Team A', 'Team B']);
   const [dragPlayer, setDragPlayer] = useState<Player | null>(null);
@@ -468,12 +474,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
   const positions = SPORT_POSITIONS[game.sport_type] || [];
 
-  const unpaidPlayers = (game.payment_details || []).filter(pd => pd.status === 'pending');
-  const paidPlayers = (game.payment_details || []).filter(pd => pd.status === 'paid');
-  const totalReceived = paidPlayers.reduce((sum, p) => sum + p.amount, 0);
+  const paymentByUser = new Map((game.payment_details || []).map(p => [p.user_id, p]));
+  const unpaidPlayers = (game.payment_details || []).filter(pd => pd.pending > 0);
+  const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
+  const totalPending = (game.payment_details || []).reduce((sum, p) => sum + p.pending, 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
   const totalOutstanding = perPerson * game.selected_players.length;
-  const pendingAmount = Math.max(0, totalOutstanding - totalReceived);
+  const pendingAmount = totalPending;
   const allParticipants = [...game.selected_players, ...game.waiting_list];
   const playedParticipants = pendingPlayedUserIds
     ? allParticipants.filter(p => pendingPlayedUserIds.includes(p.user_id))
@@ -624,7 +631,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <div className="flex items-center gap-2 text-gray-600">
               <DollarSign size={16} />
               <span>
-                {perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
+                Ground cost {game.ground_cost.toFixed(2)} {currency} / {perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
                 {game.payments_enabled && (
                   <span className="text-xs text-orange-600 ml-1">(incl. {game.payment_surcharge_percent}% surcharge)</span>
                 )}
@@ -640,7 +647,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
             )}
             {game.payee && (
               <div className="flex items-center gap-2 text-gray-600">
-                <Phone size={16} /> <span>Payment Receiver: {formatPlayerDisplay(game.payee.name, game.payee.phone)}</span>
+                <Phone size={16} />
+                <span>Payment Receiver: {game.payee.name} ({game.payee.phone})</span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(game.payee!.phone)}
+                  className="text-gray-400 hover:text-green-600"
+                  title="Copy phone number"
+                >
+                  <Copy size={14} />
+                </button>
               </div>
             )}
             <p className="text-xs text-gray-400">Created by {game.created_by_name}</p>
@@ -789,7 +805,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
                       setEditQuitPenalty(String(game.quit_penalty_hours || 0));
                       setEditPaymentMode(game.payment_timing === 'before' ? 'prepaid' : 'postpaid');
-                      setEditCostPerPerson(String(game.cost_per_person));
+                      setEditGroundCost(String(game.ground_cost));
+                      setEditNoteBefore(game.note_before_players || '');
+                      setEditNoteAfter(game.note_after_players || '');
                     }
                   }}>
                     {showEditGame ? 'Cancel' : 'Edit'}
@@ -809,9 +827,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs text-gray-500">Cost Per Person ({currency})</Label>
-                      <Input type="number" min="0" step="0.01" value={editCostPerPerson}
-                        onChange={e => setEditCostPerPerson(e.target.value)} />
+                      <Label className="text-xs text-gray-500">Ground Cost ({currency})</Label>
+                      <Input type="number" min="0" step="0.01" value={editGroundCost}
+                        onChange={e => setEditGroundCost(e.target.value)} />
+                      {(() => {
+                        const total = parseFloat(editGroundCost) || 0;
+                        const players = game.max_players || 1;
+                        if (total <= 0 || players <= 0) return null;
+                        return <p className="text-xs text-green-600 mt-1">Cost per person: {(total / players).toFixed(2)} {currency}</p>;
+                      })()}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -830,6 +854,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         </Select>
                       </div>
                     </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Note before player list</Label>
+                      <Textarea value={editNoteBefore} onChange={e => setEditNoteBefore(e.target.value)} rows={2} className="text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Note after player list</Label>
+                      <Textarea value={editNoteAfter} onChange={e => setEditNoteAfter(e.target.value)} rows={2} className="text-sm" />
+                    </div>
                     <Button className="w-full bg-blue-600 hover:bg-blue-700"
                       disabled={actionLoading === 'edit-game'}
                       onClick={() => {
@@ -837,7 +869,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
                           quit_penalty_hours: parseInt(editQuitPenalty) || 0,
                           payment_mode: editPaymentMode,
-                          cost_per_person: editCostPerPerson !== '' ? parseFloat(editCostPerPerson) : undefined,
+                          ground_cost: editGroundCost !== '' ? parseFloat(editGroundCost) : undefined,
+                          note_before_players: editNoteBefore,
+                          note_after_players: editNoteAfter,
                         }));
                         setShowEditGame(false);
                       }}>
@@ -1252,6 +1286,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
               </div>
             </CardHeader>
             <CardContent className="p-4 pt-0 space-y-3">
+              {game.note_before_players && (
+                <div className="text-sm text-gray-700 bg-yellow-50 p-2 rounded border border-yellow-100 whitespace-pre-wrap">
+                  {game.note_before_players}
+                </div>
+              )}
               {(isAdmin || isModerator || isGroundManagement) && game.status !== 'completed' && game.status !== 'cancelled' && (
                 <div className="space-y-2">
                   <Label className="text-xs text-gray-500 flex items-center gap-1"><Search size={12} /> Add player by name or phone</Label>
@@ -1323,6 +1362,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         )}
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                          {(() => {
+                            const pd = paymentByUser.get(player.user_id);
+                            if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {pd.pending.toFixed(2)} {currency})</span>;
+                            if (pd && pd.pending <= 0 && pd.paid_amount > 0) return <span className="ml-2 text-xs text-green-600">(Paid {pd.paid_amount.toFixed(2)} {currency})</span>;
+                            return null;
+                          })()}
                         </span>
                         {/* Profile info */}
                         <button
@@ -1426,6 +1471,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   })}
                 </div>
               )}
+              {game.note_after_players && (
+                <div className="text-sm text-gray-700 bg-yellow-50 p-2 rounded border border-yellow-100 whitespace-pre-wrap mt-3">
+                  {game.note_after_players}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1495,9 +1545,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <p className="text-sm font-medium text-red-600 mb-2">Pending Payments:</p>
                   <div className="space-y-1">
                     {unpaidPlayers.map(p => (
-                      <div key={p.user_id} className="flex items-center gap-2 text-sm bg-red-50 p-2 rounded">
-                        <span className="flex-1">{p.name}</span>
-                        <span className="text-red-600 font-medium">{p.amount.toFixed(2)} {currency}</span>
+                      <div key={p.user_id} className="flex flex-col text-sm bg-red-50 p-2 rounded">
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1">{p.name}</span>
+                          <span className="text-red-600 font-medium">Due: {p.pending.toFixed(2)} {currency}</span>
+                        </div>
+                        {(p.paid_amount || 0) > 0 && (
+                          <p className="text-xs text-gray-500">Paid {p.paid_amount.toFixed(2)} {currency} of {p.amount.toFixed(2)} {currency}</p>
+                        )}
                       </div>
                     ))}
                   </div>

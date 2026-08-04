@@ -42,12 +42,12 @@ async def record_payment(
     payment = await cursor.fetchone()
     if not payment:
         raise HTTPException(status_code=404, detail="No payment record found")
-    if payment["status"] == "paid":
+    if (payment["paid_amount"] or 0) >= payment["amount"]:
         raise HTTPException(status_code=400, detail="Already paid")
 
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE payments SET status = 'paid', paid_at = ? WHERE game_id = ? AND user_id = ?",
+        "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ? WHERE game_id = ? AND user_id = ?",
         (now, req.game_id, user_id)
     )
 
@@ -93,7 +93,9 @@ async def my_payments(
             "game_time": p["game_time"],
             "ground_name": p["ground_name"],
             "amount": p["amount"],
-            "status": p["status"],
+            "paid_amount": p["paid_amount"] or 0,
+            "pending": max(0, p["amount"] - (p["paid_amount"] or 0)),
+            "status": "paid" if (p["paid_amount"] or 0) >= p["amount"] else "pending",
             "paid_at": p["paid_at"]
         }
         for p in payments
@@ -152,9 +154,9 @@ async def payment_summary(
     # Build payment status filter for user query
     pay_filter = ""
     if payment_status == "paid":
-        pay_filter = " AND p.status = 'paid'"
+        pay_filter = " AND p.paid_amount >= p.amount"
     elif payment_status == "pending":
-        pay_filter = " AND p.status = 'pending'"
+        pay_filter = " AND (p.paid_amount IS NULL OR p.paid_amount < p.amount)"
 
     # Per-game summary
     # Note: pay_filter is applied in the JOIN ON clause (not WHERE) so that games
@@ -162,10 +164,10 @@ async def payment_summary(
     # excluded entirely by the LEFT JOIN → INNER JOIN conversion.
     query = """SELECT g.id, g.title, g.sport_type, g.game_date, g.ground_name, g.cost_per_person, g.status as game_status,
            COUNT(p.id) as total_players,
-           SUM(CASE WHEN p.status='paid' THEN 1 ELSE 0 END) as paid_count,
-           SUM(CASE WHEN p.status='pending' THEN 1 ELSE 0 END) as pending_count,
-           SUM(CASE WHEN p.status='paid' THEN p.amount ELSE 0 END) as total_collected,
-           SUM(CASE WHEN p.status='pending' THEN p.amount ELSE 0 END) as total_pending
+           SUM(CASE WHEN p.paid_amount >= p.amount THEN 1 ELSE 0 END) as paid_count,
+           SUM(CASE WHEN p.paid_amount IS NULL OR p.paid_amount < p.amount THEN 1 ELSE 0 END) as pending_count,
+           COALESCE(SUM(p.paid_amount), 0) as total_collected,
+           COALESCE(SUM(CASE WHEN p.paid_amount >= p.amount THEN 0 ELSE p.amount - p.paid_amount END), 0) as total_pending
            FROM games g LEFT JOIN payments p ON g.id = p.game_id""" + pay_filter + """
            WHERE 1=1""" + date_filter + game_status_filter + game_id_filter + """
            GROUP BY g.id ORDER BY g.game_date DESC"""
@@ -176,7 +178,7 @@ async def payment_summary(
     # Per-user payments (with filters)
     user_query = """SELECT u.id, u.name, u.first_name, u.last_name, u.phone, 
            p.game_id, g.title as game_title, g.game_date, g.sport_type, g.ground_name, g.status as game_status,
-           p.amount, p.status as pay_status, p.paid_at
+           p.amount, p.paid_amount, p.paid_at
            FROM payments p 
            JOIN users u ON p.user_id = u.id
            JOIN games g ON p.game_id = g.id
@@ -190,6 +192,9 @@ async def payment_summary(
     users_map: dict = {}
     for up in user_payments:
         uid = up["id"]
+        paid_amount = up["paid_amount"] or 0
+        is_paid = paid_amount >= up["amount"]
+        pending = max(0, up["amount"] - paid_amount)
         if uid not in users_map:
             display_name = up["name"] or f"{up['first_name'] or ''} {up['last_name'] or ''}".strip()
             users_map[uid] = {
@@ -208,13 +213,15 @@ async def payment_summary(
             "ground_name": up["ground_name"],
             "game_status": up["game_status"],
             "amount": up["amount"],
-            "status": up["pay_status"],
+            "paid_amount": paid_amount,
+            "pending": pending,
+            "status": "paid" if is_paid else "pending",
             "paid_at": up["paid_at"],
         })
-        if up["pay_status"] == "pending":
-            users_map[uid]["total_pending"] += up["amount"]
+        if is_paid:
+            users_map[uid]["total_paid"] += paid_amount
         else:
-            users_map[uid]["total_paid"] += up["amount"]
+            users_map[uid]["total_pending"] += pending
 
     users_list = sorted(users_map.values(), key=lambda x: x["total_pending"], reverse=True)
 
@@ -283,12 +290,12 @@ async def mark_paid_with_comment(
     payment = await cursor.fetchone()
     if not payment:
         await db.execute(
-            "INSERT INTO payments (game_id, user_id, amount, status, paid_at) VALUES (?, ?, ?, 'paid', ?)",
-            (req.game_id, req.user_id, game["cost_per_person"], now)
+            "INSERT INTO payments (game_id, user_id, amount, paid_amount, status, paid_at) VALUES (?, ?, ?, ?, 'paid', ?)",
+            (req.game_id, req.user_id, game["cost_per_person"], game["cost_per_person"], now)
         )
-    elif payment["status"] != "paid":
+    elif (payment["paid_amount"] or 0) < payment["amount"]:
         await db.execute(
-            "UPDATE payments SET status = 'paid', paid_at = ? WHERE game_id = ? AND user_id = ?",
+            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ? WHERE game_id = ? AND user_id = ?",
             (now, req.game_id, req.user_id)
         )
 

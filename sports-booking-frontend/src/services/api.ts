@@ -204,14 +204,14 @@ export const api = {
   createGame: (data: {
     title: string; sport_type: string; ground_name: string;
     game_date: string; game_time: string; max_players: number;
-    cost_per_person: number; payment_timing: string; duration_minutes?: number;
+    ground_cost: number; payment_timing: string; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
-    potd_congrats_delay_minutes?: number;
+    potd_congrats_delay_minutes?: number; note_before_players?: string; note_after_players?: string;
   }) => request('/api/games', { method: 'POST', body: JSON.stringify(data) }),
 
   createSeries: (data: {
     series_name: string; sport_type: string; ground_name: string;
-    max_players: number; cost_per_person: number; duration_minutes?: number;
+    max_players: number; ground_cost: number; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; recurrence_days: { day: string; time: string }[];
     weeks?: number; start_date?: string;
@@ -220,8 +220,9 @@ export const api = {
   editGame: (gameId: number, data: {
     title?: string; sport_type?: string; ground_name?: string;
     game_date?: string; game_time?: string; max_players?: number;
-    cost_per_person?: number; duration_minutes?: number;
+    ground_cost?: number; cost_per_person?: number; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
+    note_before_players?: string; note_after_players?: string;
   }) => request(`/api/games/${gameId}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   listGames: (status?: string) =>

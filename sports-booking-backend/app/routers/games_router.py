@@ -20,13 +20,15 @@ class CreateGameRequest(BaseModel):
     game_date: str
     game_time: str
     max_players: int
-    cost_per_person: float
+    ground_cost: float  # total ground cost; cost_per_person is derived
     payment_timing: str  # before, after
     duration_minutes: int = 90
     payee_user_id: Optional[int] = None
     quit_penalty_hours: int = 0
     payment_mode: str = "postpaid"  # prepaid, postpaid
     potd_congrats_delay_minutes: int = 1440  # default 24 hours
+    note_before_players: Optional[str] = None
+    note_after_players: Optional[str] = None
     series_name: Optional[str] = None
     series_day: Optional[str] = None
 
@@ -38,12 +40,15 @@ class EditGameRequest(BaseModel):
     game_date: Optional[str] = None
     game_time: Optional[str] = None
     max_players: Optional[int] = None
-    cost_per_person: Optional[float] = None
+    ground_cost: Optional[float] = None  # total ground cost
+    cost_per_person: Optional[float] = None  # deprecated, kept for compatibility
     duration_minutes: Optional[int] = None
     payee_user_id: Optional[int] = None
     quit_penalty_hours: Optional[int] = None
     payment_mode: Optional[str] = None  # prepaid, postpaid
     potd_congrats_delay_minutes: Optional[int] = None
+    note_before_players: Optional[str] = None
+    note_after_players: Optional[str] = None
     series_name: Optional[str] = None
     series_day: Optional[str] = None
 
@@ -58,12 +63,14 @@ class CreateSeriesRequest(BaseModel):
     sport_type: str
     ground_name: str
     max_players: int
-    cost_per_person: float
+    ground_cost: float  # total ground cost; per-player cost derived
     duration_minutes: int = 90
     payee_user_id: Optional[int] = None
     quit_penalty_hours: int = 0
     payment_mode: str = "postpaid"
     potd_congrats_delay_minutes: int = 1440
+    note_before_players: Optional[str] = None
+    note_after_players: Optional[str] = None
     recurrence_days: List[SeriesDay]
     weeks: int = 4
     start_date: Optional[str] = None  # YYYY-MM-DD; defaults to today
@@ -158,6 +165,70 @@ async def _get_sport_max_players(db: aiosqlite.Connection, sport_type: str) -> i
     )
     row = await cursor.fetchone()
     return row["default_max_players"] if row else None
+
+
+async def _get_game(db: aiosqlite.Connection, game_id: int) -> aiosqlite.Row:
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return game
+
+
+def _per_person_amount(ground_cost: float, player_count: int, max_players: int) -> float:
+    """Split ground cost across actual players; fall back to max players when none have joined yet."""
+    denominator = player_count if player_count > 0 else max_players
+    if denominator <= 0:
+        return 0.0
+    return round(ground_cost / denominator, 2)
+
+
+async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Optional[aiosqlite.Row] = None):
+    """Recompute cost_per_person and update payment records for selected players."""
+    if game is None:
+        game = await _get_game(db, game_id)
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'",
+        (game_id,)
+    )
+    selected_count = (await cursor.fetchone())["cnt"]
+
+    ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
+    max_players = game["max_players"]
+    new_cost = _per_person_amount(ground_cost, selected_count, max_players)
+
+    await db.execute(
+        "UPDATE games SET cost_per_person = ?, ground_cost = ? WHERE id = ?",
+        (new_cost, ground_cost, game_id)
+    )
+
+    # Update payment amounts for selected/waiting players; preserve paid_amount where already paid.
+    await db.execute(
+        "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id IN (SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected')",
+        (new_cost, game_id, game_id)
+    )
+
+    # Adjust payment status based on paid_amount
+    cursor = await db.execute(
+        "SELECT id, amount, paid_amount, status FROM payments WHERE game_id = ?",
+        (game_id,)
+    )
+    rows = await cursor.fetchall()
+    for row in rows:
+        new_status = "paid" if row["paid_amount"] >= row["amount"] else "pending"
+        if new_status != row["status"]:
+            if new_status == "paid":
+                await db.execute(
+                    "UPDATE payments SET status = 'paid', paid_at = ? WHERE id = ?",
+                    (datetime.now(timezone.utc).isoformat(), row["id"])
+                )
+            else:
+                await db.execute(
+                    "UPDATE payments SET status = 'pending', paid_at = NULL WHERE id = ?",
+                    (row["id"],)
+                )
+    await db.commit()
 
 
 async def _check_ground_time_overlap(
@@ -539,7 +610,10 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get payment summary for players who actually played/are selected
     cursor = await db.execute(
-        """SELECT COUNT(*) as total, SUM(CASE WHEN p.status='paid' THEN 1 ELSE 0 END) as paid
+        """SELECT COUNT(*) as total,
+                  COALESCE(SUM(CASE WHEN p.paid_amount >= p.amount THEN 1 ELSE 0 END), 0) as paid,
+                  COALESCE(SUM(p.amount), 0) as total_amount,
+                  COALESCE(SUM(p.paid_amount), 0) as total_paid_amount
            FROM payments p
            JOIN game_players gp ON p.user_id = gp.user_id AND p.game_id = gp.game_id
            WHERE p.game_id = ? AND (gp.status = 'selected' OR gp.played = 1)""",
@@ -620,7 +694,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
-        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_at, u.name
+        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, u.name
            FROM payments p
            JOIN users u ON p.user_id = u.id
            JOIN game_players gp ON p.user_id = gp.user_id AND p.game_id = gp.game_id
@@ -632,8 +706,10 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         {
             "user_id": pr["user_id"],
             "name": pr["name"],
-            "status": pr["pay_status"],
+            "status": "paid" if pr["paid_amount"] >= pr["amount"] else "pending",
             "amount": pr["amount"],
+            "paid_amount": pr["paid_amount"] or 0,
+            "pending": max(0, pr["amount"] - (pr["paid_amount"] or 0)),
             "paid_at": pr["paid_at"],
         }
         for pr in payment_rows
@@ -648,12 +724,10 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Calculate ground cost and per-person amount
     pay_settings = await _payment_settings(db)
-    base_ground_cost = game["cost_per_person"] * game["max_players"]
+    base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
-    if game["status"] == "completed" and selected:
-        per_person_amount = ground_cost / len(selected)
-    else:
-        per_person_amount = _with_surcharge(game["cost_per_person"], pay_settings["surcharge_percent"]) if pay_settings["enabled"] else game["cost_per_person"]
+    selected_count = len(selected)
+    per_person_amount = _per_person_amount(ground_cost, selected_count, game["max_players"])
 
     result = {
         "id": game["id"],
@@ -686,12 +760,16 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "payment_summary": {
             "total": pay_summary["total"] or 0,
             "paid": pay_summary["paid"] or 0,
-            "pending": (pay_summary["total"] or 0) - (pay_summary["paid"] or 0)
+            "pending": (pay_summary["total"] or 0) - (pay_summary["paid"] or 0),
+            "total_amount": pay_summary["total_amount"] or 0,
+            "total_paid_amount": pay_summary["total_paid_amount"] or 0,
         },
         "payment_details": payment_details,
         "player_of_the_day": potd_info,
         "game_score": None,
         "goal_scorers": [],
+        "note_before_players": game["note_before_players"] if "note_before_players" in game.keys() else "",
+        "note_after_players": game["note_after_players"] if "note_after_players" in game.keys() else "",
         "series_name": game["series_name"] if "series_name" in game.keys() else "",
         "series_day": game["series_day"] if "series_day" in game.keys() else "",
     }
@@ -768,6 +846,9 @@ async def create_game(
     # Derive payment_timing from payment_mode
     payment_timing = "before" if req.payment_mode == "prepaid" else req.payment_timing
 
+    # Derive per-player cost from total ground cost
+    cost_per_person = _per_person_amount(req.ground_cost, 0, req.max_players)
+
     # Generate unique game code
     from .locations_router import generate_game_code
     game_code = await generate_game_code(db, req.sport_type)
@@ -791,14 +872,16 @@ async def create_game(
 
     series_name = (req.series_name or req.ground_name).strip()
     series_day = (req.series_day or "").strip()
+    note_before = (req.note_before_players or "").strip()
+    note_after = (req.note_after_players or "").strip()
     cursor = await db.execute(
         """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
-           max_players, cost_per_person, payment_timing, created_by, duration_minutes,
-           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, series_name, series_day)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
+           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
-         req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
-         req.payee_user_id, req.quit_penalty_hours, potd_delay, series_name, series_day)
+         req.max_players, req.ground_cost, cost_per_person, payment_timing, user_id, req.duration_minutes,
+         req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day)
     )
     game_id = cursor.lastrowid
     await db.commit()
@@ -839,6 +922,8 @@ async def create_game_series(
             status_code=400,
             detail=f"Max players for {req.sport_type} is capped at {max_cap}. {req.max_players} exceeds the configured maximum."
         )
+
+    series_cost_per_person = _per_person_amount(req.ground_cost, 0, req.max_players)
 
     from .locations_router import generate_game_code
     created_games = []
@@ -898,14 +983,16 @@ async def create_game_series(
                 if prev_row and prev_row["potd_congrats_delay_minutes"]:
                     potd_delay = prev_row["potd_congrats_delay_minutes"]
 
+            note_before = (req.note_before_players or "").strip()
+            note_after = (req.note_after_players or "").strip()
             cursor = await db.execute(
                 """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
-                   max_players, cost_per_person, payment_timing, created_by, duration_minutes,
-                   payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, series_name, series_day)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
+                   payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (title, game_code_display, req.sport_type, req.ground_name, date_str, time_str,
-                 req.max_players, req.cost_per_person, payment_timing, user_id, req.duration_minutes,
-                 req.payee_user_id, req.quit_penalty_hours, potd_delay, series_name, series_day)
+                 req.max_players, req.ground_cost, series_cost_per_person, payment_timing, user_id, req.duration_minutes,
+                 req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day)
             )
             created_games.append(await get_game_dict(db, cursor.lastrowid))
 
@@ -971,12 +1058,13 @@ async def edit_game(
         )
 
     for field in ("title", "sport_type", "ground_name", "game_date", "game_time",
-                  "max_players", "cost_per_person", "duration_minutes",
+                  "max_players", "ground_cost", "cost_per_person", "duration_minutes",
                   "payee_user_id", "quit_penalty_hours", "potd_congrats_delay_minutes",
+                  "note_before_players", "note_after_players",
                   "series_name", "series_day"):
         val = getattr(req, field, None)
         if val is not None:
-            if field in ("series_name", "series_day"):
+            if field in ("series_name", "series_day", "note_before_players", "note_after_players"):
                 val = str(val).strip()
             updates.append(f"{field} = ?")
             params.append(val)
@@ -1001,18 +1089,6 @@ async def edit_game(
     params.append(game_id)
     await db.execute(f"UPDATE games SET {', '.join(updates)} WHERE id = ?", params)
 
-    # Recalculate payment records for selected players when cost changes
-    if req.cost_per_person is not None:
-        cursor2 = await db.execute(
-            "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,)
-        )
-        selected = await cursor2.fetchall()
-        for p in selected:
-            await db.execute(
-                "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id = ?",
-                (req.cost_per_person, game_id, p["user_id"])
-            )
-
     # Recompute selected/waiting if max_players changed
     if req.max_players is not None:
         cursor2 = await db.execute(
@@ -1024,6 +1100,10 @@ async def edit_game(
             for row in selected[:len(selected) - req.max_players]:
                 await db.execute("UPDATE game_players SET status = 'waiting' WHERE id = ?", (row["id"],))
                 await db.execute("DELETE FROM payments WHERE game_id = ? AND user_id = ?", (game_id, row["user_id"]))
+
+    # Recalculate per-player cost and payment records after any relevant change
+    if req.ground_cost is not None or req.max_players is not None or req.cost_per_person is not None:
+        await _recalc_game_cost(db, game_id)
 
     await db.commit()
     return await get_game_dict(db, game_id)
@@ -1208,6 +1288,7 @@ async def vote_join_game(
             (game_id, user_id, game["cost_per_person"])
         )
 
+    await _recalc_game_cost(db, game_id)
     await db.commit()
     msg = f"You are {'selected' if player_status == 'selected' else 'on the waiting list'}"
     if is_prepaid and player_status == "selected":
@@ -1335,6 +1416,7 @@ async def quit_game(
                 f"You've been promoted from the waiting list for {game['title']}!"
             )
 
+    await _recalc_game_cost(db, game_id)
     await db.commit()
     if must_pay:
         return {"message": "You have quit the game but must still pay as it is within the penalty window.", "must_pay": True}
@@ -1476,6 +1558,7 @@ async def nominate_player(
             f"You've been nominated for {game['title']} at {game['ground_name']}!"
         )
 
+    await _recalc_game_cost(db, game_id)
     await db.commit()
     return {"status": player_status, "message": f"User nominated as {player_status}"}
 
@@ -1498,6 +1581,9 @@ async def start_game(
         raise HTTPException(status_code=400, detail="Can only start a game that has open voting")
 
     await db.execute("UPDATE games SET status = 'in_progress' WHERE id = ?", (game_id,))
+
+    # Recompute cost per player before creating payment records
+    await _recalc_game_cost(db, game_id)
 
     # Create payment records for all selected players
     cursor = await db.execute(
@@ -1611,6 +1697,18 @@ async def complete_game(
         (*played_user_ids, *played_user_ids, *played_user_ids, game_id)
     )
 
+    # Remove pending payment obligations for unplayed players.
+    unplayed_ids = [uid for uid in all_player_ids if uid not in played_set]
+    if unplayed_ids:
+        placeholders = ",".join("?" * len(unplayed_ids))
+        await db.execute(
+            f"DELETE FROM payments WHERE game_id = ? AND user_id IN ({placeholders}) AND status = 'pending'",
+            (game_id, *unplayed_ids)
+        )
+
+    # Recalculate per-player cost based on the actual number of players who played.
+    await _recalc_game_cost(db, game_id)
+
     # Get payee info
     payee_name = ""
     payee_phone = ""
@@ -1621,36 +1719,26 @@ async def complete_game(
             payee_name = payee["name"]
             payee_phone = payee["phone"]
 
-    # Calculate per-person amount based on ground booking cost (cost_per_person * max_players)
-    # split among the players who actually played. If in-app payments are enabled, include surcharge.
+    # Refresh game to get updated cost_per_person and ground_cost
+    game = await _get_game(db, game_id)
     pay_settings = await _payment_settings(db)
-    base_ground_cost = game["cost_per_person"] * game["max_players"]
+    base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
-    per_person_amount = ground_cost / len(played_user_ids)
+    per_person_amount = _per_person_amount(ground_cost, len(played_user_ids), game["max_players"])
 
-    # Remove pending payment obligations for unplayed players.
-    unplayed_ids = [uid for uid in all_player_ids if uid not in played_set]
-    if unplayed_ids:
-        placeholders = ",".join("?" * len(unplayed_ids))
-        await db.execute(
-            f"DELETE FROM payments WHERE game_id = ? AND user_id IN ({placeholders}) AND status = 'pending'",
-            (game_id, *unplayed_ids)
-        )
-
-    # Update/insert payment records for players who played.
-    placeholders = ",".join("?" * len(played_user_ids))
-    # Update existing pending payments to the recalculated per-person amount.
-    await db.execute(
-        f"""UPDATE payments SET amount = ?
-            WHERE game_id = ? AND user_id IN ({placeholders}) AND status = 'pending'""",
-        (per_person_amount, game_id, *played_user_ids)
-    )
     # Insert pending payments for played players that do not yet have one.
     for uid in played_user_ids:
         await db.execute(
             "INSERT OR IGNORE INTO payments (game_id, user_id, amount, status) VALUES (?, ?, ?, 'pending')",
             (game_id, uid, per_person_amount)
         )
+    # Ensure existing payment amounts match the recomputed cost.
+    placeholders = ",".join("?" * len(played_user_ids))
+    await db.execute(
+        f"""UPDATE payments SET amount = ?
+            WHERE game_id = ? AND user_id IN ({placeholders})""",
+        (per_person_amount, game_id, *played_user_ids)
+    )
 
     # Notify players about the completed game and payment due.
     if game["payment_timing"] == "after":
@@ -1697,7 +1785,7 @@ async def cancel_game_preview(
     total_players = (await cursor.fetchone())["cnt"]
 
     cursor = await db.execute(
-        "SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE game_id = ? AND status = 'paid'",
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(paid_amount), 0) as total_paid FROM payments WHERE game_id = ? AND paid_amount >= amount",
         (game_id,)
     )
     pay_row = await cursor.fetchone()
@@ -1744,18 +1832,18 @@ async def cancel_game(
 
     # Refund paid players
     cursor = await db.execute(
-        "SELECT user_id, amount FROM payments WHERE game_id = ? AND status = 'paid'",
+        "SELECT user_id, paid_amount FROM payments WHERE game_id = ? AND paid_amount >= amount",
         (game_id,)
     )
     paid_players = await cursor.fetchall()
     for pp in paid_players:
         await db.execute(
-            "UPDATE payments SET status = 'pending' WHERE game_id = ? AND user_id = ?",
+            "UPDATE payments SET status = 'pending', paid_amount = 0, paid_at = NULL WHERE game_id = ? AND user_id = ?",
             (game_id, pp["user_id"])
         )
         await create_notification(
             db, pp["user_id"], game_id, "game_cancelled",
-            f"{cancel_detail} Your payment of {pp['amount']} has been marked for refund."
+            f"{cancel_detail} Your payment of {pp['paid_amount']} has been marked for refund."
         )
 
     # Clear pending payments for players who quit with penalty (no longer in game_players)
@@ -1767,7 +1855,7 @@ async def cancel_game(
     game_player_user_ids = {p["user_id"] for p in all_players}
 
     cursor = await db.execute(
-        "SELECT user_id, amount FROM payments WHERE game_id = ? AND status = 'pending'",
+        "SELECT user_id, amount FROM payments WHERE game_id = ? AND (paid_amount IS NULL OR paid_amount < amount)",
         (game_id,)
     )
     pending_payments = await cursor.fetchall()
@@ -2205,14 +2293,15 @@ async def mark_payment_made(
     if not payment:
         # Create and mark as paid
         now = datetime.now(timezone.utc).isoformat()
+        amount = game["cost_per_person"]
         await db.execute(
-            "INSERT INTO payments (game_id, user_id, amount, status, paid_at) VALUES (?, ?, ?, 'paid', ?)",
-            (game_id, req.user_id, game["cost_per_person"], now)
+            "INSERT INTO payments (game_id, user_id, amount, paid_amount, status, paid_at) VALUES (?, ?, ?, ?, 'paid', ?)",
+            (game_id, req.user_id, amount, amount, now)
         )
-    elif payment["status"] != "paid":
+    elif (payment["paid_amount"] or 0) < payment["amount"]:
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
-            "UPDATE payments SET status = 'paid', paid_at = ? WHERE game_id = ? AND user_id = ?",
+            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ? WHERE game_id = ? AND user_id = ?",
             (now, game_id, req.user_id)
         )
 
@@ -2251,7 +2340,7 @@ async def remind_unpaid_players(
     cursor = await db.execute(
         """SELECT p.user_id, u.name, u.phone, u.notification_preference
            FROM payments p JOIN users u ON p.user_id = u.id
-           WHERE p.game_id = ? AND p.status = 'pending'""",
+           WHERE p.game_id = ? AND (p.paid_amount IS NULL OR p.paid_amount < p.amount)""",
         (game_id,)
     )
     unpaid = await cursor.fetchall()

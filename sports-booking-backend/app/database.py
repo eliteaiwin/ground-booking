@@ -86,10 +86,13 @@ async def init_db():
             game_time TEXT NOT NULL,
             max_players INTEGER NOT NULL,
             cost_per_person REAL NOT NULL,
+            ground_cost REAL NOT NULL DEFAULT 0,
             payment_timing TEXT NOT NULL DEFAULT 'after',
             status TEXT NOT NULL DEFAULT 'draft',
             payee_user_id INTEGER,
             quit_penalty_hours INTEGER NOT NULL DEFAULT 0,
+            note_before_players TEXT,
+            note_after_players TEXT,
             voting_token TEXT,
             created_by INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -592,6 +595,42 @@ async def init_db():
             pass
 
     await db.commit()
+
+    # Migrations for existing databases
+    try:
+        await db.execute("ALTER TABLE games ADD COLUMN ground_cost REAL NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE payments ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        # Backfill ground_cost for existing games where it is 0
+        cursor = await db.execute("SELECT id, cost_per_person, max_players FROM games WHERE ground_cost = 0 OR ground_cost IS NULL")
+        rows = await cursor.fetchall()
+        for row in rows:
+            await db.execute(
+                "UPDATE games SET ground_cost = ? WHERE id = ?",
+                (row["cost_per_person"] * row["max_players"], row["id"])
+            )
+        await db.commit()
+    except Exception:
+        pass
+    try:
+        # Backfill paid_amount for existing paid payments
+        await db.execute("UPDATE payments SET paid_amount = amount WHERE status = 'paid' AND paid_amount = 0")
+        await db.commit()
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE games ADD COLUMN note_before_players TEXT")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE games ADD COLUMN note_after_players TEXT")
+    except Exception:
+        pass
 
     # Seed data based on SEED_MODE
     if SEED_MODE == "production":

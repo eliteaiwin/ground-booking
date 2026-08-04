@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Search, X, UserPlus } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, Search, X, UserPlus, ChevronDown } from 'lucide-react';
 import { useSports } from '../lib/sports';
 
 interface UserItem {
@@ -55,7 +55,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [gameDate, setGameDate] = useState('');
   const [gameTime, setGameTime] = useState('');
   const [maxPlayers, setMaxPlayers] = useState('10');
-  const [costPerPerson, setCostPerPerson] = useState('');
+  const [groundCost, setGroundCost] = useState('');
   const [paymentTiming, setPaymentTiming] = useState('after');
   const [durationMinutes, setDurationMinutes] = useState('90');
   const [error, setError] = useState('');
@@ -71,8 +71,21 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [searchResults, setSearchResults] = useState<UserItem[]>([]);
   const [selectedPlayers, setSelectedPlayers] = useState<UserItem[]>([]);
   const [searching, setSearching] = useState(false);
+  const [showPotd, setShowPotd] = useState(false);
+  const [showPreAdd, setShowPreAdd] = useState(false);
+  const [showPaymentRules, setShowPaymentRules] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [noteBefore, setNoteBefore] = useState('');
+  const [noteAfter, setNoteAfter] = useState('');
 
   const currency = user?.currency || 'Rs';
+
+  const costPerPerson = (() => {
+    const total = parseFloat(groundCost) || 0;
+    const players = parseInt(maxPlayers) || 1;
+    if (total <= 0 || players <= 0) return '';
+    return (total / players).toFixed(2);
+  })();
 
   useEffect(() => {
     Promise.all([
@@ -159,13 +172,15 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         game_date: gameDate,
         game_time: gameTime,
         max_players: parseInt(maxPlayers),
-        cost_per_person: parseFloat(costPerPerson),
+        ground_cost: parseFloat(groundCost) || 0,
         payment_timing: paymentTiming,
         duration_minutes: parseInt(durationMinutes) || 90,
         payee_user_id: payeeUserId ? Number(payeeUserId) : undefined,
         quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
         payment_mode: paymentMode,
         potd_congrats_delay_minutes: parseInt(potdDelayMinutes) || 1440,
+        note_before_players: noteBefore || undefined,
+        note_after_players: noteAfter || undefined,
       });
 
       // Pre-add selected players while game is still in draft
@@ -267,10 +282,15 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="cost">Cost Per Person ({currency})</Label>
-                  <Input id="cost" type="number" min="0" step="0.01" placeholder="0.00" value={costPerPerson} onChange={(e) => setCostPerPerson(e.target.value)} required />
+                  <Label htmlFor="groundCost">Ground Cost ({currency})</Label>
+                  <Input id="groundCost" type="number" min="0" step="0.01" placeholder="0.00" value={groundCost} onChange={(e) => setGroundCost(e.target.value)} required />
                 </div>
               </div>
+              {costPerPerson && (
+                <div className="p-2 bg-green-50 rounded text-sm text-green-800">
+                  Cost per player: <span className="font-semibold">{costPerPerson} {currency}</span> (read-only, based on max players)
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="duration">Duration (minutes)</Label>
@@ -288,89 +308,129 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                   </Select>
                 </div>
               </div>
-              <Separator className="my-2" />
-              <h3 className="text-sm font-semibold text-gray-700">POTD Settings</h3>
-              <div className="space-y-2">
-                <Label htmlFor="potdDelay">POTD Congratulation Delay (minutes)</Label>
-                <Input id="potdDelay" type="number" min="1" max="10080" value={potdDelayMinutes}
-                  onChange={(e) => setPotdDelayMinutes(e.target.value)} />
-                <p className="text-xs text-gray-400">Default: 1440 minutes (24 hours). Time after game completion to announce POTD winner.</p>
-              </div>
-              <Separator className="my-2" />
-              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2"><UserPlus size={16} /> Pre-Add Players</h3>
-              <div className="space-y-2">
-                <Label>Search players by name or phone</Label>
-                <div className="relative">
-                  <Search size={16} className="absolute left-3 top-3 text-gray-400" />
-                  <Input
-                    placeholder="Type first few characters..."
-                    value={playerSearch}
-                    onChange={(e) => setPlayerSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {searching && <p className="text-xs text-gray-500">Searching...</p>}
-                {searchResults.length > 0 && (
-                  <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
-                    {searchResults.map(u => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedPlayers(prev => [...prev, u]);
-                          setPlayerSearch('');
-                          setSearchResults([]);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex justify-between items-center"
-                      >
-                        <span>{u.name || u.phone}</span>
-                        <span className="text-xs text-gray-400">{u.phone}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {selectedPlayers.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {selectedPlayers.map(p => (
-                      <span key={p.id} className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                        {p.name || p.phone}
-                        <button type="button" onClick={() => setSelectedPlayers(prev => prev.filter(x => x.id !== p.id))}>
-                          <X size={12} />
-                        </button>
-                      </span>
-                    ))}
+              <div className="border rounded-md overflow-hidden">
+                <button type="button" onClick={() => setShowPotd(v => !v)} className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700">
+                  <span>POTD Settings</span>
+                  <ChevronDown size={16} className={`transition-transform ${showPotd ? 'rotate-180' : ''}`} />
+                </button>
+                {showPotd && (
+                  <div className="p-3 space-y-2">
+                    <Label htmlFor="potdDelay">POTD Congratulation Delay (minutes)</Label>
+                    <Input id="potdDelay" type="number" min="1" max="10080" value={potdDelayMinutes}
+                      onChange={(e) => setPotdDelayMinutes(e.target.value)} />
+                    <p className="text-xs text-gray-400">Default: 1440 minutes (24 hours). Time after game completion to announce POTD winner.</p>
                   </div>
                 )}
               </div>
-              <Separator className="my-2" />
-              <h3 className="text-sm font-semibold text-gray-700">Payment & Rules</h3>
-              <div className="space-y-2">
-                <Label>Payment Receiver (who receives the money)</Label>
-                <Select value={payeeUserId} onValueChange={setPayeeUserId}>
-                  <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
-                  <SelectContent>
-                    {allUsers.map(u => (
-                      <SelectItem key={u.id} value={String(u.id)}>{formatUserOption(u.name, u.phone)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              <div className="border rounded-md overflow-hidden">
+                <button type="button" onClick={() => setShowPreAdd(v => !v)} className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700">
+                  <span className="flex items-center gap-2"><UserPlus size={16} /> Pre-Add Players</span>
+                  <ChevronDown size={16} className={`transition-transform ${showPreAdd ? 'rotate-180' : ''}`} />
+                </button>
+                {showPreAdd && (
+                  <div className="p-3 space-y-2">
+                    <Label>Search players by name or phone</Label>
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3 top-3 text-gray-400" />
+                      <Input
+                        placeholder="Type first few characters..."
+                        value={playerSearch}
+                        onChange={(e) => setPlayerSearch(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                    {searching && <p className="text-xs text-gray-500">Searching...</p>}
+                    {searchResults.length > 0 && (
+                      <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
+                        {searchResults.map(u => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPlayers(prev => [...prev, u]);
+                              setPlayerSearch('');
+                              setSearchResults([]);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex justify-between items-center"
+                          >
+                            <span>{u.name || u.phone}</span>
+                            <span className="text-xs text-gray-400">{u.phone}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedPlayers.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {selectedPlayers.map(p => (
+                          <span key={p.id} className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                            {p.name || p.phone}
+                            <button type="button" onClick={() => setSelectedPlayers(prev => prev.filter(x => x.id !== p.id))}>
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Quit Penalty (hours before game)</Label>
-                  <Input type="number" min="0" max="72" value={quitPenaltyHours}
-                    onChange={e => setQuitPenaltyHours(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Payment Mode</Label>
-                  <Select value={paymentMode} onValueChange={setPaymentMode}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="postpaid">PostPaid</SelectItem>
-                      <SelectItem value="prepaid">PrePaid</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+
+              <div className="border rounded-md overflow-hidden">
+                <button type="button" onClick={() => setShowPaymentRules(v => !v)} className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700">
+                  <span>Payment & Rules</span>
+                  <ChevronDown size={16} className={`transition-transform ${showPaymentRules ? 'rotate-180' : ''}`} />
+                </button>
+                {showPaymentRules && (
+                  <div className="p-3 space-y-3">
+                    <div className="space-y-2">
+                      <Label>Payment Receiver (who receives the money)</Label>
+                      <Select value={payeeUserId} onValueChange={setPayeeUserId}>
+                        <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
+                        <SelectContent>
+                          {allUsers.map(u => (
+                            <SelectItem key={u.id} value={String(u.id)}>{formatUserOption(u.name, u.phone)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Quit Penalty (hours before game)</Label>
+                        <Input type="number" min="0" max="72" value={quitPenaltyHours}
+                          onChange={e => setQuitPenaltyHours(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Payment Mode</Label>
+                        <Select value={paymentMode} onValueChange={setPaymentMode}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="postpaid">PostPaid</SelectItem>
+                            <SelectItem value="prepaid">PrePaid</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="border rounded-md overflow-hidden">
+                <button type="button" onClick={() => setShowNotes(v => !v)} className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700">
+                  <span>Additional Notes (optional)</span>
+                  <ChevronDown size={16} className={`transition-transform ${showNotes ? 'rotate-180' : ''}`} />
+                </button>
+                {showNotes && (
+                  <div className="p-3 space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Note before player list</Label>
+                      <Textarea value={noteBefore} onChange={e => setNoteBefore(e.target.value)} rows={2} className="text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs text-gray-500">Note after player list</Label>
+                      <Textarea value={noteAfter} onChange={e => setNoteAfter(e.target.value)} rows={2} className="text-sm" />
+                    </div>
+                  </div>
+                )}
               </div>
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
                 {loading ? 'Creating...' : 'Create Game'}

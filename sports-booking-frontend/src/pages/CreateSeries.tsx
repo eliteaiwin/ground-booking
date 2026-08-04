@@ -52,7 +52,7 @@ export default function CreateSeries({ onBack }: Props) {
   const [groundName, setGroundName] = useState('');
   const [customGround, setCustomGround] = useState('');
   const [maxPlayers, setMaxPlayers] = useState('16');
-  const [costPerPerson, setCostPerPerson] = useState('');
+  const [groundCost, setGroundCost] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('90');
   const [paymentMode, setPaymentMode] = useState('postpaid');
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
@@ -73,6 +73,13 @@ export default function CreateSeries({ onBack }: Props) {
   const [sportDefaults, setSportDefaults] = useState<Record<string, number>>({});
 
   const currency = user?.currency || 'Rs';
+
+  const costPerPerson = (() => {
+    const total = parseFloat(groundCost) || 0;
+    const players = parseInt(maxPlayers) || 1;
+    if (total <= 0 || players <= 0) return '';
+    return (total / players).toFixed(2);
+  })();
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -129,8 +136,8 @@ export default function CreateSeries({ onBack }: Props) {
       setLoading(false);
       return;
     }
-    if (!costPerPerson || isNaN(Number(costPerPerson))) {
-      setError('Please enter a valid cost per person');
+    if (!groundCost || isNaN(Number(groundCost))) {
+      setError('Please enter a valid ground cost');
       setLoading(false);
       return;
     }
@@ -146,7 +153,7 @@ export default function CreateSeries({ onBack }: Props) {
         sport_type: sportType,
         ground_name: finalGround,
         max_players: parseInt(maxPlayers),
-        cost_per_person: parseFloat(costPerPerson),
+        ground_cost: parseFloat(groundCost) || 0,
         duration_minutes: parseInt(durationMinutes) || 90,
         payee_user_id: payeeUserId ? Number(payeeUserId) : undefined,
         quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
@@ -227,10 +234,15 @@ export default function CreateSeries({ onBack }: Props) {
                     }} required />
                   </div>
                   <div className="space-y-2">
-                    <Label>Cost Per Person ({currency})</Label>
-                    <Input type="number" min="0" step="0.01" value={costPerPerson} onChange={(e) => setCostPerPerson(e.target.value)} required />
+                    <Label>Ground Cost ({currency})</Label>
+                    <Input type="number" min="0" step="0.01" value={groundCost} onChange={(e) => setGroundCost(e.target.value)} required />
                   </div>
                 </div>
+                {costPerPerson && (
+                  <div className="p-2 bg-green-50 rounded text-sm text-green-800">
+                    Cost per player: <span className="font-semibold">{costPerPerson} {currency}</span> (read-only)
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Duration (minutes)</Label>
