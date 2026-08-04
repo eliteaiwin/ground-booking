@@ -1350,9 +1350,24 @@ async def nominate_player(
     except Exception:
         pass
 
-    # Check if already joined
-    cursor = await db.execute("SELECT id FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, req.user_id))
-    if await cursor.fetchone():
+    # Check if already joined - if waiting and a spot opened up, promote to selected
+    cursor = await db.execute("SELECT id, status FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, req.user_id))
+    existing = await cursor.fetchone()
+    if existing:
+        if existing["status"] == "waiting":
+            count_cursor = await db.execute("SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,))
+            selected_count = (await count_cursor.fetchone())["cnt"]
+            if selected_count < game["max_players"]:
+                await db.execute(
+                    "UPDATE game_players SET status = 'selected' WHERE id = ?",
+                    (existing["id"],)
+                )
+                await db.execute(
+                    "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
+                    (game_id, req.user_id, game["cost_per_person"])
+                )
+                await db.commit()
+                return {"status": "selected", "message": "User promoted to selected"}
         raise HTTPException(status_code=400, detail="User already in this game")
 
     # Check nomination limit for the nominator on this ground
