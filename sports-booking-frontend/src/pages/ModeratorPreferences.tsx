@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Settings, DollarSign, Trophy } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowLeft, Settings, DollarSign, Trophy, Eye } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ALL_SPORTS } from '../lib/sports';
 
@@ -112,6 +113,22 @@ export default function ModeratorPreferences({ onBack }: Props) {
       await api.updateAppSettings({ payments_enabled: appSettings.payments_enabled, payment_surcharge_percent: pct });
       await refreshAppSettings();
       setSuccess('payments');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const handleDisplayChange = async (value: string) => {
+    if (!isAdmin || !appSettings) return;
+    setSaving('display');
+    try {
+      await api.updateAppSettings({ player_name_display: value });
+      localStorage.setItem('player_name_display', value);
+      await refreshAppSettings();
+      setSuccess('display');
       setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
       console.error(err);
@@ -244,6 +261,29 @@ export default function ModeratorPreferences({ onBack }: Props) {
               <p className="text-xs text-gray-500">
                 When disabled, players cannot pay through the app and moderators mark payments offline. When enabled, costs include the surcharge.
               </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {isAdmin && appSettings && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2"><Eye size={18} /> Player Name Display</CardTitle>
+              <p className="text-sm text-gray-500">Choose how player names appear in rosters and lists.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {success === 'display' && <div className="bg-green-50 text-green-600 p-3 rounded-md text-sm">Display setting saved!</div>}
+              <Select value={appSettings.player_name_display || 'first_phone_masked'} onValueChange={handleDisplayChange} disabled={saving === 'display'}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="first">First Name</SelectItem>
+                  <SelectItem value="first_last_initial">First Name + First Character of Last Name</SelectItem>
+                  <SelectItem value="first_phone_masked">First Name + Mobile number (encrypted)</SelectItem>
+                  <SelectItem value="first_phone_visible">First Name + Mobile number (visible)</SelectItem>
+                  <SelectItem value="first_last">First Name + Last Name</SelectItem>
+                  <SelectItem value="first_last_initial_phone_visible">First Name + First Character of Last Name + Mobile number (visible)</SelectItem>
+                </SelectContent>
+              </Select>
             </CardContent>
           </Card>
         )}

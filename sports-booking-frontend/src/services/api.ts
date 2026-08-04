@@ -335,7 +335,7 @@ export const api = {
   // Preferences & App Settings
   getPreferences: () => request('/api/preferences'),
   getAppSettings: () => request('/api/users/app-settings'),
-  updateAppSettings: (data: { payments_enabled?: boolean; payment_surcharge_percent?: number; enabled_sports?: string[] }) =>
+  updateAppSettings: (data: { payments_enabled?: boolean; payment_surcharge_percent?: number; enabled_sports?: string[]; player_name_display?: string }) =>
     request('/api/users/app-settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   updatePreference: (sportType: string, defaultMaxPlayers: number) =>

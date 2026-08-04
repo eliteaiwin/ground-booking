@@ -257,9 +257,13 @@ export default function CreateGame({ onBack, onCreated }: Props) {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="maxPlayers">Max Players</Label>
-                  <Input id="maxPlayers" type="number" min="2" max="100" value={maxPlayers} onChange={(e) => setMaxPlayers(e.target.value)} required />
+                  <Input id="maxPlayers" type="number" min="2" max={sportDefaults[sportType] || 100} value={maxPlayers} onChange={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    const cap = sportDefaults[sportType] || 100;
+                    setMaxPlayers(String(Math.min(Math.max(val, 2), cap)));
+                  }} required />
                   {sportDefaults[sportType] && (
-                    <p className="text-xs text-gray-400">Default for {sportType}: {sportDefaults[sportType]}</p>
+                    <p className="text-xs text-gray-400">Maximum for {sportType}: {sportDefaults[sportType]}</p>
                   )}
                 </div>
                 <div className="space-y-2">

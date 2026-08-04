@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, X } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
@@ -85,7 +85,11 @@ interface Game {
 interface UserItem {
   id: number;
   name: string;
+  first_name?: string;
+  last_name?: string;
   phone: string;
+  email?: string;
+  profile_pic?: string;
   roles: string[];
 }
 
@@ -169,7 +173,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
   const [editCostPerPerson, setEditCostPerPerson] = useState('');
-  const [tooltipPlayerId, setTooltipPlayerId] = useState<number | null>(null);
   const [teamCount, setTeamCount] = useState('2');
   const [teamNames, setTeamNames] = useState<string[]>(['Team A', 'Team B']);
   const [dragPlayer, setDragPlayer] = useState<Player | null>(null);
@@ -194,6 +197,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
+  const [profileRank, setProfileRank] = useState<{ rank: number; points: number; goals: number; games: number } | null>(null);
+  const [hallOfFameRankings, setHallOfFameRankings] = useState<{ rank: number; user_id: number; name: string; potd_points: number; total_goals: number; games_played: number }[]>([]);
 
   const currency = user?.currency || 'Rs';
 
@@ -238,6 +244,38 @@ export default function GameDetail({ gameId, onBack }: Props) {
     game?.waiting_list.some(p => p.user_id === user?.id);
   const isSelectedPlayer = game?.selected_players.some(p => p.user_id === user?.id);
   const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id);
+
+  useEffect(() => {
+    if (!game?.sport_type) return;
+    api.getHallOfFame(game.sport_type)
+      .then((data: { rankings?: { rank: number; user_id: number; name: string; potd_points: number; total_goals: number; games_played: number }[] }) => {
+        setHallOfFameRankings(data.rankings || []);
+      })
+      .catch(() => setHallOfFameRankings([]));
+  }, [game?.sport_type]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-context-menu]')) setMarkPaidPlayerId(null);
+      if (profileUserId && !target.closest('[data-profile-modal]') && !target.closest('[data-profile-trigger]')) {
+        setProfileUserId(null);
+        setProfileRank(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [profileUserId]);
+
+  const openProfile = (userId: number) => {
+    const rank = hallOfFameRankings.find(r => r.user_id === userId);
+    if (rank) {
+      setProfileRank({ rank: rank.rank, points: rank.potd_points, goals: rank.total_goals, games: rank.games_played });
+    } else {
+      setProfileRank(null);
+    }
+    setProfileUserId(userId);
+  };
 
   const handleAction = async (action: string, fn: () => Promise<unknown>) => {
     setActionLoading(action);
@@ -1286,19 +1324,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                         </span>
-                        {/* Nomination info tooltip */}
+                        {/* Profile info */}
                         <button
                           type="button"
+                          data-profile-trigger
                           className="relative text-gray-400 hover:text-blue-500 transition-colors"
-                          onClick={() => setTooltipPlayerId(tooltipPlayerId === player.id ? null : player.id)}
-                          title={player.nominated_by_info || 'Self Nominated'}
+                          onClick={() => openProfile(player.user_id)}
+                          title="View profile"
                         >
                           <Info size={14} />
-                          {tooltipPlayerId === player.id && (
-                            <span className="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg whitespace-nowrap z-10">
-                              {player.nominated_by_info || 'Self Nominated'}
-                            </span>
-                          )}
                         </button>
 
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
@@ -1356,7 +1390,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
                       {/* Mark as Paid comment dialog (inline) */}
                       {markPaidPlayerId === player.user_id && (
-                        <div className="ml-8 mt-2 p-3 bg-green-50 rounded-lg border border-green-200 space-y-2">
+                        <div data-context-menu className="ml-8 mt-2 p-3 bg-green-50 rounded-lg border border-green-200 space-y-2">
                           <Label className="text-xs font-medium text-green-800">Reference / Comment</Label>
                           <Textarea
                             value={markPaidComment}
@@ -1412,6 +1446,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
+                    <button
+                      type="button"
+                      data-profile-trigger
+                      className="relative text-gray-400 hover:text-blue-500 transition-colors"
+                      onClick={() => openProfile(player.user_id)}
+                      title="View profile"
+                    >
+                      <Info size={14} />
+                    </button>
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
                 ))}
@@ -1620,6 +1663,56 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
         <Separator />
         <p className="text-xs text-gray-400 text-center pb-4">Game ID: {game.id}</p>
+
+        {/* Player Profile Modal */}
+        {profileUserId && (() => {
+          const profileUser = allUsers.find(u => u.id === profileUserId);
+          const player = [...(game.selected_players || []), ...(game.waiting_list || [])].find(p => p.user_id === profileUserId);
+          const displayUser = profileUser || player;
+          if (!displayUser) return null;
+          const profilePic = (profileUser as UserItem)?.profile_pic || '';
+          const email = (profileUser as UserItem)?.email || '';
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-lg max-w-sm w-full p-5 relative" data-profile-modal>
+                <button
+                  type="button"
+                  className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
+                  onClick={() => { setProfileUserId(null); setProfileRank(null); }}
+                >
+                  <X size={18} />
+                </button>
+                <div className="flex flex-col items-center mb-4">
+                  {profilePic ? (
+                    <img src={api.getProfilePicUrl(profilePic)} alt={displayUser.name} className="w-20 h-20 rounded-full object-cover mb-2" />
+                  ) : (
+                    <span className="w-20 h-20 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-2xl font-bold mb-2">
+                      {(displayUser.name || '').charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <h3 className="text-lg font-bold text-center">{displayUser.name}</h3>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-gray-500">Phone</span><span className="font-medium">{displayUser.phone}</span></div>
+                  {email && <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium">{email}</span></div>}
+                  {profileRank && (
+                    <>
+                      <div className="flex justify-between"><span className="text-gray-500">Rank</span><span className="font-medium">#{profileRank.rank}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">POTD Points</span><span className="font-medium">{profileRank.points}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">Goals</span><span className="font-medium">{profileRank.goals}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">Games Played</span><span className="font-medium">{profileRank.games}</span></div>
+                    </>
+                  )}
+                  {player?.nominated_by_info && (
+                    <div className="pt-2 border-t text-xs text-gray-500">
+                      <span className="font-medium">Nomination:</span> {player.nominated_by_info}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

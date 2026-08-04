@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Trophy, Medal, Star, Target } from 'lucide-react';
 import { useSports } from '../lib/sports';
+import { formatPlayerDisplay } from '@/lib/player';
 
 interface Ranking {
   rank: number;
@@ -23,13 +24,6 @@ interface Ranking {
 interface Props {
   onBack: () => void;
 }
-
-const formatPlayerDisplay = (name: string, phone: string) => {
-  const firstName = name.split(' ')[0];
-  if (!phone || phone.length < 4) return firstName;
-  const masked = phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
-  return `${firstName} - ${masked}`;
-};
 
 export default function HallOfFame({ onBack }: Props) {
   const enabledSports = useSports();

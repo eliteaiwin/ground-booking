@@ -151,6 +151,15 @@ def _with_surcharge(amount: float, surcharge_percent: float) -> float:
     return amount * (1 + surcharge_percent / 100)
 
 
+async def _get_sport_max_players(db: aiosqlite.Connection, sport_type: str) -> int | None:
+    cursor = await db.execute(
+        "SELECT default_max_players FROM moderator_preferences WHERE sport_type = ?",
+        (sport_type,)
+    )
+    row = await cursor.fetchone()
+    return row["default_max_players"] if row else None
+
+
 async def _check_ground_time_overlap(
     db: aiosqlite.Connection,
     ground_name: str,
@@ -748,6 +757,14 @@ async def create_game(
         db, req.ground_name, req.game_date, req.game_time, req.duration_minutes
     )
 
+    # Enforce sport max-player preference cap
+    max_cap = await _get_sport_max_players(db, req.sport_type)
+    if max_cap is not None and req.max_players > max_cap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Max players for {req.sport_type} is capped at {max_cap}. {req.max_players} exceeds the configured maximum."
+        )
+
     # Derive payment_timing from payment_mode
     payment_timing = "before" if req.payment_mode == "prepaid" else req.payment_timing
 
@@ -815,6 +832,14 @@ async def create_game_series(
             raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD")
 
     payment_timing = "before" if req.payment_mode == "prepaid" else "after"
+
+    max_cap = await _get_sport_max_players(db, req.sport_type)
+    if max_cap is not None and req.max_players > max_cap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Max players for {req.sport_type} is capped at {max_cap}. {req.max_players} exceeds the configured maximum."
+        )
+
     from .locations_router import generate_game_code
     created_games = []
     skipped = []
@@ -935,6 +960,16 @@ async def edit_game(
     updates: list[str] = []
     params: list = []
 
+    # Enforce sport max-player preference cap on edit
+    final_sport = req.sport_type if req.sport_type is not None else game["sport_type"]
+    final_max = req.max_players if req.max_players is not None else game["max_players"]
+    max_cap = await _get_sport_max_players(db, final_sport)
+    if max_cap is not None and final_max > max_cap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Max players for {final_sport} is capped at {max_cap}. {final_max} exceeds the configured maximum."
+        )
+
     for field in ("title", "sport_type", "ground_name", "game_date", "game_time",
                   "max_players", "cost_per_person", "duration_minutes",
                   "payee_user_id", "quit_penalty_hours", "potd_congrats_delay_minutes",
@@ -977,6 +1012,18 @@ async def edit_game(
                 "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id = ?",
                 (req.cost_per_person, game_id, p["user_id"])
             )
+
+    # Recompute selected/waiting if max_players changed
+    if req.max_players is not None:
+        cursor2 = await db.execute(
+            "SELECT id, user_id FROM game_players WHERE game_id = ? AND status = 'selected' ORDER BY joined_at DESC",
+            (game_id,)
+        )
+        selected = await cursor2.fetchall()
+        if len(selected) > req.max_players:
+            for row in selected[:len(selected) - req.max_players]:
+                await db.execute("UPDATE game_players SET status = 'waiting' WHERE id = ?", (row["id"],))
+                await db.execute("DELETE FROM payments WHERE game_id = ? AND user_id = ?", (game_id, row["user_id"]))
 
     await db.commit()
     return await get_game_dict(db, game_id)

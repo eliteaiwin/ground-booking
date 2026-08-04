@@ -61,6 +61,7 @@ class AppSettingsRequest(BaseModel):
     payments_enabled: Optional[bool] = None
     payment_surcharge_percent: Optional[float] = None
     enabled_sports: Optional[List[str]] = None
+    player_name_display: Optional[str] = None
 
 
 async def require_admin(user_id: int, db: aiosqlite.Connection):
@@ -580,12 +581,14 @@ async def get_app_settings(
     dev_share = float(await get_app_setting(db, 'payment_dev_share_percent', '5'))
     enabled_sports_raw = await get_app_setting(db, 'enabled_sports', 'soccer')
     enabled_sports = [s.strip() for s in enabled_sports_raw.split(',') if s.strip()]
+    player_name_display = await get_app_setting(db, 'player_name_display', 'first_phone_masked')
     return {
         "payments_enabled": payments_enabled,
         "payment_surcharge_percent": surcharge,
         "payment_gateway_percent": gateway,
         "payment_dev_share_percent": dev_share,
         "enabled_sports": enabled_sports,
+        "player_name_display": player_name_display,
     }
 
 
@@ -603,4 +606,6 @@ async def update_app_settings(
         await set_app_setting(db, 'payment_surcharge_percent', str(req.payment_surcharge_percent))
     if req.enabled_sports is not None:
         await set_app_setting(db, 'enabled_sports', ','.join(req.enabled_sports))
+    if req.player_name_display is not None:
+        await set_app_setting(db, 'player_name_display', req.player_name_display)
     return await get_app_settings(user_id, db)

@@ -46,6 +46,7 @@ interface AppSettings {
   payment_gateway_percent: number;
   payment_dev_share_percent: number;
   enabled_sports: string[];
+  player_name_display: string;
 }
 
 interface AuthContextType {
@@ -144,8 +145,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const settings = await api.getAppSettings();
       setAppSettings(settings);
+      if (settings.player_name_display) {
+        localStorage.setItem('player_name_display', settings.player_name_display);
+      }
     } catch {
-      setAppSettings({ payments_enabled: false, payment_surcharge_percent: 7, payment_gateway_percent: 2, payment_dev_share_percent: 5, enabled_sports: ['soccer'] });
+      setAppSettings({ payments_enabled: false, payment_surcharge_percent: 7, payment_gateway_percent: 2, payment_dev_share_percent: 5, enabled_sports: ['soccer'], player_name_display: 'first_phone_masked' });
     }
   };
 
