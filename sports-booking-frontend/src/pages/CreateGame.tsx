@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, Search, X, UserPlus } from 'lucide-react';
+import { useSports } from '../lib/sports';
 
 interface UserItem {
   id: number;
@@ -45,6 +46,7 @@ interface Props {
 
 export default function CreateGame({ onBack, onCreated }: Props) {
   const { user } = useAuth();
+  const sports = useSports();
   const [titleType, setTitleType] = useState('regular');
   const [title, setTitle] = useState('');
   const [sportType, setSportType] = useState('soccer');
@@ -109,6 +111,18 @@ export default function CreateGame({ onBack, onCreated }: Props) {
     }, 300);
     return () => clearTimeout(timer);
   }, [playerSearch, selectedPlayers]);
+
+  useEffect(() => {
+    if (sports.length > 0 && !sports.find(s => s.key === sportType)) {
+      setSportType(sports[0].key);
+      if (sportDefaults[sports[0].key]) {
+        setMaxPlayers(String(sportDefaults[sports[0].key]));
+      }
+      if (SPORT_DURATIONS[sports[0].key]) {
+        setDurationMinutes(String(SPORT_DURATIONS[sports[0].key]));
+      }
+    }
+  }, [sports, sportType, sportDefaults]);
 
   const handleSportChange = (val: string) => {
     setSportType(val);
@@ -207,11 +221,11 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                 <Select value={sportType} onValueChange={handleSportChange}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="soccer"><span className="flex items-center gap-2">&#9917; Soccer</span></SelectItem>
-                    <SelectItem value="cricket"><span className="flex items-center gap-2">&#127951; Cricket</span></SelectItem>
-                    <SelectItem value="badminton"><span className="flex items-center gap-2">&#127992; Badminton</span></SelectItem>
-                    <SelectItem value="basketball"><span className="flex items-center gap-2">&#127936; Basketball</span></SelectItem>
-                    <SelectItem value="hockey"><span className="flex items-center gap-2">&#127954; Hockey</span></SelectItem>
+                    {sports.map(s => (
+                      <SelectItem key={s.key} value={s.key}>
+                        <span className="flex items-center gap-2">{s.icon} {s.label}</span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

@@ -40,6 +40,14 @@ interface RegisterData {
   sport_positions?: Record<string, string[]>;
 }
 
+interface AppSettings {
+  payments_enabled: boolean;
+  payment_surcharge_percent: number;
+  payment_gateway_percent: number;
+  payment_dev_share_percent: number;
+  enabled_sports: string[];
+}
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -64,6 +72,9 @@ interface AuthContextType {
   removeAccount: (userId: number) => void;
   isAddingAccount: boolean;
   setIsAddingAccount: (v: boolean) => void;
+  // App-wide settings
+  appSettings: AppSettings | null;
+  refreshAppSettings: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -127,6 +138,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [storedAccounts, setStoredAccounts] = useState<StoredAccount[]>([]);
   const [isAddingAccount, setIsAddingAccount] = useState(false);
   const [activeRole, setActiveRole] = useState<string>(localStorage.getItem(ACTIVE_ROLE_KEY) || '');
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+
+  const refreshAppSettings = async () => {
+    try {
+      const settings = await api.getAppSettings();
+      setAppSettings(settings);
+    } catch {
+      setAppSettings({ payments_enabled: false, payment_surcharge_percent: 7, payment_gateway_percent: 2, payment_dev_share_percent: 5, enabled_sports: ['soccer'] });
+    }
+  };
 
   const refreshUser = async () => {
     try {
@@ -142,6 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Update stored accounts list for display
         setStoredAccounts(accounts);
       }
+      // Fetch app settings once per session after login
+      await refreshAppSettings();
     } catch (err) {
       localStorage.removeItem('token');
       setUser(null);
@@ -321,6 +344,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeRole: effectiveRole, switchRole,
       storedAccounts, switchAccount, addAccount, removeAccount,
       isAddingAccount, setIsAddingAccount,
+      appSettings, refreshAppSettings,
     }}>
       {children}
     </AuthContext.Provider>

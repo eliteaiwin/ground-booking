@@ -6,9 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { User, Phone, Mail, MapPin, Trophy, Camera } from 'lucide-react';
+import { useSports } from '../lib/sports';
 
 
-const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin', 'Pune'];
 
 interface Props {
@@ -17,6 +17,7 @@ interface Props {
 
 export default function OnboardingProfile({ onComplete }: Props) {
   const { user, refreshUser } = useAuth();
+  const enabledSports = useSports();
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -37,24 +38,24 @@ export default function OnboardingProfile({ onComplete }: Props) {
       setLastName(user.last_name || '');
       setEmail(user.email || '');
       setPhone(user.phone || '');
-      // Normalize stored sports (e.g. lowercase) to the canonical ALL_SPORTS values
+      // Normalize stored sports to enabled sport keys
       const normalized = (user.sports || []).map(us => {
-        const match = ALL_SPORTS.find(s => s.toLowerCase() === us.toLowerCase());
-        return match || us;
+        const match = enabledSports.find(s => s.key.toLowerCase() === us.toLowerCase());
+        return match ? match.key : us;
       });
       setSports(normalized);
       setLocations(user.locations || []);
       setProfilePic(user.profile_pic || '');
     }
-  }, [user]);
+  }, [user, enabledSports]);
 
-  const isSportSelected = (sport: string) => sports.some(s => s.toLowerCase() === sport.toLowerCase());
+  const isSportSelected = (sportKey: string) => sports.some(s => s.toLowerCase() === sportKey.toLowerCase());
 
-  const toggleSport = (sport: string) => {
+  const toggleSport = (sportKey: string) => {
     setSports(prev => {
-      const existing = prev.find(s => s.toLowerCase() === sport.toLowerCase());
-      if (existing) return prev.filter(s => s.toLowerCase() !== sport.toLowerCase());
-      return [...prev, sport];
+      const existing = prev.find(s => s.toLowerCase() === sportKey.toLowerCase());
+      if (existing) return prev.filter(s => s.toLowerCase() !== sportKey.toLowerCase());
+      return [...prev, sportKey];
     });
   };
 
@@ -184,17 +185,17 @@ export default function OnboardingProfile({ onComplete }: Props) {
               <div className="space-y-1">
                 <Label className="flex items-center gap-1"><Trophy size={14} /> Sports</Label>
                 <div className="flex flex-wrap gap-2">
-                  {ALL_SPORTS.map(sport => (
+                  {enabledSports.map(sport => (
                     <button
-                      key={sport}
+                      key={sport.key}
                       type="button"
-                      onClick={() => toggleSport(sport)}
+                      onClick={() => toggleSport(sport.key)}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                        isSportSelected(sport)
+                        isSportSelected(sport.key)
                           ? 'bg-green-600 text-white border-green-600'
                           : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
                       }`}
-                    >{sport}</button>
+                    >{sport.icon} {sport.label}</button>
                   ))}
                 </div>
               </div>

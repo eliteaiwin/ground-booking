@@ -60,6 +60,7 @@ class BulkImportRequest(BaseModel):
 class AppSettingsRequest(BaseModel):
     payments_enabled: Optional[bool] = None
     payment_surcharge_percent: Optional[float] = None
+    enabled_sports: Optional[List[str]] = None
 
 
 async def require_admin(user_id: int, db: aiosqlite.Connection):
@@ -577,11 +578,14 @@ async def get_app_settings(
     surcharge = float(await get_app_setting(db, 'payment_surcharge_percent', '7'))
     gateway = float(await get_app_setting(db, 'payment_gateway_percent', '2'))
     dev_share = float(await get_app_setting(db, 'payment_dev_share_percent', '5'))
+    enabled_sports_raw = await get_app_setting(db, 'enabled_sports', 'soccer')
+    enabled_sports = [s.strip() for s in enabled_sports_raw.split(',') if s.strip()]
     return {
         "payments_enabled": payments_enabled,
         "payment_surcharge_percent": surcharge,
         "payment_gateway_percent": gateway,
         "payment_dev_share_percent": dev_share,
+        "enabled_sports": enabled_sports,
     }
 
 
@@ -597,4 +601,6 @@ async def update_app_settings(
         await set_app_setting(db, 'payments_enabled', 'true' if req.payments_enabled else 'false')
     if req.payment_surcharge_percent is not None:
         await set_app_setting(db, 'payment_surcharge_percent', str(req.payment_surcharge_percent))
+    if req.enabled_sports is not None:
+        await set_app_setting(db, 'enabled_sports', ','.join(req.enabled_sports))
     return await get_app_settings(user_id, db)

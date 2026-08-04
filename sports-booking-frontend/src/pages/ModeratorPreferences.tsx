@@ -4,21 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Settings } from 'lucide-react';
-
-const ALL_SPORTS = [
-  { key: 'soccer', label: 'Soccer', icon: '\u26BD', defaultPlayers: 16 },
-  { key: 'cricket', label: 'Cricket', icon: '\uD83C\uDFCF', defaultPlayers: 14 },
-  { key: 'badminton', label: 'Badminton', icon: '\uD83C\uDFF8', defaultPlayers: 4 },
-  { key: 'basketball', label: 'Basketball', icon: '\uD83C\uDFC0', defaultPlayers: 10 },
-  { key: 'hockey', label: 'Hockey', icon: '\uD83C\uDFD2', defaultPlayers: 14 },
-];
+import { ArrowLeft, Settings, DollarSign, Trophy } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { ALL_SPORTS } from '../lib/sports';
 
 interface Props {
   onBack: () => void;
 }
 
 export default function ModeratorPreferences({ onBack }: Props) {
+  const { appSettings, refreshAppSettings, isAdmin } = useAuth();
   const [prefs, setPrefs] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState('');
   const [success, setSuccess] = useState('');
@@ -75,6 +70,56 @@ export default function ModeratorPreferences({ onBack }: Props) {
     }
   };
 
+  const toggleSportEnabled = async (sportKey: string) => {
+    if (!isAdmin || !appSettings) return;
+    const current = new Set(appSettings.enabled_sports || []);
+    if (current.has(sportKey)) current.delete(sportKey);
+    else current.add(sportKey);
+    setSaving('sports');
+    try {
+      await api.updateAppSettings({ enabled_sports: Array.from(current) });
+      await refreshAppSettings();
+      setSuccess('sports');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const handleTogglePayments = async () => {
+    if (!isAdmin || !appSettings) return;
+    setSaving('payments');
+    try {
+      await api.updateAppSettings({ payments_enabled: !appSettings.payments_enabled, payment_surcharge_percent: appSettings.payment_surcharge_percent });
+      await refreshAppSettings();
+      setSuccess('payments');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const handleSurchargeChange = async (value: string) => {
+    if (!isAdmin || !appSettings) return;
+    const pct = parseFloat(value);
+    if (isNaN(pct)) return;
+    setSaving('payments');
+    try {
+      await api.updateAppSettings({ payments_enabled: appSettings.payments_enabled, payment_surcharge_percent: pct });
+      await refreshAppSettings();
+      setSuccess('payments');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving('');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -91,7 +136,7 @@ export default function ModeratorPreferences({ onBack }: Props) {
             <ArrowLeft size={16} /> Back
           </button>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            <Settings size={20} /> Moderator Preferences
+            <Settings size={20} /> Admin & Moderator Preferences
           </h1>
         </div>
       </header>
@@ -132,6 +177,76 @@ export default function ModeratorPreferences({ onBack }: Props) {
             </Button>
           </CardContent>
         </Card>
+
+        {isAdmin && appSettings && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2"><Trophy size={18} /> Enabled Sports</CardTitle>
+              <p className="text-sm text-gray-500">Only enabled sports appear when creating games or filling profiles.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {success === 'sports' && <div className="bg-green-50 text-green-600 p-3 rounded-md text-sm">Sports settings saved!</div>}
+              <div className="grid grid-cols-2 gap-3">
+                {ALL_SPORTS.map(sport => {
+                  const enabled = appSettings.enabled_sports?.includes(sport.key);
+                  return (
+                    <button
+                      key={sport.key}
+                      type="button"
+                      disabled={saving === 'sports'}
+                      onClick={() => toggleSportEnabled(sport.key)}
+                      className={`flex items-center gap-2 p-3 rounded-lg border text-left transition-all ${
+                        enabled
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'bg-gray-50 border-gray-200 text-gray-400'
+                      }`}
+                    >
+                      <span className="text-xl">{sport.icon}</span>
+                      <span className="text-sm font-medium">{sport.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isAdmin && appSettings && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2"><DollarSign size={18} /> Payments</CardTitle>
+              <p className="text-sm text-gray-500">Toggle in-app payments and surcharge.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {success === 'payments' && <div className="bg-green-50 text-green-600 p-3 rounded-md text-sm">Payment settings saved!</div>}
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={appSettings.payments_enabled}
+                  onChange={handleTogglePayments}
+                  disabled={saving === 'payments'}
+                  className="rounded border-gray-300"
+                />
+                In-App Payments Enabled
+              </label>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Payment Surcharge (%)</label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={appSettings.payment_surcharge_percent}
+                  onChange={(e) => handleSurchargeChange(e.target.value)}
+                  disabled={saving === 'payments'}
+                  className="w-full"
+                />
+              </div>
+              <p className="text-xs text-gray-500">
+                When disabled, players cannot pay through the app and moderators mark payments offline. When enabled, costs include the surcharge.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

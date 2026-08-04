@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Trophy, Medal, Star, Target } from 'lucide-react';
+import { useSports } from '../lib/sports';
 
 interface Ranking {
   rank: number;
@@ -31,6 +32,7 @@ const formatPlayerDisplay = (name: string, phone: string) => {
 };
 
 export default function HallOfFame({ onBack }: Props) {
+  const enabledSports = useSports();
   const [rankings, setRankings] = useState<Ranking[]>([]);
   const [sportFilter, setSportFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -90,11 +92,9 @@ export default function HallOfFame({ onBack }: Props) {
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sports</SelectItem>
-              <SelectItem value="soccer">Soccer</SelectItem>
-              <SelectItem value="cricket">Cricket</SelectItem>
-              <SelectItem value="badminton">Badminton</SelectItem>
-              <SelectItem value="basketball">Basketball</SelectItem>
-              <SelectItem value="hockey">Hockey</SelectItem>
+              {enabledSports.map(s => (
+                <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button size="sm" variant="outline" onClick={loadRankings}>Refresh</Button>

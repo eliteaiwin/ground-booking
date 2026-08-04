@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Search, Users, Trophy, Calendar, MapPin, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useSports, sportLabel } from '../lib/sports';
 
 interface Player {
   user_id: number;
@@ -139,6 +140,7 @@ interface Props {
 export default function GameSearch({ onBack, onViewGame }: Props) {
   const { user } = useAuth();
   const { activeTheme } = useTheme();
+  const enabledSports = useSports();
 
   // Filter state
   const [timeRange, setTimeRange] = useState('next_1_week');
@@ -292,19 +294,9 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Sports</SelectItem>
-                    {userSports.length > 0 ? (
-                      userSports.map(s => (
-                        <SelectItem key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</SelectItem>
-                      ))
-                    ) : (
-                      <>
-                        <SelectItem value="soccer">Soccer</SelectItem>
-                        <SelectItem value="cricket">Cricket</SelectItem>
-                        <SelectItem value="badminton">Badminton</SelectItem>
-                        <SelectItem value="basketball">Basketball</SelectItem>
-                        <SelectItem value="hockey">Hockey</SelectItem>
-                      </>
-                    )}
+                    {(userSports.length > 0 ? userSports : enabledSports.map(s => s.key)).map(s => (
+                      <SelectItem key={s} value={s}>{sportLabel(s)}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

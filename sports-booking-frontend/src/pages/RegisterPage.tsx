@@ -7,16 +7,16 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { X } from 'lucide-react';
+import { useSports, sportLabel } from '../lib/sports';
 
-const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin'];
 
 const SPORT_POSITIONS: Record<string, string[]> = {
-  Soccer: ['Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
-  Cricket: ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
-  Badminton: ['Singles', 'Doubles'],
-  Basketball: ['Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
-  Hockey: ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
+  soccer: ['Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
+  cricket: ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
+  badminton: ['Singles', 'Doubles'],
+  basketball: ['Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
+  hockey: ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
 };
 
 interface Props {
@@ -25,6 +25,7 @@ interface Props {
 
 export default function RegisterPage({ onSwitchToLogin }: Props) {
   const { register } = useAuth();
+  const availableSports = useSports();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -261,10 +262,10 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
             <div className="space-y-2">
               <Label>Preferred Sports</Label>
               <div className="flex flex-wrap gap-3">
-                {ALL_SPORTS.map(sport => (
-                  <label key={sport} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={sports.includes(sport)} onCheckedChange={() => toggleSport(sport)} />
-                    <span className="text-sm">{sport}</span>
+                {availableSports.map(sport => (
+                  <label key={sport.key} className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox checked={sports.includes(sport.key)} onCheckedChange={() => toggleSport(sport.key)} />
+                    <span className="text-sm">{sport.icon} {sport.label}</span>
                   </label>
                 ))}
               </div>
@@ -276,7 +277,7 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
                 <Label>Preferred Positions</Label>
                 {sports.map(sport => (
                   <div key={sport} className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-sm font-medium text-gray-700 mb-2">{sport}</p>
+                    <p className="text-sm font-medium text-gray-700 mb-2">{sportLabel(sport)}</p>
                     <div className="flex flex-wrap gap-2">
                       {(SPORT_POSITIONS[sport] || []).map(pos => (
                         <button

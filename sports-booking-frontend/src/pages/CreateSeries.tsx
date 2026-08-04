@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { useSports } from '../lib/sports';
 
 interface UserItem {
   id: number;
@@ -45,6 +46,7 @@ interface Props {
 
 export default function CreateSeries({ onBack }: Props) {
   const { user } = useAuth();
+  const sports = useSports();
   const [seriesName, setSeriesName] = useState('');
   const [sportType, setSportType] = useState('soccer');
   const [groundName, setGroundName] = useState('');
@@ -86,6 +88,14 @@ export default function CreateSeries({ onBack }: Props) {
       api.listUsers().then((u: UserItem[]) => setAllUsers(u)).catch(() => {}),
     ]);
   }, []);
+
+  useEffect(() => {
+    if (sports.length > 0 && !sports.find(s => s.key === sportType)) {
+      setSportType(sports[0].key);
+      if (sportDefaults[sports[0].key]) setMaxPlayers(String(sportDefaults[sports[0].key]));
+      if (SPORT_DURATIONS[sports[0].key]) setDurationMinutes(String(SPORT_DURATIONS[sports[0].key]));
+    }
+  }, [sports, sportType, sportDefaults]);
 
   const handleSportChange = (val: string) => {
     setSportType(val);
@@ -186,11 +196,9 @@ export default function CreateSeries({ onBack }: Props) {
                   <Select value={sportType} onValueChange={handleSportChange}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="soccer">&#9917; Soccer</SelectItem>
-                      <SelectItem value="cricket">&#127951; Cricket</SelectItem>
-                      <SelectItem value="badminton">&#127992; Badminton</SelectItem>
-                      <SelectItem value="basketball">&#127936; Basketball</SelectItem>
-                      <SelectItem value="hockey">&#127954; Hockey</SelectItem>
+                      {sports.map(s => (
+                        <SelectItem key={s.key} value={s.key}>{s.icon} {s.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
