@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2 } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
@@ -178,6 +178,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [firstTimeAlert, setFirstTimeAlert] = useState<string | null>(null);
   const [showCancelPreview, setShowCancelPreview] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [addPlayerSearch, setAddPlayerSearch] = useState('');
+  const [addingPlayerId, setAddingPlayerId] = useState<number | null>(null);
   const [cancelPreview, setCancelPreview] = useState<{
     confirmed_players: number; total_players: number; paid_players: number; refund_amount: number;
     title: string; ground_name: string; game_date: string; game_time: string;
@@ -1211,7 +1213,60 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="p-4 pt-0">
+            <CardContent className="p-4 pt-0 space-y-3">
+              {(isAdmin || isModerator || isGroundManagement) && game.status !== 'completed' && game.status !== 'cancelled' && (
+                <div className="space-y-2">
+                  <Label className="text-xs text-gray-500 flex items-center gap-1"><Search size={12} /> Add player by name or phone</Label>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
+                    <Input
+                      placeholder="Type first few characters..."
+                      value={addPlayerSearch}
+                      onChange={(e) => setAddPlayerSearch(e.target.value)}
+                      className="pl-8 text-sm"
+                    />
+                  </div>
+                  {addPlayerSearch.trim() && (
+                    <div className="border rounded-md divide-y max-h-36 overflow-y-auto">
+                      {availableForNomination
+                        .filter(u => {
+                          const q = addPlayerSearch.toLowerCase();
+                          return u.name.toLowerCase().includes(q) || u.phone.includes(q);
+                        })
+                        .slice(0, 6)
+                        .map(u => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            disabled={addingPlayerId === u.id}
+                            onClick={async () => {
+                              setAddingPlayerId(u.id);
+                              try {
+                                await api.nominatePlayer(game.id, u.id);
+                                await loadGame();
+                                setAddPlayerSearch('');
+                              } catch (err: unknown) {
+                                setError(err instanceof Error ? err.message : 'Failed to add player');
+                              } finally {
+                                setAddingPlayerId(null);
+                              }
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between"
+                          >
+                            <span>{formatPlayerDisplay(u.name, u.phone)}</span>
+                            <Plus size={14} className="text-green-600" />
+                          </button>
+                        ))}
+                      {availableForNomination.filter(u => {
+                        const q = addPlayerSearch.toLowerCase();
+                        return u.name.toLowerCase().includes(q) || u.phone.includes(q);
+                      }).length === 0 && (
+                        <p className="px-3 py-2 text-xs text-gray-400">No matching players</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {game.selected_players.length === 0 ? (
                 <p className="text-sm text-gray-400">No players yet</p>
               ) : (

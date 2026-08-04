@@ -1307,8 +1307,8 @@ async def nominate_player(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] not in ("voting_open", "draft"):
-        raise HTTPException(status_code=400, detail="Voting is not open")
+    if game["status"] not in ("draft", "voting_open", "in_progress"):
+        raise HTTPException(status_code=400, detail="Players can only be added to games that are draft, open for voting, or in progress")
 
     # Check if user exists
     cursor = await db.execute("SELECT id FROM users WHERE id = ?", (req.user_id,))
