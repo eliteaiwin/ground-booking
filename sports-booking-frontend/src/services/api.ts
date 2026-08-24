@@ -251,11 +251,22 @@ export const api = {
   completeGame: (id: number, payload?: {
     played_user_ids?: number[];
     team_a_score?: number; team_b_score?: number;
-    goal_scorers?: { user_id: number; goals: number }[];
+    goal_scorers?: { user_id: number; goals: number; own_goals?: number }[];
   }) =>
     request(`/api/games/${id}/complete`, {
       method: 'POST',
       body: payload ? JSON.stringify(payload) : JSON.stringify({}),
+    }),
+
+  editCompletedGame: (id: number, payload: {
+    played_user_ids: number[];
+    team_scores?: { team_id: number; score: number }[];
+    team_assignments?: Record<number, number | null>;
+    goal_scorers?: { user_id: number; goals: number; own_goals: number }[];
+  }) =>
+    request(`/api/games/${id}/edit-result`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   cancelGamePreview: (id: number) =>

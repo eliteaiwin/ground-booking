@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 import aiosqlite
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -110,6 +110,24 @@ class CompleteGameRequest(BaseModel):
     team_b_score: Optional[int] = None
     goal_scorers: Optional[List[dict]] = None  # [{"user_id": int, "goals": int}]
     played_user_ids: Optional[List[int]] = None  # players who actually played and should pay
+
+
+class TeamScore(BaseModel):
+    team_id: int
+    score: int
+
+
+class GoalScorerEntry(BaseModel):
+    user_id: int
+    goals: int = 0
+    own_goals: int = 0
+
+
+class EditCompletedGameRequest(BaseModel):
+    played_user_ids: List[int]
+    team_scores: Optional[List[TeamScore]] = None
+    team_assignments: Optional[Dict[str, Optional[int]]] = None
+    goal_scorers: Optional[List[GoalScorerEntry]] = None
 
 
 class MarkPaymentRequest(BaseModel):
@@ -324,10 +342,10 @@ async def _build_rankings(
     )
     potd_rows = await cursor.fetchall()
 
-    # Goals
+    # Goals (net of own goals)
     cursor = await db.execute(
         f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
-                   SUM(gs.goals) as total_goals,
+                   SUM(gs.goals - gs.own_goals) as total_goals,
                    COUNT(DISTINCT gs.game_id) as games_scored_in
             FROM goal_scorers gs
             JOIN users u ON gs.user_id = u.id
@@ -806,14 +824,14 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
         # Get goal scorers
         cursor = await db.execute(
-            """SELECT gs.user_id, gs.goals, u.name, u.phone
+            """SELECT gs.user_id, gs.goals, gs.own_goals, u.name, u.phone
                FROM goal_scorers gs JOIN users u ON gs.user_id = u.id
-               WHERE gs.game_id = ? ORDER BY gs.goals DESC""",
+               WHERE gs.game_id = ? ORDER BY (gs.goals - gs.own_goals) DESC, gs.goals DESC""",
             (game_id,)
         )
         scorer_rows = await cursor.fetchall()
         result["goal_scorers"] = [
-            {"user_id": s["user_id"], "name": s["name"], "phone": s["phone"], "goals": s["goals"]}
+            {"user_id": s["user_id"], "name": s["name"], "phone": s["phone"], "goals": s["goals"], "own_goals": s["own_goals"]}
             for s in scorer_rows
         ]
     except Exception:
@@ -1758,6 +1776,141 @@ async def complete_game(
     return await get_game_dict(db, game_id)
 
 
+@router.post("/{game_id}/edit-result")
+async def edit_completed_game_result(
+    game_id: int,
+    req: EditCompletedGameRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Edit who played, team assignments, score, and goal scorers after a game is completed."""
+    await require_admin_or_moderator(user_id, db)
+
+    game = await _get_game(db, game_id)
+    if game["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Only completed games can be edited")
+
+    cursor = await db.execute("SELECT user_id FROM game_players WHERE game_id = ?", (game_id,))
+    all_rows = await cursor.fetchall()
+    all_player_ids = {r["user_id"] for r in all_rows}
+
+    if not req.played_user_ids:
+        raise HTTPException(status_code=400, detail="At least one player must have played")
+
+    played_user_ids = [uid for uid in req.played_user_ids if uid in all_player_ids]
+    if not played_user_ids:
+        raise HTTPException(status_code=400, detail="No valid players selected")
+
+    # Reset all players to not played, then mark the played ones.
+    await db.execute(
+        "UPDATE game_players SET status = 'waiting', played = 0, team_id = NULL WHERE game_id = ?",
+        (game_id,)
+    )
+    placeholders = ",".join("?" * len(played_user_ids))
+    await db.execute(
+        f"UPDATE game_players SET status = 'selected', played = 1 WHERE game_id = ? AND user_id IN ({placeholders})",
+        (game_id, *played_user_ids)
+    )
+
+    # Apply team assignments for played users
+    if req.team_assignments:
+        tc = await db.execute("SELECT id FROM game_teams WHERE game_id = ?", (game_id,))
+        valid_teams = {r["id"] for r in await tc.fetchall()}
+        for uid_str, team_id in req.team_assignments.items():
+            uid_int = int(uid_str)
+            if uid_int in played_user_ids and team_id in valid_teams:
+                await db.execute(
+                    "UPDATE game_players SET team_id = ? WHERE game_id = ? AND user_id = ?",
+                    (team_id, game_id, uid_int)
+                )
+
+    # Update team scores
+    if req.team_scores:
+        tc = await db.execute("SELECT id FROM game_teams WHERE game_id = ? ORDER BY team_order", (game_id,))
+        team_rows = await tc.fetchall()
+        if len(team_rows) >= 2:
+            score_map = {ts.team_id: ts.score for ts in req.team_scores}
+            team_a_id = team_rows[0]["id"]
+            team_b_id = team_rows[1]["id"]
+            await db.execute("DELETE FROM game_scores WHERE game_id = ?", (game_id,))
+            await db.execute(
+                """INSERT INTO game_scores (game_id, team_a_id, team_a_score, team_b_id, team_b_score)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    game_id,
+                    team_a_id,
+                    score_map.get(team_a_id, 0),
+                    team_b_id,
+                    score_map.get(team_b_id, 0),
+                )
+            )
+
+    # Update goal scorers (including own goals)
+    await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
+    if req.goal_scorers:
+        for gs in req.goal_scorers:
+            if gs.user_id in played_user_ids and (gs.goals > 0 or gs.own_goals > 0):
+                await db.execute(
+                    "INSERT INTO goal_scorers (game_id, user_id, goals, own_goals) VALUES (?, ?, ?, ?)",
+                    (game_id, gs.user_id, max(0, gs.goals), max(0, gs.own_goals))
+                )
+
+    # Remove pending payment obligations for players who did not play.
+    unplayed_ids = [uid for uid in all_player_ids if uid not in played_user_ids]
+    if unplayed_ids:
+        placeholders = ",".join("?" * len(unplayed_ids))
+        await db.execute(
+            f"DELETE FROM payments WHERE game_id = ? AND user_id IN ({placeholders}) AND status = 'pending'",
+            (game_id, *unplayed_ids)
+        )
+
+    # Recalculate per-player cost and payment amounts.
+    base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
+    pay_settings = await _payment_settings(db)
+    ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
+    per_person = _per_person_amount(ground_cost, len(played_user_ids), game["max_players"])
+
+    await db.execute(
+        "UPDATE games SET cost_per_person = ?, ground_cost = ? WHERE id = ?",
+        (per_person, base_ground_cost, game_id)
+    )
+
+    # Upsert payments for played users
+    for uid in played_user_ids:
+        await db.execute(
+            "INSERT OR IGNORE INTO payments (game_id, user_id, amount, status) VALUES (?, ?, ?, 'pending')",
+            (game_id, uid, per_person)
+        )
+    placeholders = ",".join("?" * len(played_user_ids))
+    await db.execute(
+        f"UPDATE payments SET amount = ? WHERE game_id = ? AND user_id IN ({placeholders})",
+        (per_person, game_id, *played_user_ids)
+    )
+
+    # Re-evaluate payment status based on paid_amount
+    pc = await db.execute(
+        "SELECT id, amount, paid_amount, status FROM payments WHERE game_id = ? AND user_id IN ({})".format(placeholders),
+        (game_id, *played_user_ids)
+    )
+    pay_rows = await pc.fetchall()
+    for pr in pay_rows:
+        new_status = "paid" if (pr["paid_amount"] or 0) >= pr["amount"] else "pending"
+        if new_status != pr["status"]:
+            if new_status == "paid":
+                await db.execute(
+                    "UPDATE payments SET status = 'paid', paid_at = ? WHERE id = ?",
+                    (datetime.now(timezone.utc).isoformat(), pr["id"])
+                )
+            else:
+                await db.execute(
+                    "UPDATE payments SET status = 'pending', paid_at = NULL WHERE id = ?",
+                    (pr["id"],)
+                )
+
+    await db.commit()
+    return await get_game_dict(db, game_id)
+
+
 @router.get("/{game_id}/cancel-preview")
 async def cancel_game_preview(
     game_id: int,
@@ -2503,9 +2656,9 @@ async def get_player_stats(
     )
     potd_by_sport = await cursor.fetchall()
 
-    # Goals by sport
+    # Goals by sport (net of own goals)
     cursor = await db.execute(
-        """SELECT g.sport_type, SUM(gs.goals) as total_goals
+        """SELECT g.sport_type, SUM(gs.goals - gs.own_goals) as total_goals
            FROM goal_scorers gs
            JOIN games g ON gs.game_id = g.id
            WHERE gs.user_id = ? AND g.status = 'completed'

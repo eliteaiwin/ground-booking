@@ -289,6 +289,7 @@ async def init_db():
             game_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             goals INTEGER NOT NULL DEFAULT 1,
+            own_goals INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (game_id) REFERENCES games(id),
             FOREIGN KEY (user_id) REFERENCES users(id),
@@ -629,6 +630,10 @@ async def init_db():
         pass
     try:
         await db.execute("ALTER TABLE games ADD COLUMN note_after_players TEXT")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE goal_scorers ADD COLUMN own_goals INTEGER NOT NULL DEFAULT 0")
     except Exception:
         pass
 

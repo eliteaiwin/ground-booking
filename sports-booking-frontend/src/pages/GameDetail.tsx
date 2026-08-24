@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, X, Copy } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
+import EditCompletedGameDialog from './EditCompletedGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
@@ -81,7 +82,7 @@ interface Game {
     team_a_id: number | null; team_a_name: string; team_a_score: number;
     team_b_id: number | null; team_b_name: string; team_b_score: number;
   } | null;
-  goal_scorers: { user_id: number; name: string; phone: string; goals: number }[];
+  goal_scorers: { user_id: number; name: string; phone: string; goals: number; own_goals: number }[];
   note_before_players: string;
   note_after_players: string;
 }
@@ -199,6 +200,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [goalScorers, setGoalScorers] = useState<Record<number, number>>({});
   const [scoreStep, setScoreStep] = useState<'scores' | 'scorers'>('scores');
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [showEditResultDialog, setShowEditResultDialog] = useState(false);
   const [pendingPlayedUserIds, setPendingPlayedUserIds] = useState<number[] | null>(null);
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
@@ -308,6 +310,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
     } finally {
       setActionLoading('');
     }
+  };
+
+  const handleEditResult = async (payload: {
+    played_user_ids: number[];
+    team_scores?: { team_id: number; score: number }[];
+    team_assignments?: Record<number, number | null>;
+    goal_scorers?: { user_id: number; goals: number; own_goals: number }[];
+  }) => {
+    await handleAction('edit-result', () => api.editCompletedGame(game!.id, payload));
+    setShowEditResultDialog(false);
   };
 
   const handleQuitClick = async () => {
@@ -565,11 +577,21 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         <span className="text-green-800">{formatPlayerDisplay(s.name, s.phone)}</span>
                         <span className="font-semibold text-green-700">
                           {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
+                          {s.own_goals > 0 && <span className="text-red-600 ml-1">({s.own_goals} own)</span>}
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
+              )}
+              {(isAdmin || isModerator) && game.status === 'completed' && (
+                <Button
+                  variant="outline"
+                  className="w-full mt-3 border-green-700 text-green-700 hover:bg-green-50"
+                  onClick={() => setShowEditResultDialog(true)}
+                >
+                  <Pencil size={16} className="mr-2" /> Edit Game Result
+                </Button>
               )}
             </CardContent>
           </Card>
@@ -1129,6 +1151,19 @@ export default function GameDetail({ gameId, onBack }: Props) {
               />
             </>
           )}
+
+          <EditCompletedGameDialog
+            open={showEditResultDialog}
+            onOpenChange={setShowEditResultDialog}
+            onSave={handleEditResult}
+            allPlayers={[...game.selected_players, ...game.waiting_list]}
+            teams={game.teams}
+            gameScore={game.game_score}
+            goalScorers={game.goal_scorers}
+            groundCost={game.ground_cost}
+            currency={currency}
+            loading={actionLoading === 'edit-result'}
+          />
 
           {/* Payment for current user - PrePaid */}
           {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payment_timing === 'before' && (game.status === 'voting_open' || game.status === 'in_progress') && (
