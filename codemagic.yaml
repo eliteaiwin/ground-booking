@@ -102,7 +102,7 @@ workflows:
   turf-booking-android:
     name: Turf Booking Android Build
     max_build_duration: 120
-    instance_type: linux
+    instance_type: mac_mini_m2
     environment:
       groups:
         - appstore_credentials
