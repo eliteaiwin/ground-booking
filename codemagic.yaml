@@ -98,3 +98,53 @@ workflows:
         notify:
           success: true
           failure: true
+
+  turf-booking-android:
+    name: Turf Booking Android Build
+    max_build_duration: 120
+    instance_type: linux_x2
+    environment:
+      groups:
+        - appstore_credentials
+      vars:
+        PACKAGE_NAME: "com.elitedev.turfbooking"
+      node: 22
+    cache:
+      cache_paths:
+        - sports-booking-frontend/node_modules
+        - $HOME/.npm
+        - $HOME/.gradle/caches
+    scripts:
+      - name: Install Node dependencies
+        script: |
+          cd sports-booking-frontend
+          npm install
+      - name: Build web assets
+        script: |
+          cd sports-booking-frontend
+          if [ -z "${VITE_API_URL:-}" ]; then
+            echo "VITE_API_URL=https://ground-booking-eleg.onrender.com" > .env
+            echo "Warning: VITE_API_URL not set; using production Render URL."
+          fi
+          npm run build
+      - name: Sync Capacitor Android project
+        script: |
+          cd sports-booking-frontend
+          npx cap sync android
+      - name: Bump Android version code
+        script: |
+          sed -i "s/versionCode [0-9]*/versionCode $BUILD_NUMBER/" sports-booking-frontend/android/app/build.gradle
+      - name: Build Android AAB and APK
+        script: |
+          cd sports-booking-frontend/android
+          ./gradlew bundleRelease assembleRelease
+    artifacts:
+      - sports-booking-frontend/android/app/build/outputs/bundle/release/*.aab
+      - sports-booking-frontend/android/app/build/outputs/apk/release/*.apk
+    publishing:
+      email:
+        recipients:
+          - eliteaiwin@gmail.com
+        notify:
+          success: true
+          failure: true
