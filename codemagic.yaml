@@ -109,6 +109,7 @@ workflows:
       vars:
         PACKAGE_NAME: "com.elitedev.turfbooking"
       node: 22
+      java: 21
     cache:
       cache_paths:
         - sports-booking-frontend/node_modules
