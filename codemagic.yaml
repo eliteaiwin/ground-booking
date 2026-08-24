@@ -133,7 +133,8 @@ workflows:
           npx cap sync android
       - name: Bump Android version code
         script: |
-          sed -i "s/versionCode [0-9]*/versionCode $BUILD_NUMBER/" sports-booking-frontend/android/app/build.gradle
+          sed -i.bak "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER:-1}/" "$CM_BUILD_DIR/sports-booking-frontend/android/app/build.gradle"
+          rm -f "$CM_BUILD_DIR/sports-booking-frontend/android/app/build.gradle.bak"
       - name: Build Android AAB and APK
         script: |
           cd sports-booking-frontend/android
