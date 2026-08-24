@@ -136,6 +136,19 @@ workflows:
         script: |
           sed -i.bak "s/versionCode [0-9]*/versionCode ${BUILD_NUMBER:-1}/" "$CM_BUILD_DIR/sports-booking-frontend/android/app/build.gradle"
           rm -f "$CM_BUILD_DIR/sports-booking-frontend/android/app/build.gradle.bak"
+      - name: Prepare Android release keystore
+        script: |
+          KEYSTORE="$CM_BUILD_DIR/sports-booking-frontend/android/app/ground-booking-release.keystore"
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | openssl base64 -d -out "$KEYSTORE"
+          else
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE" -alias ground-booking \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass groundbooking123 -keypass groundbooking123 \
+              -dname "CN=Ground Booking, OU=Ground Booking, O=Ground Booking, L=Bangalore, ST=Karnataka, C=IN"
+            echo "Generated new release keystore. To reuse it, base64-encode $KEYSTORE and set it as ANDROID_KEYSTORE_BASE64 in Codemagic environment variables."
+          fi
       - name: Build Android AAB and APK
         script: |
           cd sports-booking-frontend/android
