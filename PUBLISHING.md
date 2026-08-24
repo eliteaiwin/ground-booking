@@ -42,11 +42,26 @@ sequenceDiagram
 
 ## Android release
 
-1. In Codemagic, run the **Android workflow** on the `main` branch.
-2. Download `app-release.aab`.
-3. Go to https://play.google.com/console/developers.
-4. Select **Turf Booking** → **Release** → **Production**.
-5. Click **Create new release** → upload the `.aab` → **Review release** → **Start rollout to Production**.
+**Recommended: Codemagic**
+1. Make sure Codemagic has synced the latest `codemagic.yaml` (refresh the app page or go to **Application settings → Update repository**).
+2. In Codemagic, run the **`turf-booking-android`** workflow on the `main` branch.
+3. Download `app-release.aab` (and optionally `app-release.apk`) from the **Artifacts** tab.
+4. Go to https://play.google.com/console/developers.
+5. Select **Turf Booking** → **Release** → **Production**.
+6. Click **Create new release** → upload the `.aab` → **Review release** → **Start rollout to Production**.
+
+**Fallback: local build**
+- On a machine with Android SDK + Java:
+  ```bash
+  cd sports-booking-frontend
+  npm install
+  echo "VITE_API_URL=https://ground-booking-eleg.onrender.com" > .env
+  npm run build
+  npx cap sync android
+  cd android
+  ./gradlew bundleRelease assembleRelease
+  ```
+- Output: `sports-booking-frontend/android/app/build/outputs/bundle/release/app-release.aab` and `.../apk/release/app-release.apk`.
 
 ## iOS release
 
