@@ -1,6 +1,6 @@
 workflows:
   turf-booking-ios:
-    name: Turf Booking iOS Build & Upload
+    name: Elite Turf Booking iOS Build & Upload
     max_build_duration: 110
     instance_type: mac_mini_m2
     environment:
@@ -100,7 +100,7 @@ workflows:
           failure: true
 
   turf-booking-android:
-    name: Turf Booking Android Build
+    name: Elite Turf Booking Android Build
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:

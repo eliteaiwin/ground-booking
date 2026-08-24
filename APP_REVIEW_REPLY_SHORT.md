@@ -1,6 +1,6 @@
-App Review reply for Turf Bookingg (iOS, Guideline 2.1)
+App Review reply for Elite Turf Booking (iOS, Guideline 2.1)
 
-Thank you for reviewing Turf Bookingg. Below is the requested App Review information.
+Thank you for reviewing Elite Turf Booking. Below is the requested App Review information.
 
 1. Screen recording
 Video: https://app.devin.ai/attachments/2bbc669d-0d3d-49f3-a8ce-d518f20bd288/rec-c618ee4c-8123-4916-8fcc-e9162bda5eac-edited.mp4
@@ -13,7 +13,7 @@ This is a browser-based mobile-sized placeholder recording showing app launch, l
 [Replace with the exact models/OS versions you tested.]
 
 3. App function and target audience
-Turf Bookingg organizes amateur turf/sports games in India. Players confirm attendance, moderators split teams and ground costs, the app tracks payments, and players vote Player of the Day. Rankings are recalculated after each game. It is free and has no in-app purchases or paid digital content.
+Elite Turf Booking organizes amateur turf/sports games in India. Players confirm attendance, moderators split teams and ground costs, the app tracks payments, and players vote Player of the Day. Rankings are recalculated after each game. It is free and has no in-app purchases or paid digital content.
 
 4. How to access main features
 Log in with:

@@ -371,9 +371,9 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
       <Card className="w-full max-w-md relative z-10 shadow-2xl">
         <div className="text-center pt-8">
           <div className="mx-auto mb-4 w-24 h-24 bg-white rounded-2xl shadow-lg overflow-hidden">
-            <img src="/turf-icon.png" alt="Turf Booking" className="w-full h-full object-cover" />
+            <img src="/turf-icon.png" alt="Elite Turf Booking" className="w-full h-full object-cover" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Turf Booking</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Elite Turf Booking</h1>
           <p className="text-gray-500 mt-1">Sign in to your account</p>
         </div>
         {loginContent}

@@ -1,4 +1,4 @@
-# Turf Booking – Build & Publish Runbook
+# Elite Turf Booking – Build & Publish Runbook
 
 Each time Devin pushes a new build, follow this sequence to get the web, Android, and iOS versions live.
 
@@ -47,7 +47,7 @@ sequenceDiagram
 2. In Codemagic, run the **`turf-booking-android`** workflow on the `main` branch.
 3. Download `app-release.aab` (and optionally `app-release.apk`) from the **Artifacts** tab.
 4. Go to https://play.google.com/console/developers.
-5. Select **Turf Booking** → **Release** → **Production**.
+5. Select **Elite Turf Booking** → **Release** → **Production**.
 6. Click **Create new release** → upload the `.aab` → **Review release** → **Start rollout to Production**.
 
 **Fallback: local build**
@@ -67,7 +67,7 @@ sequenceDiagram
 
 1. In Codemagic, run the **iOS workflow** on the `main` branch.
 2. If certificates / App Store Connect API key are set in the `appstore_credentials` environment group, Codemagic uploads automatically to App Store Connect.
-3. Open https://appstoreconnect.apple.com/apps → **Turf Booking**.
+3. Open https://appstoreconnect.apple.com/apps → **Elite Turf Booking**.
 4. Go to **TestFlight** to add internal testers.
 5. When ready: **App Store** tab → **Create new submission** → fill metadata → **Submit for Review**.
 

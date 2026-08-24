@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Turf Booking</string>
-    <string name="title_activity_main">Turf Booking</string>
+    <string name="app_name">Elite Turf Booking</string>
+    <string name="title_activity_main">Elite Turf Booking</string>
         <string name="package_name">com.elitedev.turfbooking</string>
         <string name="custom_url_scheme">com.elitedev.turfbooking</string>
 </resources>

@@ -118,7 +118,7 @@ export default function OnboardingProfile({ onComplete }: Props) {
       <div className="max-w-lg mx-auto py-8">
         <div className="text-center mb-6">
           <div className="w-20 h-20 bg-white rounded-2xl shadow-lg mx-auto mb-4 flex items-center justify-center overflow-hidden">
-            <img src="/turf-icon.png" alt="Turf Booking" className="w-full h-full object-cover" />
+            <img src="/turf-icon.png" alt="Elite Turf Booking" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Complete Your Profile</h1>
           <p className="text-sm text-gray-500">Tell us a little about yourself to get started.</p>

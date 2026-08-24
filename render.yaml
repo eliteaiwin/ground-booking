@@ -1,4 +1,4 @@
-# Render.com deployment configuration for Turf Booking App
+# Render.com deployment configuration for Elite Turf Booking
 # Deploy at: https://dashboard.render.com/select-repo?type=web
 #
 # This deploys the backend (FastAPI) with the frontend built and served
