@@ -106,6 +106,7 @@ workflows:
     environment:
       groups:
         - appstore_credentials
+        - android-signing
       vars:
         PACKAGE_NAME: "com.elitedev.turfbooking"
       node: 22
@@ -138,17 +139,20 @@ workflows:
           rm -f "$CM_BUILD_DIR/sports-booking-frontend/android/app/build.gradle.bak"
       - name: Prepare Android release keystore
         script: |
+          set -e
           KEYSTORE="$CM_BUILD_DIR/sports-booking-frontend/android/app/ground-booking-release.keystore"
-          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            printf '%s' "$ANDROID_KEYSTORE_BASE64" | openssl base64 -d -out "$KEYSTORE"
-          else
-            keytool -genkeypair -v \
-              -keystore "$KEYSTORE" -alias ground-booking \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass groundbooking123 -keypass groundbooking123 \
-              -dname "CN=Ground Booking, OU=Ground Booking, O=Ground Booking, L=Bangalore, ST=Karnataka, C=IN"
-            echo "Generated new release keystore. To reuse it, base64-encode $KEYSTORE and set it as ANDROID_KEYSTORE_BASE64 in Codemagic environment variables."
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 is not set."
+            echo "Add the android-signing variable group in Codemagic with the base64 release keystore."
+            exit 1
           fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | openssl base64 -d -out "$KEYSTORE"
+          keytool -list -v -keystore "$KEYSTORE" -storepass "${ANDROID_KEYSTORE_PASSWORD:-groundbooking123}" -alias "${ANDROID_KEY_ALIAS:-ground-booking}" >/dev/null 2>&1 || {
+            echo "ERROR: Could not verify the decoded keystore; check ANDROID_KEYSTORE_BASE64, alias and password."
+            exit 1
+          }
+          echo "Release keystore decoded and verified. SHA1 fingerprint:"
+          keytool -list -v -keystore "$KEYSTORE" -storepass "${ANDROID_KEYSTORE_PASSWORD:-groundbooking123}" | awk '/SHA1:/{print $NF}'
       - name: Build Android AAB and APK
         script: |
           cd sports-booking-frontend/android
