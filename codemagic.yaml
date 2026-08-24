@@ -146,7 +146,7 @@ workflows:
             echo "Add the android-signing variable group in Codemagic with the base64 release keystore."
             exit 1
           fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | openssl base64 -d -out "$KEYSTORE"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | fold -w 64 | openssl base64 -d -out "$KEYSTORE"
           keytool -list -v -keystore "$KEYSTORE" -storepass "${ANDROID_KEYSTORE_PASSWORD:-groundbooking123}" -alias "${ANDROID_KEY_ALIAS:-ground-booking}" >/dev/null 2>&1 || {
             echo "ERROR: Could not verify the decoded keystore; check ANDROID_KEYSTORE_BASE64, alias and password."
             exit 1
