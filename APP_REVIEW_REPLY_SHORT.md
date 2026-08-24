@@ -3,8 +3,8 @@ App Review reply for Turf Bookingg (iOS, Guideline 2.1)
 Thank you for reviewing Turf Bookingg. Below is the requested App Review information.
 
 1. Screen recording
-Video: [PASTE LINK TO PHYSICAL IPHONE SCREEN RECORDING HERE]
-The recording shows app launch, registration/login, joining a game, viewing game details/teams/payments, moderator game-completion flow, profile photo upload (camera/photo-library permission), and account deletion (Profile > Delete Account).
+Video: https://app.devin.ai/attachments/2bbc669d-0d3d-49f3-a8ce-d518f20bd288/rec-c618ee4c-8123-4916-8fcc-e9162bda5eac-edited.mp4
+This is a browser-based mobile-sized placeholder recording showing app launch, login, dashboard, profile, and account-deletion confirmation. Apple requested a recording made on a physical iPhone; replace this link with a real-device recording when possible.
 
 2. Test devices
 - iPhone 14 Pro, iOS 17.5.1
