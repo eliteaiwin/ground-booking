@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/__pycache__
+**/*.db
+**/uploads
+**/*.log
+sports-booking-frontend/android
+sports-booking-frontend/ios
+.git
