@@ -65,7 +65,7 @@ workflows:
           if app-store-connect bundle-ids capabilities "$BUNDLE_RES_ID" --json | grep -q '"APPLE_ID_AUTH"'; then
             echo "Sign in with Apple already enabled"
           else
-            app-store-connect bundle-ids enable-capabilities "$BUNDLE_RES_ID" --capability APPLE_ID_AUTH
+            app-store-connect bundle-ids enable-capabilities "$BUNDLE_RES_ID" --capability "Sign In with Apple"
           fi
       - name: Fetch or create signing files
         script: |
