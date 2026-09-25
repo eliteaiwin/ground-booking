@@ -79,15 +79,15 @@ sequenceDiagram
 
 ## Pre-build checks for every store release
 
-- `VITE_API_URL` points to the production Render URL.
+- `VITE_API_URL` points to the production Fly.io URL (https://elite-turf-booking.fly.dev).
 - `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID` are set.
 - Android version name / code are bumped in `android/app/build.gradle` or `package.json`.
 - iOS version and build number are bumped in `ios/App/App.xcodeproj/project.pbxproj`.
-- SMS provider credentials are configured if you want real OTP; until then the app uses demo OTP.
+- Twilio Verify secrets are set on the backend (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`, optional `DEFAULT_COUNTRY_CODE`, default `+91`) so OTPs go out as real SMS; without them the backend falls back to demo OTP (code returned in the response).
 
 ## Files in this repo that control publishing
 
-- `render.yaml` – Render web service settings.
+- `fly.toml` / `Dockerfile` – Fly.io deployment settings.
 - `codemagic.yaml` – Codemagic build workflows.
 - `sports-booking-frontend/capacitor.config.ts` – Capacitor app config.
 - `sports-booking-frontend/android/app/build.gradle` – Android version and signing.
