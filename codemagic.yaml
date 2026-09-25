@@ -65,7 +65,27 @@ workflows:
           if app-store-connect bundle-ids capabilities "$BUNDLE_RES_ID" --json | grep -q '"APPLE_ID_AUTH"'; then
             echo "Sign in with Apple already enabled"
           else
-            app-store-connect bundle-ids enable-capabilities "$BUNDLE_RES_ID" --capability "Sign In with Apple"
+            pip3 install --quiet pyjwt cryptography
+            BUNDLE_RES_ID="$BUNDLE_RES_ID" python3 - <<'PY'
+          import json, os, time, urllib.request, jwt
+          token = jwt.encode(
+              {"iss": os.environ["APP_STORE_CONNECT_ISSUER_ID"], "iat": int(time.time()),
+               "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
+              os.environ["APP_STORE_CONNECT_PRIVATE_KEY"], algorithm="ES256",
+              headers={"kid": os.environ["APP_STORE_CONNECT_KEY_IDENTIFIER"]})
+          body = {"data": {"type": "bundleIdCapabilities", "attributes": {
+              "capabilityType": "APPLE_ID_AUTH",
+              "settings": [{"key": "APPLE_ID_AUTH_APP_CONSENT",
+                            "options": [{"key": "PRIMARY_APP_CONSENT"}]}]},
+              "relationships": {"bundleId": {"data": {
+                  "type": "bundleIds", "id": os.environ["BUNDLE_RES_ID"]}}}}}
+          req = urllib.request.Request(
+              "https://api.appstoreconnect.apple.com/v1/bundleIdCapabilities",
+              data=json.dumps(body).encode(), method="POST",
+              headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+          with urllib.request.urlopen(req) as r:
+              print("Enabled Sign in with Apple:", r.status)
+          PY
           fi
       - name: Fetch or create signing files
         script: |
