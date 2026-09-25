@@ -9,6 +9,7 @@
     "build:mobile": "tsc -b && vite build && cap copy ios && cap copy android",
     "lint": "eslint .",
     "preview": "vite preview",
+    "postinstall": "node scripts/patch-apple-sign-in.cjs",
     "sync:ios": "cap sync ios",
     "sync:android": "cap sync android"
   },
