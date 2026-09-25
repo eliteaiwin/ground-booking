@@ -7,6 +7,8 @@ import random
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+import jwt
+from jwt import PyJWKClient
 from pathlib import Path
 
 from ..database import get_db
@@ -65,7 +67,16 @@ class GoogleAuthRequest(BaseModel):
     id_token: str  # Google ID token from Google Identity Services
 
 
+class AppleAuthRequest(BaseModel):
+    identity_token: str  # JWT from Sign in with Apple
+    given_name: Optional[str] = None  # Apple only sends the name on first sign-in
+    family_name: Optional[str] = None
+
+
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+# Audiences accepted for Sign in with Apple: the iOS bundle id (native) and optional web Services ID.
+APPLE_CLIENT_IDS = [c for c in os.environ.get("APPLE_CLIENT_IDS", "com.elitedev.turfbooking").split(",") if c]
+_apple_jwks = PyJWKClient("https://appleid.apple.com/auth/keys", cache_keys=True)
 
 # Phones whose registration OTP has been verified (phone -> expires_at)
 _verified_registration_phones: dict[str, datetime] = {}
@@ -356,6 +367,70 @@ async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends
 
     token = create_access_token(user_id)
     return {"token": token, "user_id": user_id, "message": "Registration via Google successful"}
+
+
+@router.post("/apple")
+async def apple_auth(req: AppleAuthRequest, db: aiosqlite.Connection = Depends(get_db)):
+    """Authenticate or register via Sign in with Apple.
+
+    Verifies the identity token against Apple's public keys and returns a JWT.
+    Creates a new user if the Apple account is not yet registered.
+    """
+    try:
+        signing_key = _apple_jwks.get_signing_key_from_jwt(req.identity_token)
+        claims = jwt.decode(
+            req.identity_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=APPLE_CLIENT_IDS,
+            issuer="https://appleid.apple.com",
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+    apple_sub = claims["sub"]
+    email = claims.get("email", "")
+
+    cursor = await db.execute("SELECT id FROM users WHERE apple_id = ?", (apple_sub,))
+    user = await cursor.fetchone()
+
+    if not user and email:
+        cursor = await db.execute("SELECT id FROM users WHERE email = ?", (email,))
+        user = await cursor.fetchone()
+        if user:
+            await db.execute("UPDATE users SET apple_id = ? WHERE id = ?", (apple_sub, user["id"]))
+            await db.commit()
+
+    if user:
+        dis_cursor = await db.execute("SELECT is_disabled, disabled_reason FROM users WHERE id = ?", (user["id"],))
+        dis_row = await dis_cursor.fetchone()
+        if dis_row and dis_row["is_disabled"]:
+            reason = dis_row["disabled_reason"] or ""
+            detail = "Your account has been disabled by an administrator."
+            if reason:
+                detail += f" Reason: {reason}"
+            raise HTTPException(status_code=403, detail=detail)
+        token = create_access_token(user["id"])
+        return {"token": token, "user_id": user["id"]}
+
+    first_name = req.given_name or ""
+    last_name = req.family_name or ""
+    full_name = f"{first_name} {last_name}".strip() or (email.split("@")[0] if email else "Apple User")
+    user_code = await generate_user_code(db)
+    placeholder_phone = f"a-{apple_sub[:20]}"
+
+    cursor = await db.execute(
+        """INSERT INTO users (user_code, first_name, last_name, name, phone, email,
+           apple_id, notification_preference, sports, locations, sport_positions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'whatsapp', '', '', '')""",
+        (user_code, first_name, last_name, full_name, placeholder_phone, email or None, apple_sub)
+    )
+    user_id = cursor.lastrowid
+    await _assign_roles(db, user_id)
+    await db.commit()
+
+    token = create_access_token(user_id)
+    return {"token": token, "user_id": user_id, "message": "Registration via Apple successful"}
 
 
 @router.post("/change-password")

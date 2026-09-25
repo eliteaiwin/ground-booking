@@ -5,7 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Smartphone, Chrome, Mail, Lock, ArrowLeft, Phone } from 'lucide-react';
+import { Smartphone, Chrome, Mail, Lock, ArrowLeft, Phone, Apple } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { SignInWithApple } from '@capacitor-community/apple-sign-in';
 
 declare global {
   interface Window {
@@ -28,6 +30,8 @@ declare global {
 }
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const APPLE_CLIENT_ID = 'com.elitedev.turfbooking';
+const APPLE_SIGN_IN_AVAILABLE = Capacitor.getPlatform() === 'ios';
 
 interface Props {
   onSwitchToRegister: () => void;
@@ -38,7 +42,7 @@ interface Props {
 type LoginMode = 'choose' | 'password' | 'otp' | 'google';
 
 export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddUserMode }: Props) {
-  const { login, loginWithOTP, requestOTP, loginWithGoogle } = useAuth();
+  const { login, loginWithOTP, requestOTP, loginWithGoogle, loginWithApple } = useAuth();
   const [loginMode, setLoginMode] = useState<LoginMode>('choose');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -67,6 +71,25 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
       setLoading(false);
     }
   }, [loginWithGoogle]);
+
+  const handleAppleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const { response } = await SignInWithApple.authorize({
+        clientId: APPLE_CLIENT_ID,
+        redirectURI: 'https://elite-turf-booking.fly.dev/auth/apple/callback',
+        scopes: 'email name',
+      });
+      await loginWithApple(response.identityToken, response.givenName, response.familyName);
+      localStorage.removeItem('last_login_identifier');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (!/cancel/i.test(msg)) setError(msg || 'Apple login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (loginMode !== 'google' || !GOOGLE_CLIENT_ID) return;
@@ -179,6 +202,14 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
             sublabel="We will send a one-time code to your phone"
             onClick={() => setLoginMode('otp')}
           />
+          {APPLE_SIGN_IN_AVAILABLE && (
+            <OptionButton
+              icon={<Apple size={22} />}
+              label="Sign in with Apple"
+              sublabel="Use your Apple ID; keep your email private"
+              onClick={handleAppleLogin}
+            />
+          )}
           {GOOGLE_CLIENT_ID && (
             <OptionButton
               icon={<Chrome size={22} />}

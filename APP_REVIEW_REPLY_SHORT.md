@@ -1,44 +1,49 @@
-App Review reply for Elite Turf Booking (iOS, Guideline 2.1)
+App Review reply for Elite Turf Booking (iOS) — Guidelines 4.8 and 2.1
 
-Thank you for reviewing Elite Turf Booking. Below is the requested App Review information.
+Thank you for reviewing Elite Turf Booking. We have addressed both issues in the new build.
+
+Guideline 4.8 – Login Services
+The new build adds Sign in with Apple as a login option on the login screen (shown above Google Sign-In). It requests only name and email, supports Hide My Email, and does not collect interactions for advertising. Sign in with Apple, Google Sign-In, phone OTP (SMS), and email/phone + password are all available.
+
+Guideline 2.1 – Information Needed
 
 1. Screen recording
-Video: https://app.devin.ai/attachments/2bbc669d-0d3d-49f3-a8ce-d518f20bd288/rec-c618ee4c-8123-4916-8fcc-e9162bda5eac-edited.mp4
-This is a browser-based mobile-sized placeholder recording showing app launch, login, dashboard, profile, and account-deletion confirmation. Apple requested a recording made on a physical iPhone; replace this link with a real-device recording when possible.
+[PASTE LINK TO RECORDING MADE ON A PHYSICAL iPHONE RUNNING THE LATEST iOS]
+The recording starts at app launch and shows: registration with SMS OTP, Sign in with Apple, login with demo credentials, Dashboard, joining a game, game detail (teams, payments, discussion), Profile, and Profile > Delete Account. The app requests no sensitive permissions (no location, camera, contacts, or tracking). There are no purchases or subscriptions.
 
-2. Test devices
-- iPhone 14 Pro, iOS 17.5.1
-- iPhone 15 Pro Max, iOS 18.0
-- iPhone SE (3rd gen), iOS 17.6
-[Replace with the exact models/OS versions you tested.]
+2. Devices and operating systems tested
+- iPhone [MODEL], iOS [VERSION]
+- iPad Air 11-inch (M3), iPadOS [VERSION]
+[Replace with the exact devices/OS versions you tested via TestFlight.]
 
-3. App function and target audience
-Elite Turf Booking organizes amateur turf/sports games in India. Players confirm attendance, moderators split teams and ground costs, the app tracks payments, and players vote Player of the Day. Rankings are recalculated after each game. It is free and has no in-app purchases or paid digital content.
+3. App purpose and target audience
+Elite Turf Booking organizes amateur turf/sports games (soccer by default) for groups of players in India. Moderators schedule games at a ground, players confirm attendance, teams are split, ground costs are shared and tracked, and players vote Player of the Day. Rankings are recalculated after each game. Target audience: adult amateur players and their game organizers. The app is free with no in-app purchases or paid content.
 
-4. How to access main features
+4. Setting up and accessing main features
 Log in with:
 - Regular player: 9990000001 / password123
 - Admin/moderator: 8951575798 / password123 (or tittlejoseph@gmail.com / password123)
+Or use Sign in with Apple / Google / OTP to create a new account.
+After login the Dashboard lists games. Tap a game to join, view teams, payments, and discussion. Moderators can create games, edit results, and mark payments. Profile contains Edit Profile, Change Password, and Delete Account.
 
-After login the Dashboard lists games. Tap a game to join, view teams, payments, and discussion. Moderators can create games, edit completed-game results, and mark payments. Profile contains Edit Profile, Change Password, and Delete Account.
-
-5. External services
-- Render (FastAPI + SQLite backend, https://elite-turf-booking.fly.dev)
-- Cloudflare (DNS/CDN)
-- Codemagic (CI/CD, iOS/Android builds, App Store upload)
-- Google Identity Services (optional Google sign-in, currently hidden)
-- Cashfree Payments (disabled; payments are tracked offline by the moderator)
-- SMS provider (production SMS OTP pending; app currently shows a demo OTP in the UI)
-- WhatsApp (game invite sharing via wa.me links)
+5. External services, tools and platforms
+- Fly.io – hosts the FastAPI + SQLite backend (https://elite-turf-booking.fly.dev)
+- Sign in with Apple – authentication
+- Google Identity Services – authentication
+- Twilio Verify – SMS one-time passcodes for login/registration
+- Codemagic – CI/CD, iOS/Android builds
+- WhatsApp (wa.me links) – sharing game invites
+- Cashfree Payments – integrated but disabled; payments are recorded offline by the moderator
+No AI services or advertising SDKs are used.
 
 6. Regional differences
-No region locks. English only. Default sport is Soccer; other sports are hidden until the admin enables them in Admin Preferences. Content (grounds, costs, schedules) is set by each group's moderator.
+None. The app functions identically in all regions. English only. Content (grounds, costs, schedules) is set by each group's moderator.
 
-7. Regulated industry / protected material
-Not applicable. The app does not operate in a regulated industry and does not include protected third-party material.
+7. Regulated industry / protected third-party material
+Not applicable.
 
 Account deletion
-Users can delete their account inside the app at Profile > Delete Account. The account is scheduled for deletion, personal data is retained for a 90-day grace period, and after 90 days phone/email and other identifiers are permanently anonymized/removed. The public deletion page is https://elite-turf-booking.fly.dev/#delete-account.
+Profile > Delete Account inside the app. Data is retained for a 90-day grace period, then personal identifiers are permanently removed. Public page: https://elite-turf-booking.fly.dev/#delete-account
 
 Support: https://elite-turf-booking.fly.dev/support.html
 Privacy: https://elite-turf-booking.fly.dev/privacy-policy.html

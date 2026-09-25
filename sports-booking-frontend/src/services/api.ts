@@ -132,6 +132,9 @@ export const api = {
   googleAuth: (data: { id_token: string }) =>
     request('/api/auth/google', { method: 'POST', body: JSON.stringify(data) }),
 
+  appleAuth: (data: { identity_token: string; given_name?: string | null; family_name?: string | null }) =>
+    request('/api/auth/apple', { method: 'POST', body: JSON.stringify(data) }),
+
   getProfile: () => request('/api/auth/me'),
 
   updateProfile: (data: {

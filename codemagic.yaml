@@ -58,6 +58,15 @@ workflows:
             echo "SAVE THIS PRIVATE KEY AS FCI_CERTIFICATE_PRIVATE_KEY (base64) IN CODEMAGIC:"
             openssl base64 -in "$CERT_KEY_PATH"
           fi
+      - name: Enable Sign in with Apple on the App ID
+        script: |
+          set -e
+          BUNDLE_RES_ID=$(app-store-connect bundle-ids list --bundle-id-identifier "$BUNDLE_ID" --strict-match-identifier --json | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["id"])')
+          if app-store-connect bundle-ids capabilities "$BUNDLE_RES_ID" --json | grep -q '"APPLE_ID_AUTH"'; then
+            echo "Sign in with Apple already enabled"
+          else
+            app-store-connect bundle-ids enable-capabilities "$BUNDLE_RES_ID" --capability APPLE_ID_AUTH
+          fi
       - name: Fetch or create signing files
         script: |
           keychain initialize

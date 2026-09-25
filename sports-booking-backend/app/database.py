@@ -439,6 +439,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN locations TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN sport_positions TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN google_id TEXT",
+        "ALTER TABLE users ADD COLUMN apple_id TEXT",
         "ALTER TABLE users ADD COLUMN otp_code TEXT",
         "ALTER TABLE users ADD COLUMN otp_expires_at TIMESTAMP",
         "ALTER TABLE games ADD COLUMN quit_penalty_hours INTEGER NOT NULL DEFAULT 0",

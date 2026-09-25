@@ -56,6 +56,7 @@ interface AuthContextType {
   loginWithOTP: (phone: string, otp: string) => Promise<void>;
   requestOTP: (phone: string) => Promise<{ otp_demo?: string }>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithApple: (identityToken: string, givenName?: string | null, familyName?: string | null) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -221,6 +222,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAddingAccount(false);
   };
 
+  const loginWithApple = async (identityToken: string, givenName?: string | null, familyName?: string | null) => {
+    const res = await api.appleAuth({ identity_token: identityToken, given_name: givenName, family_name: familyName });
+    localStorage.setItem('token', res.token);
+    await refreshUser();
+    setIsAddingAccount(false);
+  };
+
   const register = async (data: RegisterData) => {
     const res = await api.register(data);
     localStorage.setItem('token', res.token);
@@ -343,7 +351,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, login, loginWithOTP, requestOTP, loginWithGoogle,
+      user, loading, login, loginWithOTP, requestOTP, loginWithGoogle, loginWithApple,
       register, logout, refreshUser, isAdmin, isModerator, isGroundManagement, isReadOnly,
       activeRole: effectiveRole, switchRole,
       storedAccounts, switchAccount, addAccount, removeAccount,
