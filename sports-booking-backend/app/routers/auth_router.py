@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..database import get_db
 from ..auth import hash_password, verify_password, create_access_token, get_current_user_id
-from ..otp_service import send_otp, check_otp
+from ..otp_service import send_otp, check_otp, is_email, normalize_identifier
 
 # Profile pictures upload directory
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads"))
@@ -175,7 +175,7 @@ async def login(req: LoginRequest, db: aiosqlite.Connection = Depends(get_db)):
     )
     user = await cursor.fetchone()
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=404, detail="No account found with this phone/email. Please create one.")
 
     if not user["password_hash"]:
         raise HTTPException(status_code=401, detail="No password set. Use OTP or Google login.")
@@ -246,25 +246,47 @@ async def verify_registration_otp(req: OTPVerifyRequest):
 
 @router.post("/otp/request")
 async def request_otp(req: OTPRequestModel, db: aiosqlite.Connection = Depends(get_db)):
-    """Send a login OTP to the registered user's phone."""
-    cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (req.phone,))
-    user = await cursor.fetchone()
-    if not user:
-        raise HTTPException(status_code=404, detail="Phone number not registered")
+    """Send a login OTP to a phone number or email; the account is created on verification if new."""
+    identifier = normalize_identifier(req.phone)
+    user = await _find_user_by_identifier(db, identifier)
+    result = await send_otp(identifier)
+    result["new_user"] = user is None
+    return result
 
-    return await send_otp(req.phone)
+
+async def _find_user_by_identifier(db: aiosqlite.Connection, identifier: str):
+    column = "LOWER(email)" if is_email(identifier) else "phone"
+    cursor = await db.execute(f"SELECT id FROM users WHERE {column} = ?", (identifier,))
+    return await cursor.fetchone()
 
 
 @router.post("/otp/verify")
 async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(get_db)):
-    """Verify OTP and return auth token."""
-    cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (req.phone,))
-    user = await cursor.fetchone()
-    if not user:
-        raise HTTPException(status_code=404, detail="Phone number not registered")
-
-    if not await check_otp(req.phone, req.otp):
+    """Verify OTP and return auth token, creating the account for a new phone number or email."""
+    identifier = normalize_identifier(req.phone)
+    if not await check_otp(identifier, req.otp):
         raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    user = await _find_user_by_identifier(db, identifier)
+    if not user:
+        user_code = await generate_user_code(db)
+        if is_email(identifier):
+            display_name = identifier.split("@")[0]
+            phone, email, phone_verified = f"e-{user_code}", identifier, 0
+        else:
+            display_name = identifier
+            phone, email, phone_verified = identifier, None, 1
+        cursor = await db.execute(
+            """INSERT INTO users (user_code, first_name, last_name, name, phone, email, phone_verified,
+               notification_preference, sports, locations, sport_positions)
+               VALUES (?, '', '', ?, ?, ?, ?, 'whatsapp', '', '', '')""",
+            (user_code, display_name, phone, email, phone_verified)
+        )
+        user_id = cursor.lastrowid
+        await _assign_roles(db, user_id)
+        await db.commit()
+        token = create_access_token(user_id)
+        return {"token": token, "user_id": user_id, "new_user": True}
 
     # Check if user is disabled
     try:

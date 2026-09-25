@@ -4,8 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Smartphone, Chrome, Mail, Lock, ArrowLeft, Phone, Apple } from 'lucide-react';
+import { Smartphone, Mail, ArrowLeft, Phone } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { SignInWithApple } from '@capacitor-community/apple-sign-in';
 
@@ -33,22 +32,37 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const APPLE_CLIENT_ID = 'com.elitedev.turfbooking';
 const APPLE_SIGN_IN_AVAILABLE = Capacitor.getPlatform() === 'ios';
 
+const GoogleIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+  </svg>
+);
+
+const AppleIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="#000" aria-hidden="true">
+    <path d="M16.37 12.7c.02 2.9 2.54 3.86 2.57 3.88-.02.07-.4 1.38-1.33 2.73-.8 1.17-1.63 2.33-2.94 2.35-1.29.02-1.7-.76-3.17-.76-1.47 0-1.93.74-3.15.79-1.26.05-2.22-1.26-3.03-2.42-1.65-2.39-2.91-6.75-1.22-9.69.84-1.46 2.35-2.39 3.98-2.41 1.24-.02 2.41.84 3.17.84.76 0 2.18-1.03 3.68-.88.63.03 2.39.25 3.52 1.91-.09.06-2.1 1.23-2.08 3.66zM13.94 5.5c.67-.81 1.12-1.94 1-3.06-.97.04-2.13.64-2.83 1.45-.62.72-1.16 1.87-1.01 2.97 1.08.08 2.17-.55 2.84-1.36z"/>
+  </svg>
+);
+
 interface Props {
-  onSwitchToRegister: () => void;
+  onSwitchToRegister?: () => void;
   onForgotPassword?: () => void;
   isAddUserMode?: boolean;
 }
 
-type LoginMode = 'choose' | 'password' | 'otp' | 'google';
+type LoginMode = 'choose' | 'email' | 'otp' | 'google';
 
-export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddUserMode }: Props) {
-  const { login, loginWithOTP, requestOTP, loginWithGoogle, loginWithApple } = useAuth();
+export default function LoginPage({ isAddUserMode }: Props) {
+  const { loginWithOTP, requestOTP, loginWithGoogle, loginWithApple } = useAuth();
   const [loginMode, setLoginMode] = useState<LoginMode>('choose');
   const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpDemo, setOtpDemo] = useState('');
+  const [isNewUser, setIsNewUser] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
@@ -121,24 +135,10 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
     }
   }, [loginMode, handleGoogleCallback]);
 
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      await login(identifier, password);
-      localStorage.setItem('last_login_identifier', identifier);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRequestOTP = async () => {
     setError('');
     if (!identifier.trim()) {
-      setError('Please enter your phone number');
+      setError(loginMode === 'email' ? 'Please enter your email' : 'Please enter your phone number');
       return;
     }
     setLoading(true);
@@ -146,6 +146,7 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
       const res = await requestOTP(identifier);
       setOtpSent(true);
       localStorage.setItem('last_login_identifier', identifier);
+      setIsNewUser(Boolean(res.new_user));
       if (res.otp_demo) {
         setOtpDemo(res.otp_demo);
       }
@@ -170,133 +171,77 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
     }
   };
 
-  const OptionButton = ({ icon, label, sublabel, active, onClick }: { icon: React.ReactNode; label: string; sublabel: string; active?: boolean; onClick: () => void }) => (
+  const OptionButton = ({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) => (
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-4 w-full p-4 rounded-xl border-2 transition-all text-left ${
-        active ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white hover:border-green-400'
-      }`}
+      disabled={loading}
+      className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors text-left disabled:opacity-60"
     >
-      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${active ? 'bg-green-600 text-white' : 'bg-green-100 text-green-700'}`}>
-        {icon}
-      </div>
-      <div>
-        <p className="font-semibold text-gray-900">{label}</p>
-        <p className="text-xs text-gray-500">{sublabel}</p>
-      </div>
+      <span className="w-6 h-6 flex items-center justify-center shrink-0">{icon}</span>
+      <span className="font-medium text-gray-900 text-sm">{label}</span>
     </button>
   );
 
+  const isEmailMode = loginMode === 'email';
+
   const loginContent = (
-    <CardContent className="space-y-5">
+    <CardContent className="space-y-4 pt-4">
       {error && (
         <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>
       )}
 
       {loginMode === 'choose' && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <OptionButton
-            icon={<Smartphone size={22} />}
+            icon={<Smartphone size={22} className="text-green-600" />}
             label="Login with OTP"
-            sublabel="We will send a one-time code to your phone"
             onClick={() => setLoginMode('otp')}
           />
           {APPLE_SIGN_IN_AVAILABLE && (
             <OptionButton
-              icon={<Apple size={22} />}
+              icon={<AppleIcon />}
               label="Sign in with Apple"
-              sublabel="Use your Apple ID; keep your email private"
               onClick={handleAppleLogin}
             />
           )}
           {GOOGLE_CLIENT_ID && (
             <OptionButton
-              icon={<Chrome size={22} />}
+              icon={<GoogleIcon />}
               label="Login with Google"
-              sublabel="Use your Google account"
               onClick={() => setLoginMode('google')}
             />
           )}
           <OptionButton
-            icon={<Mail size={22} />}
-            label="Login with Email / Phone"
-            sublabel="Use your phone number or email and password"
-            onClick={() => setLoginMode('password')}
+            icon={<Mail size={22} className="text-blue-600" />}
+            label="Login with Email"
+            onClick={() => setLoginMode('email')}
           />
-          {!GOOGLE_CLIENT_ID && !isAddUserMode && (
-            <p className="text-xs text-gray-400 text-center">Google login is not configured yet. Use OTP or password.</p>
-          )}
         </div>
       )}
 
       {loginMode !== 'choose' && (
         <button
           type="button"
-          onClick={() => { setLoginMode('choose'); setError(''); setOtpSent(false); setOtpDemo(''); }}
+          onClick={() => { setLoginMode('choose'); setError(''); setOtpSent(false); setOtp(''); setOtpDemo(''); }}
           className="flex items-center gap-1 text-sm text-green-600 hover:underline"
         >
           <ArrowLeft size={16} /> Back to options
         </button>
       )}
 
-      {loginMode === 'password' && (
-        <form onSubmit={handlePasswordLogin} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="identifier">Phone or Email</Label>
-            <div className="relative">
-              <Phone size={16} className="absolute left-3 top-3 text-gray-400" />
-              <Input
-                id="identifier"
-                type="text"
-                placeholder="Enter phone number or email"
-                className="pl-10"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <div className="relative">
-              <Lock size={16} className="absolute left-3 top-3 text-gray-400" />
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                className="pl-10"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </Button>
-          {onForgotPassword && (
-            <button
-              type="button"
-              onClick={onForgotPassword}
-              className="text-sm text-green-600 hover:underline w-full text-center mt-2"
-            >
-              Forgot Password?
-            </button>
-          )}
-        </form>
-      )}
-
-      {loginMode === 'otp' && (
+      {(loginMode === 'otp' || loginMode === 'email') && (
         <form onSubmit={handleOTPLogin} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="otp-phone">Phone Number</Label>
+            <Label htmlFor="otp-identifier">{isEmailMode ? 'Email' : 'Phone Number'}</Label>
             <div className="relative">
-              <Phone size={16} className="absolute left-3 top-3 text-gray-400" />
+              {isEmailMode
+                ? <Mail size={16} className="absolute left-3 top-3 text-gray-400" />
+                : <Phone size={16} className="absolute left-3 top-3 text-gray-400" />}
               <Input
-                id="otp-phone"
-                type="tel"
-                placeholder="Enter your phone number"
+                id="otp-identifier"
+                type={isEmailMode ? 'email' : 'tel'}
+                placeholder={isEmailMode ? 'Enter your email' : 'Enter your phone number'}
                 className="pl-10"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -312,21 +257,27 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
               onClick={handleRequestOTP}
               disabled={loading || !identifier}
             >
-              {loading ? 'Sending OTP...' : 'Send OTP'}
+              {loading ? 'Sending code...' : 'Send code'}
             </Button>
           ) : (
             <>
+              <p className="text-sm text-gray-500">
+                We sent a 6-digit code to <strong>{identifier}</strong>.
+                {isNewUser && " We'll create your account when you verify it."}
+              </p>
               {otpDemo && (
                 <div className="bg-blue-50 text-blue-700 p-3 rounded-md text-sm">
-                  Demo OTP: <strong>{otpDemo}</strong> (In production, this would be sent via SMS)
+                  Demo code: <strong>{otpDemo}</strong>
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="otp">Enter OTP</Label>
+                <Label htmlFor="otp">Enter code</Label>
                 <Input
                   id="otp"
                   type="text"
-                  placeholder="Enter 6-digit OTP"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6-digit code"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value)}
                   maxLength={6}
@@ -338,10 +289,10 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
               </Button>
               <button
                 type="button"
-                onClick={() => { setOtpSent(false); setOtpDemo(''); setOtp(''); }}
+                onClick={() => { setOtpSent(false); setOtpDemo(''); setOtp(''); setIsNewUser(false); }}
                 className="text-sm text-green-600 hover:underline w-full text-center"
               >
-                Change phone number
+                {isEmailMode ? 'Change email' : 'Change phone number'}
               </button>
             </>
           )}
@@ -357,7 +308,7 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
             </>
           ) : (
             <>
-              <Chrome size={40} className="mx-auto text-gray-400" />
+              <GoogleIcon />
               <p className="text-sm text-gray-500">Google Sign-In is not configured.</p>
               <p className="text-xs text-gray-400">Set VITE_GOOGLE_CLIENT_ID to enable Google login.</p>
             </>
@@ -365,17 +316,6 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
         </div>
       )}
 
-      {!isAddUserMode && loginMode === 'choose' && (
-        <>
-          <Separator />
-          <p className="text-center text-sm text-gray-500">
-            Don't have an account?{' '}
-            <button type="button" onClick={onSwitchToRegister} className="text-green-600 hover:underline font-medium">
-              Register
-            </button>
-          </p>
-        </>
-      )}
     </CardContent>
   );
 
@@ -400,12 +340,12 @@ export default function LoginPage({ onSwitchToRegister, onForgotPassword, isAddU
       </div>
       <div className="absolute inset-0 bg-gradient-to-br from-green-900/70 to-blue-900/70" />
       <Card className="w-full max-w-md relative z-10 shadow-2xl">
-        <div className="text-center pt-8">
-          <div className="mx-auto mb-4 w-24 h-24 bg-white rounded-2xl shadow-lg overflow-hidden">
+        <div className="text-center pt-6">
+          <div className="mx-auto mb-3 w-20 h-20 bg-white rounded-2xl shadow-lg overflow-hidden">
             <img src="/turf-icon.png" alt="Elite Turf Booking" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900"><span className="text-red-600">Elite</span> Turf Booking</h1>
-          <p className="text-gray-500 mt-1">Sign in to your account</p>
+          <p className="text-gray-500 text-sm mt-1">Sign in to your account</p>
         </div>
         {loginContent}
       </Card>

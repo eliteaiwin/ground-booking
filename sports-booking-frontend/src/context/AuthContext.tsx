@@ -54,7 +54,7 @@ interface AuthContextType {
   loading: boolean;
   login: (identifier: string, password: string) => Promise<void>;
   loginWithOTP: (phone: string, otp: string) => Promise<void>;
-  requestOTP: (phone: string) => Promise<{ otp_demo?: string }>;
+  requestOTP: (phone: string) => Promise<{ otp_demo?: string; new_user?: boolean }>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginWithApple: (identityToken: string, givenName?: string | null, familyName?: string | null) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
