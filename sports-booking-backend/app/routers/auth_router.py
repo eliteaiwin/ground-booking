@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
 import random
-import string
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -12,6 +11,7 @@ from pathlib import Path
 
 from ..database import get_db
 from ..auth import hash_password, verify_password, create_access_token, get_current_user_id
+from ..otp_service import send_otp, check_otp
 
 # Profile pictures upload directory
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads"))
@@ -67,9 +67,8 @@ class GoogleAuthRequest(BaseModel):
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
-# In-memory store for registration OTPs (phone -> {otp, expires_at})
-# In production, use Redis or a DB table.
-_registration_otps: dict[str, dict] = {}
+# Phones whose registration OTP has been verified (phone -> expires_at)
+_verified_registration_phones: dict[str, datetime] = {}
 
 
 class DeleteAccountRequest(BaseModel):
@@ -221,90 +220,40 @@ async def request_registration_otp(req: OTPRequestModel, db: aiosqlite.Connectio
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered. Please log in instead.")
 
-    otp_code = ''.join(random.SystemRandom().choices(string.digits, k=6))
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-
-    _registration_otps[req.phone] = {"otp": otp_code, "expires_at": expires_at}
-
-    # In production, send via SMS/WhatsApp. For demo, return the OTP.
-    return {"message": "OTP sent successfully", "otp_demo": otp_code}
+    return await send_otp(req.phone)
 
 
 @router.post("/otp/verify-registration")
 async def verify_registration_otp(req: OTPVerifyRequest):
     """Verify OTP for phone number during registration (no account needed)."""
-    entry = _registration_otps.get(req.phone)
-    if not entry:
-        raise HTTPException(status_code=401, detail="No OTP requested for this phone number")
-
-    if datetime.now(timezone.utc) > entry["expires_at"]:
-        del _registration_otps[req.phone]
-        raise HTTPException(status_code=401, detail="OTP expired. Please request a new one.")
-
-    import hmac as _hmac
-    if not _hmac.compare_digest(entry["otp"], req.otp):
-        del _registration_otps[req.phone]
+    if not await check_otp(req.phone, req.otp):
         raise HTTPException(status_code=401, detail="Invalid OTP")
 
-    # Mark as verified (keep entry so registration can proceed)
-    _registration_otps[req.phone]["verified"] = True
+    _verified_registration_phones[req.phone] = datetime.now(timezone.utc) + timedelta(minutes=30)
     return {"message": "Phone number verified successfully"}
 
 
 @router.post("/otp/request")
 async def request_otp(req: OTPRequestModel, db: aiosqlite.Connection = Depends(get_db)):
-    """Send OTP to user's phone (simulated - returns OTP for demo)."""
+    """Send a login OTP to the registered user's phone."""
     cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (req.phone,))
     user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=404, detail="Phone number not registered")
 
-    otp_code = ''.join(random.SystemRandom().choices(string.digits, k=6))
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-
-    await db.execute(
-        "UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?",
-        (otp_code, expires_at.isoformat(), user["id"])
-    )
-    await db.commit()
-
-    # In production, send via SMS/WhatsApp. For demo, return the OTP.
-    return {"message": "OTP sent successfully", "otp_demo": otp_code}
+    return await send_otp(req.phone)
 
 
 @router.post("/otp/verify")
 async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(get_db)):
     """Verify OTP and return auth token."""
-    cursor = await db.execute(
-        "SELECT id, otp_code, otp_expires_at FROM users WHERE phone = ?", (req.phone,)
-    )
+    cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (req.phone,))
     user = await cursor.fetchone()
     if not user:
         raise HTTPException(status_code=404, detail="Phone number not registered")
 
-    # Check expiry first to avoid leaking OTP correctness for expired tokens
-    if not user["otp_expires_at"]:
-        raise HTTPException(status_code=401, detail="OTP expired")
-
-    try:
-        expires = datetime.fromisoformat(user["otp_expires_at"])
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires:
-            raise HTTPException(status_code=401, detail="OTP expired")
-    except ValueError:
-        raise HTTPException(status_code=401, detail="OTP expired")
-
-    import hmac as _hmac
-    if not user["otp_code"] or not _hmac.compare_digest(user["otp_code"], req.otp):
-        # Clear OTP on failed attempt to prevent brute-force
-        await db.execute("UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?", (user["id"],))
-        await db.commit()
+    if not await check_otp(req.phone, req.otp):
         raise HTTPException(status_code=401, detail="Invalid OTP")
-
-    # Clear OTP after successful verification
-    await db.execute("UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?", (user["id"],))
-    await db.commit()
 
     # Check if user is disabled
     try:
