@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import aiosqlite
 import json as json_lib
+import os
+import sqlite3
+import tarfile
+import tempfile
+from datetime import datetime
 
-from ..database import get_db, get_app_setting, set_app_setting
+from ..database import get_db, get_app_setting, set_app_setting, DATABASE_PATH
 from ..auth import get_current_user_id, hash_password
-from ..routers.auth_router import generate_user_code, _assign_roles
+from ..routers.auth_router import generate_user_code, _assign_roles, UPLOAD_DIR
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -609,3 +615,28 @@ async def update_app_settings(
     if req.player_name_display is not None:
         await set_app_setting(db, 'player_name_display', req.player_name_display)
     return await get_app_settings(user_id, db)
+
+
+@router.get("/admin/backup")
+async def download_backup(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin-only: download a tar.gz containing a consistent SQLite snapshot and uploaded files."""
+    await require_admin(user_id, db)
+    tmpdir = tempfile.mkdtemp(prefix="backup-")
+    snapshot = os.path.join(tmpdir, "app.db")
+    src = sqlite3.connect(DATABASE_PATH)
+    try:
+        dst = sqlite3.connect(snapshot)
+        src.backup(dst)
+        dst.close()
+    finally:
+        src.close()
+    stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    archive = os.path.join(tmpdir, f"backup-{stamp}.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(snapshot, arcname="app.db")
+        if UPLOAD_DIR.is_dir():
+            tar.add(str(UPLOAD_DIR), arcname="uploads")
+    return FileResponse(archive, media_type="application/gzip", filename=os.path.basename(archive))
