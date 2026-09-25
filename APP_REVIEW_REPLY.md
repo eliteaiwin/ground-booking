@@ -76,7 +76,7 @@ Tap **Register** on the login screen, enter a 10-digit phone number, and the app
 
 ### 5. External services, tools, and platforms
 
-- **Render** (`https://render.com`) — FastAPI + SQLite backend hosting and production API (`https://ground-booking-eleg.onrender.com`).
+- **Render** (`https://render.com`) — FastAPI + SQLite backend hosting and production API (`https://elite-turf-booking.fly.dev`).
 - **Cloudflare** — DNS and CDN for the Render origin.
 - **Codemagic** (`https://codemagic.io`) — CI/CD for iOS and Android builds and App Store Connect upload.
 - **Google Identity Services** — Optional Google sign-in; the button is hidden until a `GOOGLE_CLIENT_ID` is configured.
@@ -97,8 +97,8 @@ Elite Turf Booking does not operate in a regulated industry. All content is user
 - **App name:** Elite Turf Booking
 - **Bundle ID:** `com.elitedev.turfbooking`
 - **Apple ID:** `6795659906`
-- **Privacy Policy:** `https://ground-booking-eleg.onrender.com/privacy-policy.html`
-- **Support URL:** `https://ground-booking-eleg.onrender.com/support.html`
+- **Privacy Policy:** `https://elite-turf-booking.fly.dev/privacy-policy.html`
+- **Support URL:** `https://elite-turf-booking.fly.dev/support.html`
 - **Contact email:** `eliteaiwin@gmail.com`
 - **Demo account (regular player):** `9990000001` / `password123`
 - **Demo account (admin/moderator):** `8951575798` / `password123` or `tittlejoseph@gmail.com` / `password123`

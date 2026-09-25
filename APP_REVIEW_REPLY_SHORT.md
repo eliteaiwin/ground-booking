@@ -23,7 +23,7 @@ Log in with:
 After login the Dashboard lists games. Tap a game to join, view teams, payments, and discussion. Moderators can create games, edit completed-game results, and mark payments. Profile contains Edit Profile, Change Password, and Delete Account.
 
 5. External services
-- Render (FastAPI + SQLite backend, https://ground-booking-eleg.onrender.com)
+- Render (FastAPI + SQLite backend, https://elite-turf-booking.fly.dev)
 - Cloudflare (DNS/CDN)
 - Codemagic (CI/CD, iOS/Android builds, App Store upload)
 - Google Identity Services (optional Google sign-in, currently hidden)
@@ -38,8 +38,8 @@ No region locks. English only. Default sport is Soccer; other sports are hidden 
 Not applicable. The app does not operate in a regulated industry and does not include protected third-party material.
 
 Account deletion
-Users can delete their account inside the app at Profile > Delete Account. The account is scheduled for deletion, personal data is retained for a 90-day grace period, and after 90 days phone/email and other identifiers are permanently anonymized/removed. The public deletion page is https://ground-booking-eleg.onrender.com/#delete-account.
+Users can delete their account inside the app at Profile > Delete Account. The account is scheduled for deletion, personal data is retained for a 90-day grace period, and after 90 days phone/email and other identifiers are permanently anonymized/removed. The public deletion page is https://elite-turf-booking.fly.dev/#delete-account.
 
-Support: https://ground-booking-eleg.onrender.com/support.html
-Privacy: https://ground-booking-eleg.onrender.com/privacy-policy.html
+Support: https://elite-turf-booking.fly.dev/support.html
+Privacy: https://elite-turf-booking.fly.dev/privacy-policy.html
 Contact: eliteaiwin@gmail.com

@@ -15,7 +15,7 @@ sequenceDiagram
 
     U->>GH: Devin pushes latest code
     GH->>R: Auto-deploy backend (render.yaml)
-    R-->>U: Backend live at https://ground-booking-eleg.onrender.com
+    R-->>U: Backend live at https://elite-turf-booking.fly.dev
     U->>CM: Open app, select main branch, start build
     CM->>CM: Build Android (AAB/APK) + iOS
     CM-->>U: Download artifacts
@@ -33,7 +33,7 @@ sequenceDiagram
 
 | # | What to do | URL |
 |---|-----------|-----|
-| 1 | Confirm the backend is live after a push | https://ground-booking-eleg.onrender.com |
+| 1 | Confirm the backend is live after a push | https://elite-turf-booking.fly.dev |
 | 2 | Render service dashboard (check deploy status) | https://dashboard.render.com/web/srv-d9nq6b67bikc73cej5r0 |
 | 3 | Open the Codemagic app and start a build | https://codemagic.io/apps |
 | 4 | Download Android AAB/APK after build | Codemagic Artifacts tab |
@@ -55,7 +55,7 @@ sequenceDiagram
   ```bash
   cd sports-booking-frontend
   npm install
-  echo "VITE_API_URL=https://ground-booking-eleg.onrender.com" > .env
+  echo "VITE_API_URL=https://elite-turf-booking.fly.dev" > .env
   npm run build
   npx cap sync android
   cd android
