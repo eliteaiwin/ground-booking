@@ -2,6 +2,7 @@
 FROM node:22-slim AS frontend
 WORKDIR /frontend
 COPY sports-booking-frontend/package.json sports-booking-frontend/package-lock.json* ./
+COPY sports-booking-frontend/scripts ./scripts
 RUN npm install
 COPY sports-booking-frontend ./
 ARG GOOGLE_CLIENT_ID=
