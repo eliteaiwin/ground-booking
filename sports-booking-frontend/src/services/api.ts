@@ -551,6 +551,9 @@ export const api = {
   getPlayerStats: (playerId: number) =>
     request(`/api/games/player/${playerId}/stats`),
 
+  getPlayerInsights: (playerId: number) =>
+    request(`/api/games/player/${playerId}/insights`),
+
   // Profile Picture Upload
   uploadProfilePic: (file: File) => {
     const formData = new FormData();

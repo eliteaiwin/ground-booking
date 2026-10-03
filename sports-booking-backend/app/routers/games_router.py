@@ -2576,6 +2576,181 @@ async def hall_of_fame(
     }
 
 
+def _count_label(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _others_phrase(n: int) -> str:
+    if n == 0:
+        return "nobody else has done so"
+    if n == 1:
+        return "only one other player has done so"
+    return f"{n} other players have done so"
+
+
+def _leader_suffix(value: int, values: dict, player_id: int, what: str) -> str:
+    """Return ' — the most ...' when the player leads all others on `values`."""
+    if value <= 0 or value < max(values.values(), default=0):
+        return ""
+    tied = sum(1 for uid, v in values.items() if uid != player_id and v == value)
+    if tied > 2:
+        return ""
+    if tied:
+        return f" — joint most {what} with {_count_label(tied, 'other player')}"
+    return f" — the most {what} by anyone"
+
+
+@router.get("/player/{player_id}/insights")
+async def get_player_insights(
+    player_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Generate highlight statements for a player compared with all other players."""
+    cursor = await db.execute("SELECT id, name FROM users WHERE id = ?", (player_id,))
+    player = await cursor.fetchone()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    cursor = await db.execute(
+        """SELECT gp.user_id, gp.team_id, gs.team_a_id, gs.team_a_score, gs.team_b_id, gs.team_b_score
+           FROM game_players gp
+           JOIN games g ON gp.game_id = g.id
+           LEFT JOIN game_scores gs ON gs.game_id = g.id
+           WHERE g.status = 'completed' AND gp.status = 'selected'"""
+    )
+    played: Dict[int, int] = {}
+    results: Dict[int, Dict[str, int]] = {}
+    for row in await cursor.fetchall():
+        uid = row["user_id"]
+        played[uid] = played.get(uid, 0) + 1
+        outcome = _outcome_for_player(row)
+        if outcome:
+            rec = results.setdefault(uid, {"win": 0, "draw": 0, "loss": 0})
+            rec[outcome] += 1
+
+    cursor = await db.execute(
+        """SELECT gs.user_id, gs.goals, gs.own_goals
+           FROM goal_scorers gs
+           JOIN games g ON gs.game_id = g.id
+           WHERE g.status = 'completed'"""
+    )
+    goals: Dict[int, int] = {}
+    own_goals: Dict[int, int] = {}
+    best_game: Dict[int, int] = {}
+    for row in await cursor.fetchall():
+        uid = row["user_id"]
+        goals[uid] = goals.get(uid, 0) + (row["goals"] or 0)
+        own_goals[uid] = own_goals.get(uid, 0) + (row["own_goals"] or 0)
+        best_game[uid] = max(best_game.get(uid, 0), row["goals"] or 0)
+
+    cursor = await db.execute(
+        """SELECT p.game_id, p.user_id
+           FROM payments p
+           JOIN games g ON p.game_id = g.id
+           WHERE g.status = 'completed' AND p.status = 'paid' AND p.paid_at IS NOT NULL
+           ORDER BY p.game_id, p.paid_at, p.id"""
+    )
+    payers_by_game: Dict[int, List[int]] = {}
+    for row in await cursor.fetchall():
+        payers_by_game.setdefault(row["game_id"], []).append(row["user_id"])
+    last_payer: Dict[int, int] = {}
+    first_payer: Dict[int, int] = {}
+    pay_positions: Dict[int, List[float]] = {}
+    for payers in payers_by_game.values():
+        if len(payers) < 3:
+            continue
+        first_payer[payers[0]] = first_payer.get(payers[0], 0) + 1
+        last_payer[payers[-1]] = last_payer.get(payers[-1], 0) + 1
+        for idx, uid in enumerate(payers):
+            pay_positions.setdefault(uid, []).append(idx / (len(payers) - 1))
+
+    facts: List[Dict[str, str]] = []
+    games = played.get(player_id, 0)
+    if games == 0:
+        return {"user_id": player_id, "name": player["name"], "insights": [
+            {"category": "games", "text": "Hasn't played any completed games yet."}
+        ]}
+
+    rec = results.get(player_id, {"win": 0, "draw": 0, "loss": 0})
+    text = f"Has played {_count_label(games, 'game')}"
+    decided = rec["win"] + rec["draw"] + rec["loss"]
+    if decided:
+        text += f" — {rec['win']} won, {rec['draw']} drawn, {rec['loss']} lost"
+        if rec["loss"] == 0:
+            text += ", never lost one"
+    text += _leader_suffix(games, played, player_id, "games played")
+    facts.append({"category": "games", "text": text + "."})
+
+    if decided >= 3:
+        win_rates = {
+            uid: r["win"] / (r["win"] + r["draw"] + r["loss"])
+            for uid, r in results.items() if r["win"] + r["draw"] + r["loss"] >= 3
+        }
+        rate = win_rates[player_id]
+        better = sum(1 for uid, v in win_rates.items() if uid != player_id and v > rate)
+        if better < 3 and rec["win"] > 0:
+            facts.append({"category": "games", "text": (
+                f"Wins {round(rate * 100)}% of games — #{better + 1} win rate "
+                f"among {len(win_rates)} regular players."
+            )})
+
+    streaks = await _compute_streaks(db, player_id)
+    if streaks["longest_win_streak"] >= 3:
+        facts.append({"category": "streak", "text": f"Longest winning streak: {_count_label(streaks['longest_win_streak'], 'game')}."})
+    if streaks["current_win_streak"] >= 2:
+        facts.append({"category": "streak", "text": f"Currently on a winning streak of {_count_label(streaks['current_win_streak'], 'game')}."})
+
+    total = goals.get(player_id, 0)
+    if total > 0:
+        text = f"Has scored {_count_label(total, 'goal')}"
+        suffix = _leader_suffix(total, goals, player_id, "goals")
+        if not suffix:
+            rank = 1 + sum(1 for v in goals.values() if v > total)
+            suffix = f" — #{rank} among {len([v for v in goals.values() if v > 0])} scorers"
+        facts.append({"category": "goals", "text": text + suffix + "."})
+        if games >= 3:
+            facts.append({"category": "goals", "text": f"Averages {total / games:.1f} goals per game."})
+
+    best = best_game.get(player_id, 0)
+    if best >= 2:
+        others = sum(1 for uid, v in best_game.items() if uid != player_id and v >= best)
+        facts.append({"category": "goals", "text": f"Scored {best} goals in a single game — {_others_phrase(others)}."})
+
+    og = own_goals.get(player_id, 0)
+    if og > 0:
+        text = f"Has scored {_count_label(og, 'own goal')} so far"
+        facts.append({"category": "own_goals", "text": text + _leader_suffix(og, own_goals, player_id, "own goals") + "."})
+
+    lp = last_payer.get(player_id, 0)
+    if lp > 0:
+        text = f"Has been the last person to pay in {_count_label(lp, 'game')}"
+        facts.append({"category": "payments", "text": text + _leader_suffix(lp, last_payer, player_id, "times") + "."})
+
+    regular_payers = {uid: sum(p) / len(p) for uid, p in pay_positions.items() if len(p) >= 3}
+    if player_id in regular_payers:
+        avg = regular_payers[player_id]
+        quicker = sum(1 for uid, v in regular_payers.items() if uid != player_id and v < avg)
+        fp = first_payer.get(player_id, 0)
+        if quicker < 3:
+            text = f"Among the top 3 quickest payers (#{quicker + 1} of {len(regular_payers)})"
+            if fp:
+                text += f", paid first in {_count_label(fp, 'game')}"
+            facts.append({"category": "payments", "text": text + "."})
+        elif fp:
+            facts.append({"category": "payments", "text": f"Was the first to pay in {_count_label(fp, 'game')}."})
+
+    rankings = await _build_rankings(db)
+    fame = next((r for r in rankings if r["user_id"] == player_id), None)
+    if fame and fame["rank"] <= 10:
+        text = f"Ranked #{fame['rank']} in the Hall of Fame"
+        if fame["first_pref_wins"]:
+            text += f", voted Player of the Day first choice {_count_label(fame['first_pref_wins'], 'time')}"
+        facts.append({"category": "fame", "text": text + "."})
+
+    return {"user_id": player_id, "name": player["name"], "insights": facts}
+
+
 @router.get("/player/{player_id}/stats")
 async def get_player_stats(
     player_id: int,

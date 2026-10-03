@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, X, Copy } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, X, Copy, Sparkles, Goal, Flame, Frown } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -207,6 +208,10 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [markPaidComment, setMarkPaidComment] = useState('');
   const [profileUserId, setProfileUserId] = useState<number | null>(null);
   const [profileRank, setProfileRank] = useState<{ rank: number; points: number; goals: number; games: number } | null>(null);
+  const profileUserIdRef = useRef<number | null>(null);
+  const [profileTab, setProfileTab] = useState('info');
+  const [profileInsights, setProfileInsights] = useState<{ category: string; text: string }[] | null>(null);
+  const [profileInsightsError, setProfileInsightsError] = useState('');
   const [hallOfFameRankings, setHallOfFameRankings] = useState<{ rank: number; user_id: number; name: string; potd_points: number; total_goals: number; games_played: number }[]>([]);
 
   const currency = user?.currency || 'Rs';
@@ -282,7 +287,37 @@ export default function GameDetail({ gameId, onBack }: Props) {
     } else {
       setProfileRank(null);
     }
+    setProfileTab('info');
+    setProfileInsights(null);
+    setProfileInsightsError('');
+    profileUserIdRef.current = userId;
     setProfileUserId(userId);
+  };
+
+  const showProfileTab = (tab: string) => {
+    setProfileTab(tab);
+    if (tab !== 'insights' || !profileUserId || profileInsights) return;
+    const requestedId = profileUserId;
+    api.getPlayerInsights(requestedId)
+      .then((data: { insights: { category: string; text: string }[] }) => {
+        if (profileUserIdRef.current === requestedId) setProfileInsights(data.insights || []);
+      })
+      .catch((err: unknown) => {
+        if (profileUserIdRef.current === requestedId) {
+          setProfileInsightsError(err instanceof Error ? err.message : 'Failed to load insights');
+        }
+      });
+  };
+
+  const insightIcon = (category: string) => {
+    switch (category) {
+      case 'goals': return <Goal size={16} className="text-green-600" />;
+      case 'own_goals': return <Frown size={16} className="text-red-500" />;
+      case 'payments': return <Wallet size={16} className="text-blue-600" />;
+      case 'streak': return <Flame size={16} className="text-orange-500" />;
+      case 'fame': return <Trophy size={16} className="text-yellow-500" />;
+      default: return <Users size={16} className="text-purple-600" />;
+    }
   };
 
   const handleAction = async (action: string, fn: () => Promise<unknown>) => {
@@ -1782,23 +1817,49 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   )}
                   <h3 className="text-lg font-bold text-center">{displayUser.name}</h3>
                 </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">Phone</span><span className="font-medium">{displayUser.phone}</span></div>
-                  {email && <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium">{email}</span></div>}
-                  {profileRank && (
-                    <>
-                      <div className="flex justify-between"><span className="text-gray-500">Rank</span><span className="font-medium">#{profileRank.rank}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">POTD Points</span><span className="font-medium">{profileRank.points}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Goals</span><span className="font-medium">{profileRank.goals}</span></div>
-                      <div className="flex justify-between"><span className="text-gray-500">Games Played</span><span className="font-medium">{profileRank.games}</span></div>
-                    </>
-                  )}
-                  {player?.nominated_by_info && (
-                    <div className="pt-2 border-t text-xs text-gray-500">
-                      <span className="font-medium">Nomination:</span> {player.nominated_by_info}
+                <Tabs value={profileTab} onValueChange={showProfileTab}>
+                  <TabsList className="w-full mb-3">
+                    <TabsTrigger value="info" className="flex-1">Info</TabsTrigger>
+                    <TabsTrigger value="insights" className="flex-1 gap-1">
+                      <Sparkles size={14} className="text-purple-500" /> Insights
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="info">
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-500">Phone</span><span className="font-medium">{displayUser.phone}</span></div>
+                      {email && <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium">{email}</span></div>}
+                      {profileRank && (
+                        <>
+                          <div className="flex justify-between"><span className="text-gray-500">Rank</span><span className="font-medium">#{profileRank.rank}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">POTD Points</span><span className="font-medium">{profileRank.points}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">Goals</span><span className="font-medium">{profileRank.goals}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">Games Played</span><span className="font-medium">{profileRank.games}</span></div>
+                        </>
+                      )}
+                      {player?.nominated_by_info && (
+                        <div className="pt-2 border-t text-xs text-gray-500">
+                          <span className="font-medium">Nomination:</span> {player.nominated_by_info}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </TabsContent>
+                  <TabsContent value="insights">
+                    {profileInsightsError ? (
+                      <p className="text-sm text-red-600 text-center py-4">{profileInsightsError}</p>
+                    ) : !profileInsights ? (
+                      <p className="text-sm text-gray-500 text-center py-4">Analysing games...</p>
+                    ) : (
+                      <ul className="space-y-2 max-h-80 overflow-y-auto">
+                        {profileInsights.map((insight, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm bg-gray-50 rounded-lg p-2">
+                            <span className="mt-0.5 shrink-0">{insightIcon(insight.category)}</span>
+                            <span className="text-gray-800">{insight.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           );
