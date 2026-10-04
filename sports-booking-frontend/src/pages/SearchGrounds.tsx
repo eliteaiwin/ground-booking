@@ -9,7 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp, UserPlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp, UserPlus, ChevronLeft, ChevronRight, LocateFixed, Navigation, Plus, Calendar } from 'lucide-react';
+import GroundPage from './GroundPage';
+import RegisterGround from './RegisterGround';
+import { directionsUrl, getCurrentPosition } from '@/lib/grounds';
 
 interface Moderator {
   user_id: number;
@@ -37,6 +40,21 @@ interface Location {
   name: string;
 }
 
+interface NearbyGround {
+  id: number;
+  name: string;
+  location: string;
+  display_name: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  maps_url: string;
+  sport_types: string[];
+  main_photo: string;
+  distance_km: number | null;
+  upcoming_games: number;
+}
+
 interface GamePlayer {
   user_id: number;
   name: string;
@@ -56,6 +74,7 @@ interface GameInfo {
 
 interface Props {
   onBack: () => void;
+  onViewGame?: (gameId: number) => void;
 }
 
 const GROUNDS_PER_PAGE = 12;
@@ -72,7 +91,7 @@ const sportIconChar = (type: string) => {
 
 const formatPlayerName = (name: string) => (name || '').split(' ')[0];
 
-export default function SearchGrounds({ onBack }: Props) {
+export default function SearchGrounds({ onBack, onViewGame }: Props) {
   const { user } = useAuth();
   const { activeTheme } = useTheme();
   const [locations, setLocations] = useState<Location[]>([]);
@@ -93,6 +112,24 @@ export default function SearchGrounds({ onBack }: Props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [playerSearch, setPlayerSearch] = useState('');
   const [playerPage, setPlayerPage] = useState(1);
+  const [viewGroundId, setViewGroundId] = useState<number | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [nearby, setNearby] = useState<NearbyGround[] | null>(null);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState('');
+
+  const findNearby = async () => {
+    setNearbyLoading(true);
+    setNearbyError('');
+    try {
+      const pos = await getCurrentPosition();
+      setNearby(await api.nearbyGrounds(pos.lat, pos.lng));
+    } catch (err) {
+      setNearbyError(err instanceof Error ? err.message : 'Could not find nearby grounds');
+    } finally {
+      setNearbyLoading(false);
+    }
+  };
 
   const handleJoinRequest = async (groundId: number) => {
     if (!joinSports.trim()) { alert('Please specify your sport interests'); return; }
@@ -201,6 +238,13 @@ export default function SearchGrounds({ onBack }: Props) {
     );
   };
 
+  if (viewGroundId) {
+    return <GroundPage groundId={viewGroundId} onBack={() => setViewGroundId(null)} onViewGame={onViewGame} />;
+  }
+  if (showRegister) {
+    return <RegisterGround onBack={() => setShowRegister(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="text-white" style={{ backgroundColor: activeTheme.header_bg }}>
@@ -216,6 +260,52 @@ export default function SearchGrounds({ onBack }: Props) {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={findNearby} disabled={nearbyLoading} style={{ backgroundColor: activeTheme.button_bg }}>
+            <LocateFixed size={16} className="mr-2" /> {nearbyLoading ? 'Locating...' : 'Grounds near me'}
+          </Button>
+          <Button variant="outline" onClick={() => setShowRegister(true)}>
+            <Plus size={16} className="mr-2" /> Register your ground
+          </Button>
+        </div>
+        {nearbyError && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{nearbyError}</div>}
+
+        {nearby ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500">{nearby.length} ground{nearby.length !== 1 ? 's' : ''} nearest first</p>
+              <button className="text-xs underline text-gray-500" onClick={() => setNearby(null)}>Search by name instead</button>
+            </div>
+            {nearby.length === 0 && (
+              <Card><CardContent className="py-8 text-center text-gray-500">No grounds listed yet.</CardContent></Card>
+            )}
+            {nearby.map(g => (
+              <Card key={g.id} className="overflow-hidden cursor-pointer hover:shadow-md" onClick={() => setViewGroundId(g.id)}>
+                <div className="flex">
+                  {g.main_photo ? (
+                    <img src={api.getGroundPhotoUrl(g.main_photo)} alt={g.name} className="w-24 h-24 object-cover shrink-0" />
+                  ) : (
+                    <div className="w-24 h-24 shrink-0 bg-green-50 flex items-center justify-center text-3xl">{sportIconChar(g.sport_types[0] || '')}</div>
+                  )}
+                  <div className="flex-1 min-w-0 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-gray-800 truncate">{g.name}</p>
+                      {g.distance_km != null && <Badge className="shrink-0 bg-blue-50 text-blue-700">{g.distance_km} km</Badge>}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate flex items-center gap-1"><MapPin size={11} /> {g.address || g.location}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-600">
+                      <span>{g.sport_types.map(s => sportIconChar(s)).join(' ')}</span>
+                      <span className="flex items-center gap-1"><Calendar size={11} /> {g.upcoming_games} upcoming</span>
+                      <a href={directionsUrl(g)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="ml-auto text-blue-600 flex items-center gap-1">
+                        <Navigation size={11} /> Directions
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (<>
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -298,6 +388,7 @@ export default function SearchGrounds({ onBack }: Props) {
                     <div className="flex items-center gap-2 mb-3">
                       <Badge className="text-xs" style={{ backgroundColor: activeTheme.primary_color + '20', color: activeTheme.primary_color }}>{ground.location}</Badge>
                       <Badge variant="outline" className="text-xs">{ground.name}</Badge>
+                      <Button size="sm" variant="outline" className="ml-auto h-6 px-2 text-xs" onClick={() => setViewGroundId(ground.id)}>View ground</Button>
                     </div>
                     {ground.moderators.length > 0 ? (
                       <div className="mb-2">
@@ -407,6 +498,7 @@ export default function SearchGrounds({ onBack }: Props) {
             <PaginationControls page={currentPage} total={totalPages} onPageChange={setCurrentPage} />
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

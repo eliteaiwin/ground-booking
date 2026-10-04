@@ -151,7 +151,7 @@ function AppContent() {
     case 'admin-screens':
       return <AdminScreens onBack={goHome} />;
     case 'search-grounds':
-      return <SearchGrounds onBack={goHome} />;
+      return <SearchGrounds onBack={goHome} onViewGame={(gameId) => { setSelectedGameId(gameId); setCurrentPage('game-detail'); }} />;
     case 'backend-settlement':
       return <BackendSettlement onBack={goHome} />;
     case 'game-search':

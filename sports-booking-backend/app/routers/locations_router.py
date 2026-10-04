@@ -3,8 +3,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import aiosqlite
+import httpx
+import json
+import math
 import os
+import re
 import uuid
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -170,7 +175,7 @@ async def search_grounds_public(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Public endpoint: any user can search grounds and see moderators + phone numbers."""
-    query = "SELECT * FROM grounds WHERE 1=1"
+    query = "SELECT * FROM grounds WHERE is_approved = 1"
     params: list = []
     if location:
         query += " AND location = ?"
@@ -275,10 +280,10 @@ async def list_grounds(
 ):
     if location:
         cursor = await db.execute(
-            "SELECT * FROM grounds WHERE location = ? ORDER BY name", (location,)
+            "SELECT * FROM grounds WHERE location = ? AND is_approved = 1 ORDER BY name", (location,)
         )
     else:
-        cursor = await db.execute("SELECT * FROM grounds ORDER BY location, name")
+        cursor = await db.execute("SELECT * FROM grounds WHERE is_approved = 1 ORDER BY location, name")
     rows = await cursor.fetchall()
     result = []
     for r in rows:
@@ -1592,3 +1597,490 @@ async def get_ground_main_photo(
     if row:
         return {"filename": row["filename"], "has_photo": True}
     return {"filename": "", "has_photo": False}
+
+
+# --- Ground Details, Nearby & Owner Self-Registration ---
+
+AMENITY_STATUSES = {"free", "paid", "rent", "buy", "rent_buy", "no"}
+AMENITY_KEY_RE = re.compile(r"^[a-z0-9_]{1,40}$")
+SHORT_MAPS_HOSTS = {"maps.app.goo.gl", "goo.gl", "g.co"}
+COORD_PATTERNS = [
+    re.compile(r"@(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)"),
+    re.compile(r"!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)"),
+    re.compile(r"[?&](?:q|query|ll|destination|center)=(?:loc:)?(-?\d{1,3}\.\d+),\s*\+?(-?\d{1,3}\.\d+)"),
+]
+
+
+class GroundDetailsFields(BaseModel):
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    maps_url: Optional[str] = None
+    owner_name: Optional[str] = None
+    owner_phone: Optional[str] = None
+    owner_email: Optional[str] = None
+    contact_public: Optional[bool] = None
+    opening_hours: Optional[str] = None
+    price_info: Optional[str] = None
+    description: Optional[str] = None
+    sports: Optional[List[str]] = None
+    amenities: Optional[dict] = None
+    amenities_other: Optional[str] = None
+
+
+class RegisterGroundRequest(GroundDetailsFields):
+    name: str
+    location: str
+
+
+class RejectGroundRequest(BaseModel):
+    reason: str = ""
+
+
+def _coords_from_text(text: str) -> Optional[tuple[float, float]]:
+    decoded = unquote(text)
+    for pattern in COORD_PATTERNS:
+        match = pattern.search(decoded)
+        if match:
+            lat, lng = float(match.group(1)), float(match.group(2))
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                return lat, lng
+    return None
+
+
+async def _coords_from_maps_url(url: str) -> Optional[tuple[float, float]]:
+    """Extract latitude/longitude from a Google Maps link, resolving short links."""
+    coords = _coords_from_text(url)
+    if coords:
+        return coords
+    host = (urlparse(url).hostname or "").lower()
+    if host not in SHORT_MAPS_HOSTS:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=6, follow_redirects=True) as client:
+            res = await client.get(url)
+        return _coords_from_text(str(res.url)) or _coords_from_text(res.text[:200000])
+    except httpx.HTTPError:
+        return None
+
+
+def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _clean_amenities(raw: dict) -> dict:
+    cleaned: dict = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not AMENITY_KEY_RE.match(key) or not isinstance(value, dict):
+            continue
+        status = value.get("status")
+        if status not in AMENITY_STATUSES:
+            continue
+        price = str(value.get("price") or "")[:40]
+        cleaned[key] = {"status": status, "price": price}
+    return cleaned
+
+
+def _parse_amenities(raw: Optional[str]) -> dict:
+    try:
+        data = json.loads(raw or "{}")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+async def _apply_ground_details(db: aiosqlite.Connection, ground_id: int, req: GroundDetailsFields):
+    updates: list[str] = []
+    params: list = []
+    text_limits = {
+        "address": 300, "owner_name": 100, "owner_phone": 30, "owner_email": 120,
+        "opening_hours": 200, "price_info": 200, "description": 1000, "amenities_other": 500,
+    }
+    for field, limit in text_limits.items():
+        value = getattr(req, field)
+        if value is not None:
+            updates.append(f"{field} = ?")
+            params.append(value.strip()[:limit])
+    if req.contact_public is not None:
+        updates.append("contact_public = ?")
+        params.append(1 if req.contact_public else 0)
+    if req.sports is not None:
+        updates.append("sports = ?")
+        params.append(",".join(s.strip().lower() for s in req.sports if s.strip()))
+    if req.amenities is not None:
+        updates.append("amenities = ?")
+        params.append(json.dumps(_clean_amenities(req.amenities)))
+
+    latitude, longitude = req.latitude, req.longitude
+    if req.maps_url is not None:
+        maps_url = req.maps_url.strip()[:500]
+        updates.append("maps_url = ?")
+        params.append(maps_url)
+        if maps_url and (latitude is None or longitude is None):
+            coords = await _coords_from_maps_url(maps_url)
+            if coords:
+                latitude, longitude = coords
+    if latitude is not None and longitude is not None:
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise HTTPException(status_code=400, detail="Invalid latitude/longitude")
+        updates.extend(["latitude = ?", "longitude = ?"])
+        params.extend([latitude, longitude])
+
+    if updates:
+        params.append(ground_id)
+        await db.execute(f"UPDATE grounds SET {', '.join(updates)} WHERE id = ?", params)
+        await db.commit()
+
+
+async def _ground_sport_types(db: aiosqlite.Connection, g: aiosqlite.Row) -> list[str]:
+    sports = [s for s in (g["sports"] or "").split(",") if s]
+    cursor = await db.execute(
+        "SELECT DISTINCT sport_type FROM games WHERE (ground_name = ? OR ground_name = ?) AND sport_type != ''",
+        (f"{g['location']} - {g['name']}", g["name"])
+    )
+    for row in await cursor.fetchall():
+        if row["sport_type"].lower() not in sports:
+            sports.append(row["sport_type"].lower())
+    return sports
+
+
+async def _main_photo(db: aiosqlite.Connection, ground_id: int) -> str:
+    cursor = await db.execute(
+        "SELECT filename FROM ground_photos WHERE ground_id = ? AND is_main = 1 LIMIT 1", (ground_id,)
+    )
+    row = await cursor.fetchone()
+    return row["filename"] if row else ""
+
+
+async def _upcoming_games(db: aiosqlite.Connection, g: aiosqlite.Row, limit: int = 20) -> list[dict]:
+    today = datetime.now().strftime("%Y-%m-%d")
+    cursor = await db.execute(
+        """SELECT ga.id, ga.title, ga.sport_type, ga.status, ga.game_date, ga.game_time, ga.duration_minutes,
+                  ga.max_players, ga.cost_per_person, u.name AS creator_name, u.phone AS creator_phone,
+                  (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = ga.id AND gp.status = 'selected') AS player_count
+           FROM games ga LEFT JOIN users u ON ga.created_by = u.id
+           WHERE (ga.ground_name = ? OR ga.ground_name = ?)
+             AND ga.status NOT IN ('completed', 'cancelled')
+             AND ga.game_date >= ?
+           ORDER BY ga.game_date, ga.game_time
+           LIMIT ?""",
+        (f"{g['location']} - {g['name']}", g["name"], today, limit)
+    )
+    return [
+        {
+            "game_id": r["id"],
+            "title": r["title"],
+            "sport_type": r["sport_type"],
+            "status": r["status"],
+            "game_date": r["game_date"],
+            "game_time": r["game_time"],
+            "duration_minutes": r["duration_minutes"],
+            "max_players": r["max_players"],
+            "player_count": r["player_count"],
+            "cost_per_person": r["cost_per_person"],
+            "organiser_name": r["creator_name"] or "",
+            "organiser_phone": r["creator_phone"] or "",
+        }
+        for r in await cursor.fetchall()
+    ]
+
+
+def _ground_summary(g: aiosqlite.Row, sport_types: list[str], main_photo: str) -> dict:
+    return {
+        "id": g["id"],
+        "name": g["name"],
+        "location": g["location"],
+        "display_name": f"{g['location']} - {g['name']}",
+        "address": g["address"],
+        "latitude": g["latitude"],
+        "longitude": g["longitude"],
+        "maps_url": g["maps_url"],
+        "sport_types": sport_types,
+        "main_photo": main_photo,
+        "is_approved": g["is_approved"],
+    }
+
+
+@router.get("/grounds/nearby")
+async def nearby_grounds(
+    lat: float,
+    lng: float,
+    radius_km: Optional[float] = None,
+    sport: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Approved grounds sorted by distance from (lat, lng). Grounds without a saved pin come last."""
+    cursor = await db.execute("SELECT * FROM grounds WHERE is_approved = 1")
+    results = []
+    for g in await cursor.fetchall():
+        distance = None
+        if g["latitude"] is not None and g["longitude"] is not None:
+            distance = round(_distance_km(lat, lng, g["latitude"], g["longitude"]), 1)
+            if radius_km is not None and distance > radius_km:
+                continue
+        elif radius_km is not None:
+            continue
+        sport_types = await _ground_sport_types(db, g)
+        if sport and sport.lower() not in sport_types:
+            continue
+        item = _ground_summary(g, sport_types, await _main_photo(db, g["id"]))
+        item["distance_km"] = distance
+        item["upcoming_games"] = len(await _upcoming_games(db, g, limit=50))
+        results.append(item)
+    results.sort(key=lambda x: (x["distance_km"] is None, x["distance_km"] or 0, x["display_name"]))
+    return results
+
+
+@router.get("/grounds/{ground_id}/details")
+async def get_ground_details(
+    ground_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Public ground page: photos, location, amenities, upcoming games and contacts."""
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    g = await cursor.fetchone()
+    if not g:
+        raise HTTPException(status_code=404, detail="Ground not found")
+    can_manage = await _can_manage_ground_photos(user_id, ground_id, db)
+    if g["is_approved"] != 1 and not can_manage and g["created_by"] != user_id:
+        raise HTTPException(status_code=404, detail="Ground not found")
+
+    photo_cursor = await db.execute(
+        "SELECT id, filename, caption, is_main FROM ground_photos WHERE ground_id = ? ORDER BY is_main DESC, created_at DESC",
+        (ground_id,)
+    )
+    photos = [
+        {"id": p["id"], "filename": p["filename"], "caption": p["caption"], "is_main": bool(p["is_main"])}
+        for p in await photo_cursor.fetchall()
+    ]
+    mod_cursor = await db.execute(
+        """SELECT DISTINCT u.id, u.name, u.phone, ml.sport_type
+           FROM moderator_locations ml JOIN users u ON ml.user_id = u.id
+           WHERE ml.location = ? AND (ml.ground_name = ? OR ml.ground_name = '')
+           ORDER BY u.name""",
+        (g["location"], g["name"])
+    )
+    moderators = [
+        {"user_id": m["id"], "name": m["name"], "phone": m["phone"], "sport_type": m["sport_type"] or "All Sports"}
+        for m in await mod_cursor.fetchall()
+    ]
+    member_cursor = await db.execute(
+        "SELECT 1 FROM ground_members WHERE user_id = ? AND ground_id = ?", (user_id, ground_id)
+    )
+    is_member = await member_cursor.fetchone() is not None
+    request_cursor = await db.execute(
+        "SELECT status FROM ground_join_requests WHERE user_id = ? AND ground_id = ?", (user_id, ground_id)
+    )
+    join_request = await request_cursor.fetchone()
+
+    contact_visible = bool(g["contact_public"]) or can_manage
+    sport_types = await _ground_sport_types(db, g)
+    details = _ground_summary(g, sport_types, photos[0]["filename"] if photos else "")
+    details.update({
+        "sports": [s for s in (g["sports"] or "").split(",") if s],
+        "description": g["description"],
+        "opening_hours": g["opening_hours"],
+        "price_info": g["price_info"],
+        "amenities": _parse_amenities(g["amenities"]),
+        "amenities_other": g["amenities_other"],
+        "contact_public": bool(g["contact_public"]),
+        "owner_name": g["owner_name"] if contact_visible else "",
+        "owner_phone": g["owner_phone"] if contact_visible else "",
+        "owner_email": g["owner_email"] if contact_visible else "",
+        "photos": photos,
+        "moderators": moderators,
+        "upcoming_games": await _upcoming_games(db, g),
+        "can_manage": can_manage,
+        "is_member": is_member or can_manage,
+        "join_request_status": join_request["status"] if join_request else "",
+        "rejection_reason": g["rejection_reason"] if g["created_by"] == user_id or can_manage else "",
+    })
+    return details
+
+
+@router.put("/grounds/{ground_id}/details")
+async def update_ground_details(
+    ground_id: int,
+    req: GroundDetailsFields,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Ground managers, moderators of the ground, or admins edit location, owner, and amenity details."""
+    cursor = await db.execute("SELECT id FROM grounds WHERE id = ?", (ground_id,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ground not found")
+    if not await _can_manage_ground_photos(user_id, ground_id, db):
+        raise HTTPException(status_code=403, detail="Only ground managers, moderators, or admins can edit ground details")
+    await _apply_ground_details(db, ground_id, req)
+    return {"message": "Ground details saved"}
+
+
+async def _grant_ground_owner_access(db: aiosqlite.Connection, owner_id: int, ground: aiosqlite.Row, approved_by: int):
+    await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'ground_management')", (owner_id,))
+    await db.execute(
+        "INSERT OR IGNORE INTO ground_management_assignments (user_id, ground_id, assigned_by) VALUES (?, ?, ?)",
+        (owner_id, ground["id"], approved_by)
+    )
+    await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')", (owner_id,))
+    await db.execute(
+        "INSERT OR IGNORE INTO moderator_locations (user_id, location, ground_name, sport_type) VALUES (?, ?, ?, '')",
+        (owner_id, ground["location"], ground["name"])
+    )
+
+
+@router.post("/grounds/register")
+async def register_ground(
+    req: RegisterGroundRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Any user registers their own ground. Admins approve it; the owner then becomes its Ground Manager."""
+    name = req.name.strip()
+    location = req.location.strip()
+    if not name or not location:
+        raise HTTPException(status_code=400, detail="Ground name and area are required")
+    if not (req.owner_phone or "").strip():
+        raise HTTPException(status_code=400, detail="Owner phone number is required")
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) AS cnt FROM grounds WHERE created_by = ? AND is_approved = 0", (user_id,)
+    )
+    if (await cursor.fetchone())["cnt"] >= 5:
+        raise HTTPException(status_code=400, detail="You already have 5 grounds awaiting approval")
+
+    admin_cursor = await db.execute("SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
+    is_admin = await admin_cursor.fetchone() is not None
+    ground_code = await generate_ground_code(db)
+    await db.execute("INSERT OR IGNORE INTO locations (name, created_by) VALUES (?, ?)", (location, user_id))
+    try:
+        cursor = await db.execute(
+            "INSERT INTO grounds (name, location, created_by, is_approved, ground_code) VALUES (?, ?, ?, ?, ?)",
+            (name, location, user_id, 1 if is_admin else 0, ground_code)
+        )
+    except aiosqlite.IntegrityError:
+        raise HTTPException(status_code=400, detail="A ground with this name already exists in this area")
+    ground_id = cursor.lastrowid
+    await db.commit()
+    await _apply_ground_details(db, ground_id, req)
+
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if is_admin:
+        await _grant_ground_owner_access(db, user_id, ground, user_id)
+    else:
+        user_cursor = await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+        user_row = await user_cursor.fetchone()
+        submitter = user_row["name"] if user_row else "A user"
+        admins = await (await db.execute("SELECT user_id FROM user_roles WHERE role = 'admin'")).fetchall()
+        for admin in admins:
+            await db.execute(
+                "INSERT INTO notifications (user_id, type, message) VALUES (?, 'ground_registration', ?)",
+                (admin["user_id"], f"{submitter} registered a new ground: {location} - {name}. Please review it in Ground Mgmt.")
+            )
+    await db.commit()
+    return {
+        "id": ground_id,
+        "is_approved": ground["is_approved"],
+        "message": "Ground added" if is_admin else "Ground submitted. An admin will review it shortly.",
+    }
+
+
+@router.get("/my-ground-registrations")
+async def my_ground_registrations(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    cursor = await db.execute(
+        "SELECT id, name, location, is_approved, rejection_reason, created_at FROM grounds WHERE created_by = ? ORDER BY created_at DESC",
+        (user_id,)
+    )
+    return [
+        {
+            "id": r["id"],
+            "display_name": f"{r['location']} - {r['name']}",
+            "status": "approved" if r["is_approved"] == 1 else "pending" if r["is_approved"] == 0 else "rejected",
+            "rejection_reason": r["rejection_reason"],
+            "created_at": r["created_at"],
+        }
+        for r in await cursor.fetchall()
+    ]
+
+
+@router.get("/grounds/pending")
+async def list_pending_grounds(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    cursor = await db.execute(
+        """SELECT g.*, u.name AS submitter_name, u.phone AS submitter_phone
+           FROM grounds g LEFT JOIN users u ON g.created_by = u.id
+           WHERE g.is_approved = 0 ORDER BY g.created_at"""
+    )
+    results = []
+    for g in await cursor.fetchall():
+        item = _ground_summary(g, [s for s in (g["sports"] or "").split(",") if s], await _main_photo(db, g["id"]))
+        item.update({
+            "owner_name": g["owner_name"],
+            "owner_phone": g["owner_phone"],
+            "owner_email": g["owner_email"],
+            "description": g["description"],
+            "submitter_name": g["submitter_name"] or "",
+            "submitter_phone": g["submitter_phone"] or "",
+            "created_at": g["created_at"],
+        })
+        results.append(item)
+    return results
+
+
+@router.post("/grounds/{ground_id}/approve")
+async def approve_ground(
+    ground_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+    await db.execute("UPDATE grounds SET is_approved = 1, rejection_reason = '' WHERE id = ?", (ground_id,))
+    if ground["created_by"]:
+        await _grant_ground_owner_access(db, ground["created_by"], ground, user_id)
+        await db.execute(
+            "INSERT INTO notifications (user_id, type, message) VALUES (?, 'ground_approved', ?)",
+            (ground["created_by"], f"Your ground {ground['location']} - {ground['name']} is approved. You are now its Ground Manager.")
+        )
+    await db.commit()
+    return {"message": "Ground approved"}
+
+
+@router.post("/grounds/{ground_id}/reject")
+async def reject_ground(
+    ground_id: int,
+    req: RejectGroundRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
+    ground = await cursor.fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+    if ground["is_approved"] == 1:
+        raise HTTPException(status_code=400, detail="Ground is already approved")
+    reason = req.reason.strip()[:300]
+    await db.execute("UPDATE grounds SET is_approved = -1, rejection_reason = ? WHERE id = ?", (reason, ground_id))
+    if ground["created_by"]:
+        await db.execute(
+            "INSERT INTO notifications (user_id, type, message) VALUES (?, 'ground_rejected', ?)",
+            (ground["created_by"], f"Your ground {ground['location']} - {ground['name']} was not approved." + (f" Reason: {reason}" if reason else ""))
+        )
+    await db.commit()
+    return {"message": "Ground rejected"}

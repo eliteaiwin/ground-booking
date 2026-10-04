@@ -4,10 +4,12 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban, Info } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import GroundDetailsForm from '@/components/grounds/GroundDetailsForm';
+import { EMPTY_GROUND_DETAILS, type GroundDetails, type GroundDetailsInput } from '@/lib/grounds';
 
 interface Ground {
   id: number;
@@ -122,7 +124,7 @@ export default function GroundManagement({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'schedule' | 'requests' | 'moderators' | 'photos' | 'blocked'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'details' | 'requests' | 'moderators' | 'photos' | 'blocked'>('schedule');
   const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
@@ -189,6 +191,10 @@ export default function GroundManagement({ onBack }: Props) {
   const [photosLoading, setPhotosLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoCaption, setPhotoCaption] = useState('');
+  const [detailsInitial, setDetailsInitial] = useState<GroundDetailsInput | null>(null);
+  const [detailsSaving, setDetailsSaving] = useState(false);
+  const [detailsMessage, setDetailsMessage] = useState('');
+  const [pendingGrounds, setPendingGrounds] = useState<{ id: number; display_name: string; address: string; owner_name: string; owner_phone: string; submitter_name: string; submitter_phone: string; sport_types: string[] }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -322,6 +328,63 @@ export default function GroundManagement({ onBack }: Props) {
       loadBlockedUsers(selectedGround.id);
     }
   }, [selectedGround, viewMode, currentDate]);
+
+  useEffect(() => {
+    if (!selectedGround) return;
+    setDetailsInitial(null);
+    setDetailsMessage('');
+    api.getGroundDetails(selectedGround.id)
+      .then((d: GroundDetails) => setDetailsInitial({
+        ...EMPTY_GROUND_DETAILS,
+        address: d.address, latitude: d.latitude, longitude: d.longitude, maps_url: d.maps_url,
+        owner_name: d.owner_name, owner_phone: d.owner_phone, owner_email: d.owner_email, contact_public: d.contact_public,
+        opening_hours: d.opening_hours, price_info: d.price_info, description: d.description,
+        sports: d.sports, amenities: d.amenities, amenities_other: d.amenities_other,
+      }))
+      .catch(err => console.error('Failed to load ground details:', err));
+  }, [selectedGround]);
+
+  const loadPendingGrounds = () => {
+    if (!isAdmin) return;
+    api.listPendingGrounds().then(setPendingGrounds).catch(err => console.error('Failed to load pending grounds:', err));
+  };
+
+  useEffect(loadPendingGrounds, [isAdmin]);
+
+  const handleApproveGround = async (groundId: number) => {
+    try {
+      await api.approveGround(groundId);
+      loadPendingGrounds();
+      await loadGrounds();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to approve ground');
+    }
+  };
+
+  const handleRejectGround = async (groundId: number) => {
+    const reason = window.prompt('Reason for not approving (shown to the owner):', '');
+    if (reason === null) return;
+    try {
+      await api.rejectGround(groundId, reason);
+      loadPendingGrounds();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to reject ground');
+    }
+  };
+
+  const saveGroundDetails = async (values: GroundDetailsInput) => {
+    if (!selectedGround) return;
+    setDetailsSaving(true);
+    setDetailsMessage('');
+    try {
+      await api.updateGroundDetails(selectedGround.id, values);
+      setDetailsMessage('Saved. Players can now see these details on the ground page.');
+    } catch (err) {
+      setDetailsMessage(err instanceof Error ? err.message : 'Failed to save details');
+    } finally {
+      setDetailsSaving(false);
+    }
+  };
 
   const loadGroundPhotos = async (groundId: number) => {
     setPhotosLoading(true);
@@ -797,6 +860,25 @@ export default function GroundManagement({ onBack }: Props) {
         </header>
 
         <div className="max-w-lg mx-auto px-4 py-4 space-y-3">
+          {pendingGrounds.length > 0 && (
+            <Card className="border-yellow-300">
+              <CardContent className="p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-yellow-800 flex items-center gap-2"><Bell size={14} /> Grounds awaiting approval ({pendingGrounds.length})</h3>
+                {pendingGrounds.map(pg => (
+                  <div key={pg.id} className="border rounded-lg p-3 space-y-1">
+                    <p className="font-semibold text-gray-800">{pg.display_name}</p>
+                    {pg.address && <p className="text-xs text-gray-500">{pg.address}</p>}
+                    <p className="text-xs text-gray-600">Owner: {pg.owner_name || '-'} · {pg.owner_phone || '-'}</p>
+                    <p className="text-xs text-gray-600">Submitted by: {pg.submitter_name} · {pg.submitter_phone}</p>
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => handleApproveGround(pg.id)}><Check size={12} className="mr-1" /> Approve</Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-600" onClick={() => handleRejectGround(pg.id)}><X size={12} className="mr-1" /> Reject</Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
           {grounds.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-gray-500">
@@ -966,17 +1048,23 @@ export default function GroundManagement({ onBack }: Props) {
         )}
 
         {/* Tab selector */}
-        <div className="flex bg-white rounded-lg shadow-sm border overflow-hidden mb-4">
+        <div className="flex bg-white rounded-lg shadow-sm border overflow-x-auto mb-4">
           <button
             onClick={() => setActiveTab('schedule')}
-            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'schedule' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'schedule' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <Calendar size={14} className="inline mr-1" /> Schedule
+          </button>
+          <button
+            onClick={() => setActiveTab('details')}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'details' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Info size={14} className="inline mr-1" /> Details
           </button>
           {canManageRequests && (
             <button
               onClick={() => setActiveTab('requests')}
-              className={`flex-1 px-4 py-2 text-sm font-medium relative ${activeTab === 'requests' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium relative ${activeTab === 'requests' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               <Bell size={14} className="inline mr-1" /> Join Requests
               {joinRequests.length > 0 && (
@@ -986,13 +1074,13 @@ export default function GroundManagement({ onBack }: Props) {
           )}
           <button
             onClick={() => setActiveTab('moderators')}
-            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'moderators' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'moderators' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <Shield size={14} className="inline mr-1" /> Moderators
           </button>
           <button
             onClick={() => setActiveTab('photos')}
-            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'photos' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'photos' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <Camera size={14} className="inline mr-1" /> Photos
             {groundPhotos.length > 0 && (
@@ -1001,7 +1089,7 @@ export default function GroundManagement({ onBack }: Props) {
           </button>
           <button
             onClick={() => setActiveTab('blocked')}
-            className={`flex-1 px-4 py-2 text-sm font-medium ${activeTab === 'blocked' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'blocked' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <Ban size={14} className="inline mr-1" /> Blocked
             {blockedUsers.length > 0 && (
@@ -1009,6 +1097,19 @@ export default function GroundManagement({ onBack }: Props) {
             )}
           </button>
         </div>
+
+        {activeTab === 'details' && (
+          <Card>
+            <CardContent className="p-4">
+              {detailsMessage && <div className="mb-3 bg-green-50 text-green-700 p-2 rounded-md text-sm">{detailsMessage}</div>}
+              {detailsInitial ? (
+                <GroundDetailsForm key={selectedGround.id} initial={detailsInitial} submitLabel="Save details" saving={detailsSaving} onSubmit={saveGroundDetails} />
+              ) : (
+                <p className="text-gray-500 text-center py-6">Loading details...</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {activeTab === 'requests' && (
           <div className="space-y-3">

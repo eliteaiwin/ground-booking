@@ -1,3 +1,5 @@
+import type { GroundDetailsInput } from '@/lib/grounds';
+
 // Determine API URL and optional proxy Basic-Auth credentials.
 //
 // Proxy-auth mode (behind a Basic-Auth tunnel like the Devin expose tool):
@@ -774,6 +776,32 @@ export const api = {
 
   getPaymentReminders: (gameId: number) =>
     request(`/api/notifications/payment-reminders/${gameId}`),
+
+  // Ground details, nearby & owner self-registration
+  getGroundDetails: (groundId: number) =>
+    request(`/api/locations/grounds/${groundId}/details`),
+
+  updateGroundDetails: (groundId: number, data: GroundDetailsInput) =>
+    request(`/api/locations/grounds/${groundId}/details`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  nearbyGrounds: (lat: number, lng: number, sport?: string) => {
+    const params = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+    if (sport) params.append('sport', sport);
+    return request(`/api/locations/grounds/nearby?${params.toString()}`);
+  },
+
+  registerGround: (data: GroundDetailsInput & { name: string; location: string }) =>
+    request('/api/locations/grounds/register', { method: 'POST', body: JSON.stringify(data) }),
+
+  myGroundRegistrations: () => request('/api/locations/my-ground-registrations'),
+
+  listPendingGrounds: () => request('/api/locations/grounds/pending'),
+
+  approveGround: (groundId: number) =>
+    request(`/api/locations/grounds/${groundId}/approve`, { method: 'POST' }),
+
+  rejectGround: (groundId: number, reason: string) =>
+    request(`/api/locations/grounds/${groundId}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
   // Role Theme Settings
   getRoleThemes: () =>
