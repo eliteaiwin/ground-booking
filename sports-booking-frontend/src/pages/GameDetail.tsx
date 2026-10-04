@@ -16,6 +16,7 @@ import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
+import { pitchLabel } from '@/lib/grounds';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -56,6 +57,8 @@ interface Game {
   title: string;
   sport_type: string;
   ground_name: string;
+  pitch_format: string;
+  pitch_number: number;
   game_date: string;
   game_time: string;
   max_players: number;
@@ -679,7 +682,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
         <Card>
           <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{game.ground_name}</span></div>
+            <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{game.ground_name}{game.pitch_format && ` · ${pitchLabel(game.pitch_format, game.pitch_number)}`}</span></div>
             <div className="flex items-center gap-2 text-gray-600"><Clock size={16} /> <span>{formatGameDate(game.game_date)} at {formatTime12h(game.game_time)}</span></div>
             {game.duration_minutes > 0 && (
               <div className="flex items-center gap-2 text-gray-600"><Clock size={16} /> <span>Duration: {game.duration_minutes} minutes</span></div>

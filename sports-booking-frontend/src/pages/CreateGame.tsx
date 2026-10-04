@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Search, X, UserPlus, ChevronDown } from 'lucide-react';
 import { useSports } from '../lib/sports';
+import PitchSelect from '@/components/grounds/PitchSelect';
+import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
 
 interface UserItem {
   id: number;
@@ -22,6 +24,7 @@ interface Ground {
   name: string;
   location: string;
   display_name: string;
+  pitch_layouts?: Record<string, PitchLayout[]>;
 }
 
 const formatUserOption = (name: string, phone: string) => {
@@ -37,6 +40,9 @@ const SPORT_DURATIONS: Record<string, number> = {
   badminton: 60,
   basketball: 60,
   hockey: 70,
+  pickleball: 60,
+  tennis: 60,
+  swimming: 60,
 };
 
 interface Props {
@@ -68,6 +74,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [playerSearch, setPlayerSearch] = useState('');
+  const [pitch, setPitch] = useState('');
   const [searchResults, setSearchResults] = useState<UserItem[]>([]);
   const [selectedPlayers, setSelectedPlayers] = useState<UserItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -137,8 +144,13 @@ export default function CreateGame({ onBack, onCreated }: Props) {
     }
   }, [sports, sportType, sportDefaults]);
 
+  const layoutsFor = (ground: string, sport: string) =>
+    grounds.find(g => g.display_name === ground)?.pitch_layouts?.[sport] || [];
+  const pitchLayouts = layoutsFor(groundName, sportType);
+
   const handleSportChange = (val: string) => {
     setSportType(val);
+    setPitch(defaultPitchValue(layoutsFor(groundName, val)));
     if (sportDefaults[val]) {
       setMaxPlayers(String(sportDefaults[val]));
     }
@@ -149,6 +161,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
 
   const handleGroundChange = (val: string) => {
     setGroundName(val);
+    setPitch(defaultPitchValue(layoutsFor(val, sportType)));
     if (val !== '__other__') {
       setCustomGround('');
     }
@@ -181,6 +194,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         potd_congrats_delay_minutes: parseInt(potdDelayMinutes) || 1440,
         note_before_players: noteBefore || undefined,
         note_after_players: noteAfter || undefined,
+        ...(pitchLayouts.length > 0 ? parsePitchValue(pitch) : {}),
       });
 
       // Pre-add selected players while game is still in draft
@@ -259,6 +273,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                   <Input placeholder="Enter ground name" value={customGround} onChange={(e) => setCustomGround(e.target.value)} />
                 )}
               </div>
+              <PitchSelect layouts={pitchLayouts} value={pitch} onChange={setPitch} />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="date">Date</Label>

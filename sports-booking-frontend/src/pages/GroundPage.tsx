@@ -7,9 +7,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Calendar, Camera, Clock, IndianRupee, Info, Mail, MapPin, MessageCircle, Navigation, Phone, Shield, UserPlus, Users } from 'lucide-react';
+import { ArrowLeft, Calendar, Camera, ChevronDown, ChevronRight, Clock, IndianRupee, Info, LayoutGrid, Mail, MapPin, MessageCircle, Navigation, Phone, Ruler, Shield, Trophy, UserPlus, Users } from 'lucide-react';
 import { sportIcon, sportLabel } from '@/lib/sports';
-import { AMENITIES, AMENITY_GROUPS, amenityStatusText, directionsUrl, mapEmbedUrl, whatsappUrl, type GroundDetails } from '@/lib/grounds';
+import {
+  AMENITIES, EMPTY_SPORT_DETAIL, amenityStatusText, directionsUrl, mapEmbedUrl, pitchLabel, sportConfig, whatsappUrl,
+  type GroundDetails,
+} from '@/lib/grounds';
 
 interface Props {
   groundId: number;
@@ -49,6 +52,9 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
   const [joinSports, setJoinSports] = useState('');
   const [joinMessage, setJoinMessage] = useState('');
   const [joinStatus, setJoinStatus] = useState('');
+  const [tab, setTab] = useState('sports');
+  const [openSport, setOpenSport] = useState('');
+  const [sportFilter, setSportFilter] = useState('');
 
   useEffect(() => {
     api.getGroundDetails(groundId)
@@ -73,6 +79,9 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
   const hasPin = ground.latitude != null && ground.longitude != null;
   const photo = ground.photos[photoIndex];
   const availableAmenities = AMENITIES.filter(a => ground.amenities[a.key] && ground.amenities[a.key].status !== 'no');
+  const sports = ground.sport_types;
+  const games = sportFilter ? ground.upcoming_games.filter(g => g.sport_type === sportFilter) : ground.upcoming_games;
+  const showGames = (sport: string) => { setSportFilter(sport); setTab('games'); };
   const hasOwner = ground.owner_name || ground.owner_phone || ground.owner_email;
 
   return (
@@ -112,17 +121,94 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
         )}
         {ground.rejection_reason && <p className="text-sm text-red-600">Reason: {ground.rejection_reason}</p>}
 
-        <Tabs defaultValue="games">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full">
+            <TabsTrigger value="sports" className="flex-1 gap-1"><Trophy size={14} /> Sports</TabsTrigger>
             <TabsTrigger value="games" className="flex-1 gap-1"><Calendar size={14} /> Games</TabsTrigger>
             <TabsTrigger value="photos" className="flex-1 gap-1"><Camera size={14} /> Photos</TabsTrigger>
             <TabsTrigger value="info" className="flex-1 gap-1"><Info size={14} /> Info</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="sports" className="space-y-2">
+            {sports.length === 0 ? (
+              <Card><CardContent className="py-6 text-center text-sm text-gray-500">No sports listed yet.</CardContent></Card>
+            ) : sports.map(sport => {
+              const detail = { ...EMPTY_SPORT_DETAIL, ...ground.sport_details?.[sport] };
+              const cfg = sportConfig(sport);
+              const items = cfg.items.filter(i => detail.items[i.key]);
+              const open = openSport === sport;
+              const sportGames = ground.upcoming_games.filter(g => g.sport_type === sport).length;
+              const sportMods = ground.moderators.filter(m => !m.sport_type || m.sport_type === 'All Sports' || m.sport_type.toLowerCase() === sport);
+              return (
+                <Card key={sport}><CardContent className="p-0">
+                  <button className="w-full flex items-center gap-3 p-3 text-left" onClick={() => setOpenSport(open ? '' : sport)}>
+                    <span className="text-2xl">{sportIcon(sport)}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800">{sportLabel(sport)}</p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {[detail.timing, detail.price, sportGames ? `${sportGames} upcoming game${sportGames > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ') || 'Tap for details'}
+                      </p>
+                    </div>
+                    {open ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-3 space-y-2 text-sm text-gray-700 border-t pt-2">
+                      {detail.timing && <p className="flex items-center gap-2"><Clock size={14} className="text-gray-400" /> {detail.timing}</p>}
+                      {detail.price && <p className="flex items-center gap-2"><IndianRupee size={14} className="text-gray-400" /> {detail.price}</p>}
+                      {detail.surface && <p className="flex items-center gap-2"><LayoutGrid size={14} className="text-gray-400" /> {cfg.surfaceLabel}: {detail.surface}</p>}
+                      {detail.size && <p className="flex items-center gap-2"><Ruler size={14} className="text-gray-400" /> {cfg.sizeLabel}: {detail.size}</p>}
+                      {detail.pitches.length > 0 && (
+                        <p className="text-xs text-gray-600">{cfg.pitchLabel}: {detail.pitches.map(p => `${p.format} ×${p.count}`).join(' · ')}</p>
+                      )}
+                      {items.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {items.map(i => {
+                            const v = detail.items[i.key];
+                            return (
+                              <span key={i.key} className={`text-xs border rounded-full px-2 py-1 ${v.status === 'no' ? 'bg-gray-100 text-gray-400 line-through' : 'bg-gray-50 text-gray-700'}`}>
+                                {i.emoji} {i.label}{v.status !== 'no' && <span className="text-gray-500"> · {amenityStatusText(v)}</span>}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {detail.notes && <p className="text-xs text-gray-600 whitespace-pre-line">{detail.notes}</p>}
+                      {(detail.contact_phone || sportMods.length > 0) && (
+                        <div className="space-y-1 pt-1 border-t">
+                          {detail.contact_phone && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm">{detail.contact_name || 'Contact'} <span className="text-xs text-gray-400">· {detail.contact_phone}</span></span>
+                              <ContactButtons phone={detail.contact_phone} />
+                            </div>
+                          )}
+                          {sportMods.map(m => (
+                            <div key={m.user_id} className="flex items-center justify-between">
+                              <span className="text-sm flex items-center gap-1"><Shield size={12} className="text-purple-600" /> {m.name} <span className="text-xs text-gray-400">· Moderator</span></span>
+                              <ContactButtons phone={m.phone} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <Button size="sm" variant="outline" className="w-full" onClick={() => showGames(sport)}>
+                        <Calendar size={14} className="mr-1" /> {sportLabel(sport)} games
+                      </Button>
+                    </div>
+                  )}
+                </CardContent></Card>
+              );
+            })}
+          </TabsContent>
+
           <TabsContent value="games" className="space-y-2">
-            {ground.upcoming_games.length === 0 ? (
-              <Card><CardContent className="py-6 text-center text-sm text-gray-500">No upcoming games. Contact a moderator below to organise one.</CardContent></Card>
-            ) : ground.upcoming_games.map(game => {
+            {sportFilter && (
+              <div className="flex items-center gap-2 text-xs">
+                <Badge variant="outline">{sportIcon(sportFilter)} {sportLabel(sportFilter)}</Badge>
+                <button className="text-blue-600 underline" onClick={() => setSportFilter('')}>Show all sports</button>
+              </div>
+            )}
+            {games.length === 0 ? (
+              <Card><CardContent className="py-6 text-center text-sm text-gray-500">No upcoming games. Contact a moderator to organise one.</CardContent></Card>
+            ) : games.map(game => {
               const spotsLeft = Math.max(game.max_players - game.player_count, 0);
               return (
                 <Card key={game.game_id}><CardContent className="p-3">
@@ -130,6 +216,7 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-800 truncate">{sportIcon(game.sport_type)} {game.title}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {formatGameDate(game.game_date, game.game_time)} · {game.duration_minutes} min</p>
+                      {game.pitch_format && <p className="text-xs text-gray-600">{pitchLabel(game.pitch_format, game.pitch_number)}</p>}
                       <p className="text-xs text-gray-500 mt-0.5">
                         {game.player_count}/{game.max_players} players · {spotsLeft > 0 ? <span className="text-green-700 font-medium">{spotsLeft} spots left</span> : <span className="text-orange-600">Full (waitlist)</span>}
                         {game.cost_per_person > 0 && <> · Rs {game.cost_per_person}/person</>}
@@ -180,26 +267,14 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
             )}
             {(availableAmenities.length > 0 || ground.amenities_other) && (
               <Card><CardContent className="p-3 space-y-2">
-                <h3 className="text-sm font-semibold text-gray-700">Amenities</h3>
-                {AMENITY_GROUPS.map(group => {
-                  const items = availableAmenities.filter(a => a.group === group.key);
-                  if (items.length === 0) return null;
-                  return (
-                    <div key={group.key}>
-                      <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1">{group.label}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {items.map(a => {
-                          const status = amenityStatusText(ground.amenities[a.key], a.group);
-                          return (
-                            <span key={a.key} className="text-xs bg-gray-50 border rounded-full px-2 py-1 text-gray-700">
-                              {a.emoji} {a.label}{status && <span className="text-gray-500"> · {status}</span>}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                <h3 className="text-sm font-semibold text-gray-700">Facilities</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableAmenities.map(a => (
+                    <span key={a.key} className="text-xs bg-gray-50 border rounded-full px-2 py-1 text-gray-700">
+                      {a.emoji} {a.label}<span className="text-gray-500"> · {amenityStatusText(ground.amenities[a.key])}</span>
+                    </span>
+                  ))}
+                </div>
                 {ground.amenities_other && <p className="text-xs text-gray-600">Also: {ground.amenities_other}</p>}
               </CardContent></Card>
             )}

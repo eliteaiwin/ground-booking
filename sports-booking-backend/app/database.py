@@ -485,6 +485,9 @@ async def init_db():
         "ALTER TABLE grounds ADD COLUMN amenities TEXT NOT NULL DEFAULT '{}'",
         "ALTER TABLE grounds ADD COLUMN amenities_other TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE grounds ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE grounds ADD COLUMN sport_details TEXT NOT NULL DEFAULT '{}'",
+        "ALTER TABLE games ADD COLUMN pitch_format TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE games ADD COLUMN pitch_number INTEGER NOT NULL DEFAULT 0",
         "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
     ]
     for migration in migrations:

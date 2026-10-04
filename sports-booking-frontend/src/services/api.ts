@@ -212,6 +212,7 @@ export const api = {
     ground_cost: number; payment_timing: string; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; note_before_players?: string; note_after_players?: string;
+    pitch_format?: string; pitch_number?: number;
   }) => request('/api/games', { method: 'POST', body: JSON.stringify(data) }),
 
   createSeries: (data: {
@@ -219,7 +220,7 @@ export const api = {
     max_players: number; ground_cost: number; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; recurrence_days: { day: string; time: string }[];
-    weeks?: number; start_date?: string;
+    weeks?: number; start_date?: string; pitch_format?: string;
   }) => request('/api/games/series', { method: 'POST', body: JSON.stringify(data) }),
 
   editGame: (gameId: number, data: {
@@ -797,8 +798,8 @@ export const api = {
 
   listPendingGrounds: () => request('/api/locations/grounds/pending'),
 
-  approveGround: (groundId: number) =>
-    request(`/api/locations/grounds/${groundId}/approve`, { method: 'POST' }),
+  approveGround: (groundId: number, managerUserIds: number[]) =>
+    request(`/api/locations/grounds/${groundId}/approve`, { method: 'POST', body: JSON.stringify({ manager_user_ids: managerUserIds }) }),
 
   rejectGround: (groundId: number, reason: string) =>
     request(`/api/locations/grounds/${groundId}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),

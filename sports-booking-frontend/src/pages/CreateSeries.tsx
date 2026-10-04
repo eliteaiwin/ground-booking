@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useSports } from '../lib/sports';
+import PitchSelect from '@/components/grounds/PitchSelect';
+import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
 
 interface UserItem {
   id: number;
@@ -21,6 +23,7 @@ interface Ground {
   name: string;
   location: string;
   display_name: string;
+  pitch_layouts?: Record<string, PitchLayout[]>;
 }
 
 const SPORT_DURATIONS: Record<string, number> = {
@@ -29,6 +32,9 @@ const SPORT_DURATIONS: Record<string, number> = {
   badminton: 60,
   basketball: 60,
   hockey: 70,
+  pickleball: 60,
+  tennis: 60,
+  swimming: 60,
 };
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -54,6 +60,7 @@ export default function CreateSeries({ onBack }: Props) {
   const [maxPlayers, setMaxPlayers] = useState('16');
   const [groundCost, setGroundCost] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('90');
+  const [pitch, setPitch] = useState('');
   const [paymentMode, setPaymentMode] = useState('postpaid');
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [payeeUserId, setPayeeUserId] = useState('');
@@ -104,8 +111,13 @@ export default function CreateSeries({ onBack }: Props) {
     }
   }, [sports, sportType, sportDefaults]);
 
+  const layoutsFor = (ground: string, sport: string): PitchLayout[] =>
+    grounds.find(g => g.display_name === ground)?.pitch_layouts?.[sport] || [];
+  const pitchLayouts = layoutsFor(groundName, sportType);
+
   const handleSportChange = (val: string) => {
     setSportType(val);
+    setPitch(defaultPitchValue(layoutsFor(groundName, val)));
     if (sportDefaults[val]) setMaxPlayers(String(sportDefaults[val]));
     if (SPORT_DURATIONS[val]) setDurationMinutes(String(SPORT_DURATIONS[val]));
   };
@@ -162,6 +174,7 @@ export default function CreateSeries({ onBack }: Props) {
         recurrence_days: recurrenceDays,
         weeks: parseInt(weeks) || 4,
         start_date: startDate || undefined,
+        ...(pitchLayouts.length > 0 ? { pitch_format: parsePitchValue(pitch).pitch_format } : {}),
       });
       setResult({ created: res.created?.length || 0, skipped: res.skipped?.length || 0 });
     } catch (err: unknown) {
@@ -211,7 +224,7 @@ export default function CreateSeries({ onBack }: Props) {
                 </div>
                 <div className="space-y-2">
                   <Label>Ground / Venue</Label>
-                  <Select value={groundName} onValueChange={(val) => { setGroundName(val); if (val !== '__other__') setCustomGround(''); }}>
+                  <Select value={groundName} onValueChange={(val) => { setGroundName(val); setPitch(defaultPitchValue(layoutsFor(val, sportType))); if (val !== '__other__') setCustomGround(''); }}>
                     <SelectTrigger><SelectValue placeholder="Select a ground" /></SelectTrigger>
                     <SelectContent>
                       {grounds.map(g => (
@@ -224,6 +237,7 @@ export default function CreateSeries({ onBack }: Props) {
                     <Input placeholder="Enter ground name" value={customGround} onChange={(e) => setCustomGround(e.target.value)} required />
                   )}
                 </div>
+                <PitchSelect layouts={pitchLayouts} value={pitch} onChange={setPitch} allowNumber={false} />
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Max Players</Label>

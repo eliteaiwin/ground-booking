@@ -14,6 +14,9 @@ export const ALL_SPORTS: SportMeta[] = [
   { key: 'badminton', label: 'Badminton', icon: '🏸', emoji: '🏸', defaultPlayers: 4 },
   { key: 'basketball', label: 'Basketball', icon: '🏀', emoji: '🏀', defaultPlayers: 10 },
   { key: 'hockey', label: 'Hockey', icon: '🏒', emoji: '🏒', defaultPlayers: 14 },
+  { key: 'pickleball', label: 'Pickleball', icon: '🏓', emoji: '🏓', defaultPlayers: 4 },
+  { key: 'tennis', label: 'Lawn Tennis', icon: '🎾', emoji: '🎾', defaultPlayers: 4 },
+  { key: 'swimming', label: 'Swimming', icon: '🏊', emoji: '🏊', defaultPlayers: 10 },
 ];
 
 export const SPORTS_BY_KEY: Record<string, SportMeta> = ALL_SPORTS.reduce((acc, s) => {

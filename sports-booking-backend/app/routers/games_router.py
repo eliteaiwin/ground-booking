@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 
 class CreateGameRequest(BaseModel):
     title: str
-    sport_type: str  # soccer, cricket, badminton, basketball, hockey
+    sport_type: str  # soccer, cricket, badminton, basketball, hockey, pickleball, tennis, swimming
     ground_name: str
     game_date: str
     game_time: str
@@ -31,6 +31,8 @@ class CreateGameRequest(BaseModel):
     note_after_players: Optional[str] = None
     series_name: Optional[str] = None
     series_day: Optional[str] = None
+    pitch_format: Optional[str] = None
+    pitch_number: Optional[int] = None
 
 
 class EditGameRequest(BaseModel):
@@ -51,6 +53,8 @@ class EditGameRequest(BaseModel):
     note_after_players: Optional[str] = None
     series_name: Optional[str] = None
     series_day: Optional[str] = None
+    pitch_format: Optional[str] = None
+    pitch_number: Optional[int] = None
 
 
 class SeriesDay(BaseModel):
@@ -73,6 +77,7 @@ class CreateSeriesRequest(BaseModel):
     note_after_players: Optional[str] = None
     recurrence_days: List[SeriesDay]
     weeks: int = 4
+    pitch_format: Optional[str] = None
     start_date: Optional[str] = None  # YYYY-MM-DD; defaults to today
 
 
@@ -249,29 +254,74 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
     await db.commit()
 
 
+def _pitch_label(pitch_format: str, pitch_number: int, count: int) -> str:
+    if not pitch_format:
+        return "the whole ground"
+    if not pitch_number:
+        return pitch_format
+    return f"{pitch_format} Pitch {pitch_number}"
+
+
 async def _check_ground_time_overlap(
     db: aiosqlite.Connection,
     ground_name: str,
     game_date: str,
     game_time: str,
     duration_minutes: int,
-    exclude_game_id: Optional[int] = None
-):
-    """Block creation/editing of a game if another non-cancelled game overlaps on the same ground."""
+    exclude_game_id: Optional[int] = None,
+    sport_type: str = "",
+    pitch_format: Optional[str] = None,
+    pitch_number: Optional[int] = None,
+) -> tuple[str, int]:
+    """Block a game whose time overlaps another non-cancelled game on the same ground.
+
+    Grounds can define pitch layouts per sport (e.g. 5-a-side x3, 7-a-side x2, 9-a-side x1). Each
+    booking on a layout with N pitches uses 1/N of the ground; a booking without a pitch uses all of
+    it. Overlapping bookings conflict when they use the same pitch or their combined share exceeds
+    the whole ground. Returns the (pitch_format, pitch_number) to store.
+    """
+    from .locations_router import pitch_layouts
+
     try:
         new_start = _parse_game_datetime(game_date, game_time)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid game date or time format")
     new_end = new_start + timedelta(minutes=duration_minutes)
 
-    query = """SELECT id, title, game_date, game_time, duration_minutes, status
+    ground = await (await db.execute(
+        "SELECT * FROM grounds WHERE location || ' - ' || name = ? OR name = ? ORDER BY is_approved DESC LIMIT 1",
+        (ground_name, ground_name)
+    )).fetchone()
+    layouts = {p["format"].lower(): p for p in pitch_layouts(ground, sport_type)} if ground else {}
+    ground_sports = [x for x in (ground["sports"] or "").split(",") if x] if ground else []
+
+    fmt = (pitch_format or "").strip()
+    number = pitch_number or 0
+    count = 1
+    if fmt:
+        layout = layouts.get(fmt.lower())
+        if not layout:
+            raise HTTPException(status_code=400, detail=f"'{fmt}' is not a pitch layout of this ground for {sport_type}")
+        fmt, count = layout["format"], layout["count"]
+        if number and not 1 <= number <= count:
+            raise HTTPException(status_code=400, detail=f"{fmt} has only {count} pitch(es) at this ground")
+        if count == 1:
+            number = 0
+    else:
+        number = 0
+
+    query = """SELECT id, title, sport_type, game_date, game_time, duration_minutes, status, pitch_format, pitch_number
                FROM games
                WHERE ground_name = ? AND status != 'cancelled'"""
     params: list = [ground_name]
     if exclude_game_id is not None:
         query += " AND id != ?"
         params.append(exclude_game_id)
+    if len(ground_sports) > 1 and sport_type:
+        query += " AND LOWER(sport_type) = ?"
+        params.append(sport_type.lower())
 
+    overlapping = []
     cursor = await db.execute(query, params)
     async with cursor:
         async for row in cursor:
@@ -281,14 +331,55 @@ async def _check_ground_time_overlap(
                 continue
             existing_end = existing_start + timedelta(minutes=row["duration_minutes"] or 90)
             if new_start < existing_end and new_end > existing_start:
+                overlapping.append(row)
+
+    def describe(row, label: str) -> str:
+        return f"'{row['title']}' ({row['game_date']} {row['game_time']}, {label}, status: {row['status']})"
+
+    if not layouts or not overlapping:
+        if overlapping:
+            row = overlapping[0]
+            raise HTTPException(
+                status_code=409,
+                detail=f"Time slot conflict: {describe(row, 'same ground')} already occupies this ground. Only cancelled games can overlap."
+            )
+        return (fmt, number or (1 if fmt and count > 1 else 0))
+
+    used = 0.0
+    taken_numbers: set[int] = set()
+    for row in overlapping:
+        layout = layouts.get((row["pitch_format"] or "").lower())
+        row_count = layout["count"] if layout else 1
+        row_label = _pitch_label(layout["format"] if layout else "", row["pitch_number"], row_count)
+        if not layout or not fmt:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Pitch conflict: {describe(row, row_label)} overlaps and {_pitch_label(fmt, number, count) if fmt else 'the whole ground'} cannot be booked at the same time."
+            )
+        used += 1.0 / row_count
+        if layout["format"] == fmt:
+            taken_numbers.add(row["pitch_number"])
+            if number and row["pitch_number"] == number:
                 raise HTTPException(
                     status_code=409,
-                    detail=(
-                        f"Time slot conflict: '{row['title']}' ({row['game_date']} "
-                        f"{row['game_time']}, status: {row['status']}) already occupies this ground. "
-                        f"Only cancelled games can overlap."
-                    )
+                    detail=f"Pitch conflict: {row_label} is already booked by {describe(row, row_label)}."
                 )
+
+    if used + 1.0 / count > 1.0 + 1e-9:
+        row = overlapping[0]
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Pitch conflict: not enough free space for {fmt} at this time — "
+                f"{len(overlapping)} overlapping game(s) already use the ground, e.g. {describe(row, row['pitch_format'] or 'whole ground')}."
+            )
+        )
+    if not number and count > 1:
+        free = [n for n in range(1, count + 1) if n not in taken_numbers]
+        if not free:
+            raise HTTPException(status_code=409, detail=f"Pitch conflict: all {count} {fmt} pitches are booked at this time.")
+        number = free[0]
+    return (fmt, number)
 
 
 async def _build_rankings(
@@ -753,6 +844,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "title": game["title"],
         "sport_type": game["sport_type"],
         "ground_name": game["ground_name"],
+        "pitch_format": game["pitch_format"],
+        "pitch_number": game["pitch_number"],
         "game_date": game["game_date"],
         "game_time": game["game_time"],
         "max_players": game["max_players"],
@@ -849,8 +942,9 @@ async def create_game(
     await require_admin_or_moderator(user_id, db)
 
     # Prevent overlapping games on the same ground unless the existing game is cancelled
-    await _check_ground_time_overlap(
-        db, req.ground_name, req.game_date, req.game_time, req.duration_minutes
+    pitch_format, pitch_number = await _check_ground_time_overlap(
+        db, req.ground_name, req.game_date, req.game_time, req.duration_minutes,
+        sport_type=req.sport_type, pitch_format=req.pitch_format, pitch_number=req.pitch_number
     )
 
     # Enforce sport max-player preference cap
@@ -895,11 +989,13 @@ async def create_game(
     cursor = await db.execute(
         """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
            max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
-           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day,
+           pitch_format, pitch_number)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
          req.max_players, req.ground_cost, cost_per_person, payment_timing, user_id, req.duration_minutes,
-         req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day)
+         req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day,
+         pitch_format, pitch_number)
     )
     game_id = cursor.lastrowid
     await db.commit()
@@ -973,8 +1069,9 @@ async def create_game_series(
             time_str = game_date.strftime("%H:%M")
 
             try:
-                await _check_ground_time_overlap(
-                    db, req.ground_name, date_str, time_str, req.duration_minutes
+                pitch_format, pitch_number = await _check_ground_time_overlap(
+                    db, req.ground_name, date_str, time_str, req.duration_minutes,
+                    sport_type=req.sport_type, pitch_format=req.pitch_format
                 )
             except HTTPException as e:
                 skipped.append({"date": date_str, "time": time_str, "reason": e.detail})
@@ -1006,11 +1103,13 @@ async def create_game_series(
             cursor = await db.execute(
                 """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
                    max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
-                   payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day,
+                   pitch_format, pitch_number)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (title, game_code_display, req.sport_type, req.ground_name, date_str, time_str,
                  req.max_players, req.ground_cost, series_cost_per_person, payment_timing, user_id, req.duration_minutes,
-                 req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day)
+                 req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day,
+                 pitch_format, pitch_number)
             )
             created_games.append(await get_game_dict(db, cursor.lastrowid))
 
@@ -1092,7 +1191,8 @@ async def edit_game(
         updates.append("payment_timing = ?")
         params.append(new_timing)
 
-    if not updates:
+    pitch_changed = req.pitch_format is not None or req.pitch_number is not None
+    if not updates and not pitch_changed:
         return await get_game_dict(db, game_id)
 
     # Prevent moving a game into an occupied time slot on the same ground
@@ -1100,9 +1200,16 @@ async def edit_game(
     final_date = req.game_date if req.game_date is not None else game["game_date"]
     final_time = req.game_time if req.game_time is not None else game["game_time"]
     final_duration = req.duration_minutes if req.duration_minutes is not None else game["duration_minutes"]
-    await _check_ground_time_overlap(
-        db, final_ground, final_date, final_time, final_duration, exclude_game_id=game_id
+    final_pitch = req.pitch_format if req.pitch_format is not None else game["pitch_format"]
+    final_number = req.pitch_number if req.pitch_number is not None else (
+        game["pitch_number"] if req.pitch_format is None else None
     )
+    pitch_format, pitch_number = await _check_ground_time_overlap(
+        db, final_ground, final_date, final_time, final_duration, exclude_game_id=game_id,
+        sport_type=final_sport, pitch_format=final_pitch, pitch_number=final_number
+    )
+    updates.extend(["pitch_format = ?", "pitch_number = ?"])
+    params.extend([pitch_format, pitch_number])
 
     params.append(game_id)
     await db.execute(f"UPDATE games SET {', '.join(updates)} WHERE id = ?", params)

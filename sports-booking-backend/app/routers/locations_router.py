@@ -99,6 +99,9 @@ SPORT_CODE_MAP = {
     "badminton": "BD",
     "basketball": "BK",
     "hockey": "HK",
+    "pickleball": "PB",
+    "tennis": "TN",
+    "swimming": "SW",
 }
 
 
@@ -309,6 +312,12 @@ async def list_grounds(
             "is_approved": r["is_approved"],
             "created_at": r["created_at"],
             "main_photo": main_photo,
+            "sports": [x for x in (r["sports"] or "").split(",") if x],
+            "pitch_layouts": {
+                sport: entry.get("pitches", [])
+                for sport, entry in _parse_amenities(r["sport_details"]).items()
+                if isinstance(entry, dict) and entry.get("pitches")
+            },
         })
     return result
 
@@ -1626,6 +1635,7 @@ class GroundDetailsFields(BaseModel):
     sports: Optional[List[str]] = None
     amenities: Optional[dict] = None
     amenities_other: Optional[str] = None
+    sport_details: Optional[dict] = None
 
 
 class RegisterGroundRequest(GroundDetailsFields):
@@ -1635,6 +1645,10 @@ class RegisterGroundRequest(GroundDetailsFields):
 
 class RejectGroundRequest(BaseModel):
     reason: str = ""
+
+
+class ApproveGroundRequest(BaseModel):
+    manager_user_ids: Optional[List[int]] = None
 
 
 def _coords_from_text(text: str) -> Optional[tuple[float, float]]:
@@ -1685,6 +1699,52 @@ def _clean_amenities(raw: dict) -> dict:
     return cleaned
 
 
+SPORT_TEXT_LIMITS = {
+    "timing": 200, "price": 200, "surface": 40, "size": 100,
+    "contact_name": 100, "contact_phone": 30, "notes": 500,
+}
+PITCH_FORMAT_RE = re.compile(r"^[A-Za-z0-9 \-+/]{1,30}$")
+
+
+def _clean_pitches(raw) -> list[dict]:
+    pitches: list[dict] = []
+    seen: set[str] = set()
+    if not isinstance(raw, list):
+        return pitches
+    for p in raw[:10]:
+        if not isinstance(p, dict):
+            continue
+        fmt = str(p.get("format") or "").strip()
+        try:
+            count = int(p.get("count") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not PITCH_FORMAT_RE.match(fmt) or not 1 <= count <= 20 or fmt.lower() in seen:
+            continue
+        seen.add(fmt.lower())
+        pitches.append({"format": fmt, "count": count})
+    return pitches
+
+
+def _clean_sport_details(raw: dict) -> dict:
+    cleaned: dict = {}
+    for sport, value in raw.items():
+        if not isinstance(sport, str) or not AMENITY_KEY_RE.match(sport) or not isinstance(value, dict):
+            continue
+        entry = {field: str(value.get(field) or "").strip()[:limit] for field, limit in SPORT_TEXT_LIMITS.items()}
+        items = value.get("items")
+        entry["items"] = _clean_amenities(items) if isinstance(items, dict) else {}
+        entry["pitches"] = _clean_pitches(value.get("pitches"))
+        cleaned[sport] = entry
+    return cleaned
+
+
+def pitch_layouts(ground: aiosqlite.Row, sport: str) -> list[dict]:
+    details = _parse_amenities(ground["sport_details"])
+    entry = details.get((sport or "").lower())
+    return entry.get("pitches", []) if isinstance(entry, dict) else []
+
+
 def _parse_amenities(raw: Optional[str]) -> dict:
     try:
         data = json.loads(raw or "{}")
@@ -1714,6 +1774,9 @@ async def _apply_ground_details(db: aiosqlite.Connection, ground_id: int, req: G
     if req.amenities is not None:
         updates.append("amenities = ?")
         params.append(json.dumps(_clean_amenities(req.amenities)))
+    if req.sport_details is not None:
+        updates.append("sport_details = ?")
+        params.append(json.dumps(_clean_sport_details(req.sport_details)))
 
     latitude, longitude = req.latitude, req.longitude
     if req.maps_url is not None:
@@ -1738,6 +1801,8 @@ async def _apply_ground_details(db: aiosqlite.Connection, ground_id: int, req: G
 
 async def _ground_sport_types(db: aiosqlite.Connection, g: aiosqlite.Row) -> list[str]:
     sports = [s for s in (g["sports"] or "").split(",") if s]
+    if sports:
+        return sports
     cursor = await db.execute(
         "SELECT DISTINCT sport_type FROM games WHERE (ground_name = ? OR ground_name = ?) AND sport_type != ''",
         (f"{g['location']} - {g['name']}", g["name"])
@@ -1760,7 +1825,7 @@ async def _upcoming_games(db: aiosqlite.Connection, g: aiosqlite.Row, limit: int
     today = datetime.now().strftime("%Y-%m-%d")
     cursor = await db.execute(
         """SELECT ga.id, ga.title, ga.sport_type, ga.status, ga.game_date, ga.game_time, ga.duration_minutes,
-                  ga.max_players, ga.cost_per_person, u.name AS creator_name, u.phone AS creator_phone,
+                  ga.max_players, ga.cost_per_person, ga.pitch_format, ga.pitch_number, u.name AS creator_name, u.phone AS creator_phone,
                   (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = ga.id AND gp.status = 'selected') AS player_count
            FROM games ga LEFT JOIN users u ON ga.created_by = u.id
            WHERE (ga.ground_name = ? OR ga.ground_name = ?)
@@ -1784,6 +1849,8 @@ async def _upcoming_games(db: aiosqlite.Connection, g: aiosqlite.Row, limit: int
             "cost_per_person": r["cost_per_person"],
             "organiser_name": r["creator_name"] or "",
             "organiser_phone": r["creator_phone"] or "",
+            "pitch_format": r["pitch_format"],
+            "pitch_number": r["pitch_number"],
         }
         for r in await cursor.fetchall()
     ]
@@ -1889,6 +1956,11 @@ async def get_ground_details(
         "price_info": g["price_info"],
         "amenities": _parse_amenities(g["amenities"]),
         "amenities_other": g["amenities_other"],
+        "sport_details": {
+            sport: entry if contact_visible else {**entry, "contact_name": "", "contact_phone": ""}
+            for sport, entry in _parse_amenities(g["sport_details"]).items()
+            if isinstance(entry, dict)
+        },
         "contact_public": bool(g["contact_public"]),
         "owner_name": g["owner_name"] if contact_visible else "",
         "owner_phone": g["owner_phone"] if contact_visible else "",
@@ -2031,6 +2103,7 @@ async def list_pending_grounds(
             "owner_phone": g["owner_phone"],
             "owner_email": g["owner_email"],
             "description": g["description"],
+            "submitter_id": g["created_by"],
             "submitter_name": g["submitter_name"] or "",
             "submitter_phone": g["submitter_phone"] or "",
             "created_at": g["created_at"],
@@ -2042,23 +2115,52 @@ async def list_pending_grounds(
 @router.post("/grounds/{ground_id}/approve")
 async def approve_ground(
     ground_id: int,
+    req: Optional[ApproveGroundRequest] = None,
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    """Approve a registered ground and assign Ground Managers (defaults to the submitter)."""
     await require_admin(user_id, db)
     cursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
     ground = await cursor.fetchone()
     if not ground:
         raise HTTPException(status_code=404, detail="Ground not found")
+    owner_id = ground["created_by"]
+    if req is not None and req.manager_user_ids is not None:
+        manager_ids = list(dict.fromkeys(req.manager_user_ids))
+    else:
+        manager_ids = [owner_id] if owner_id else []
+    if not manager_ids:
+        raise HTTPException(status_code=400, detail="Select at least one Ground Manager")
+    placeholders = ",".join("?" for _ in manager_ids)
+    found = await (await db.execute(
+        f"SELECT id FROM users WHERE id IN ({placeholders}) AND deleted_at IS NULL", manager_ids
+    )).fetchall()
+    if len(found) != len(manager_ids):
+        raise HTTPException(status_code=400, detail="One or more selected users were not found")
+
     await db.execute("UPDATE grounds SET is_approved = 1, rejection_reason = '' WHERE id = ?", (ground_id,))
-    if ground["created_by"]:
-        await _grant_ground_owner_access(db, ground["created_by"], ground, user_id)
+    display = f"{ground['location']} - {ground['name']}"
+    for manager_id in manager_ids:
+        if manager_id == owner_id:
+            await _grant_ground_owner_access(db, manager_id, ground, user_id)
+        else:
+            await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'ground_management')", (manager_id,))
+            await db.execute(
+                "INSERT OR IGNORE INTO ground_management_assignments (user_id, ground_id, assigned_by) VALUES (?, ?, ?)",
+                (manager_id, ground_id, user_id)
+            )
         await db.execute(
             "INSERT INTO notifications (user_id, type, message) VALUES (?, 'ground_approved', ?)",
-            (ground["created_by"], f"Your ground {ground['location']} - {ground['name']} is approved. You are now its Ground Manager.")
+            (manager_id, f"Ground {display} is approved. You are now its Ground Manager.")
+        )
+    if owner_id and owner_id not in manager_ids:
+        await db.execute(
+            "INSERT INTO notifications (user_id, type, message) VALUES (?, 'ground_approved', ?)",
+            (owner_id, f"Your ground {display} is approved.")
         )
     await db.commit()
-    return {"message": "Ground approved"}
+    return {"message": "Ground approved", "manager_user_ids": manager_ids}
 
 
 @router.post("/grounds/{ground_id}/reject")

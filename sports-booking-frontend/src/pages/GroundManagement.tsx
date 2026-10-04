@@ -194,7 +194,10 @@ export default function GroundManagement({ onBack }: Props) {
   const [detailsInitial, setDetailsInitial] = useState<GroundDetailsInput | null>(null);
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsMessage, setDetailsMessage] = useState('');
-  const [pendingGrounds, setPendingGrounds] = useState<{ id: number; display_name: string; address: string; owner_name: string; owner_phone: string; submitter_name: string; submitter_phone: string; sport_types: string[] }[]>([]);
+  const [pendingGrounds, setPendingGrounds] = useState<{ id: number; display_name: string; address: string; owner_name: string; owner_phone: string; submitter_id: number | null; submitter_name: string; submitter_phone: string; sport_types: string[] }[]>([]);
+  const [approvalUsers, setApprovalUsers] = useState<{ id: number; name: string; phone: string }[]>([]);
+  const [managerPicks, setManagerPicks] = useState<Record<number, number[]>>({});
+  const [managerSearch, setManagerSearch] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -340,20 +343,39 @@ export default function GroundManagement({ onBack }: Props) {
         owner_name: d.owner_name, owner_phone: d.owner_phone, owner_email: d.owner_email, contact_public: d.contact_public,
         opening_hours: d.opening_hours, price_info: d.price_info, description: d.description,
         sports: d.sports, amenities: d.amenities, amenities_other: d.amenities_other,
+        sport_details: d.sport_details || {},
       }))
       .catch(err => console.error('Failed to load ground details:', err));
   }, [selectedGround]);
 
   const loadPendingGrounds = () => {
     if (!isAdmin) return;
-    api.listPendingGrounds().then(setPendingGrounds).catch(err => console.error('Failed to load pending grounds:', err));
+    api.listPendingGrounds()
+      .then((list: typeof pendingGrounds) => {
+        setPendingGrounds(list);
+        setManagerPicks(prev => {
+          const next = { ...prev };
+          for (const pg of list) if (!next[pg.id]) next[pg.id] = pg.submitter_id ? [pg.submitter_id] : [];
+          return next;
+        });
+        if (list.length > 0) api.listUsers().then(setApprovalUsers).catch(err => console.error('Failed to load users:', err));
+      })
+      .catch(err => console.error('Failed to load pending grounds:', err));
   };
+
+  const toggleManagerPick = (groundId: number, userId: number) =>
+    setManagerPicks(prev => {
+      const cur = prev[groundId] || [];
+      return { ...prev, [groundId]: cur.includes(userId) ? cur.filter(id => id !== userId) : [...cur, userId] };
+    });
 
   useEffect(loadPendingGrounds, [isAdmin]);
 
   const handleApproveGround = async (groundId: number) => {
+    const managers = managerPicks[groundId] || [];
+    if (managers.length === 0) { alert('Select at least one Ground Manager'); return; }
     try {
-      await api.approveGround(groundId);
+      await api.approveGround(groundId, managers);
       loadPendingGrounds();
       await loadGrounds();
     } catch (err) {
@@ -870,6 +892,37 @@ export default function GroundManagement({ onBack }: Props) {
                     {pg.address && <p className="text-xs text-gray-500">{pg.address}</p>}
                     <p className="text-xs text-gray-600">Owner: {pg.owner_name || '-'} · {pg.owner_phone || '-'}</p>
                     <p className="text-xs text-gray-600">Submitted by: {pg.submitter_name} · {pg.submitter_phone}</p>
+                    <div className="pt-1 space-y-1">
+                      <p className="text-xs font-medium text-gray-700">Ground Managers</p>
+                      <div className="flex flex-wrap gap-1">
+                        {(managerPicks[pg.id] || []).map(uid => {
+                          const u = approvalUsers.find(x => x.id === uid);
+                          return (
+                            <span key={uid} className="text-xs bg-amber-50 border border-amber-300 rounded-full pl-2 pr-1 py-0.5 flex items-center gap-1">
+                              {u ? u.name : uid === pg.submitter_id ? pg.submitter_name : `User ${uid}`}
+                              <button aria-label="Remove manager" onClick={() => toggleManagerPick(pg.id, uid)}><X size={12} /></button>
+                            </span>
+                          );
+                        })}
+                        {(managerPicks[pg.id] || []).length === 0 && <span className="text-xs text-red-600">None selected</span>}
+                      </div>
+                      <Input className="h-8 text-xs" placeholder="Add Ground Manager: search name or phone"
+                        value={managerSearch[pg.id] || ''} onChange={e => setManagerSearch(prev => ({ ...prev, [pg.id]: e.target.value }))} />
+                      {(managerSearch[pg.id] || '').trim().length >= 2 && (
+                        <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
+                          {approvalUsers
+                            .filter(u => !(managerPicks[pg.id] || []).includes(u.id))
+                            .filter(u => `${u.name} ${u.phone}`.toLowerCase().includes(managerSearch[pg.id].trim().toLowerCase()))
+                            .slice(0, 6)
+                            .map(u => (
+                              <button key={u.id} className="w-full text-left px-2 py-1 text-xs hover:bg-gray-50"
+                                onClick={() => { toggleManagerPick(pg.id, u.id); setManagerSearch(prev => ({ ...prev, [pg.id]: '' })); }}>
+                                {u.name} · {u.phone}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex gap-2 pt-1">
                       <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => handleApproveGround(pg.id)}><Check size={12} className="mr-1" /> Approve</Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs text-red-600" onClick={() => handleRejectGround(pg.id)}><X size={12} className="mr-1" /> Reject</Button>

@@ -9,61 +9,165 @@ export interface AmenityMeta {
   key: string;
   label: string;
   emoji: string;
-  group: 'general' | 'staff' | 'gear' | 'surface' | 'sport';
-  sport?: string;
 }
 
-export const AMENITY_GROUPS: { key: AmenityMeta['group']; label: string }[] = [
-  { key: 'general', label: 'Facilities' },
-  { key: 'surface', label: 'Surface & Venue' },
-  { key: 'staff', label: 'Staff' },
-  { key: 'gear', label: 'Gear' },
-  { key: 'sport', label: 'Sport Equipment' },
+export const AMENITIES: AmenityMeta[] = [
+  { key: 'toilet', label: 'Toilet', emoji: '🚻' },
+  { key: 'shower', label: 'Shower', emoji: '🚿' },
+  { key: 'changing_room', label: 'Changing room', emoji: '🚪' },
+  { key: 'lockers', label: 'Lockers', emoji: '🔐' },
+  { key: 'car_parking', label: 'Car parking', emoji: '🅿️' },
+  { key: 'bike_parking', label: 'Bike parking', emoji: '🏍️' },
+  { key: 'drinking_water', label: 'Drinking water', emoji: '🚰' },
+  { key: 'shed', label: 'Shed / seating', emoji: '⛱️' },
+  { key: 'floodlights', label: 'Night lights', emoji: '💡' },
+  { key: 'first_aid', label: 'First aid', emoji: '⛑️' },
+  { key: 'cctv', label: 'CCTV', emoji: '📹' },
+  { key: 'power_backup', label: 'Power backup', emoji: '🔋' },
+  { key: 'cafe', label: 'Café / snacks', emoji: '☕' },
+  { key: 'wifi', label: 'Wi-Fi', emoji: '📶' },
+  { key: 'wheelchair', label: 'Wheelchair access', emoji: '♿' },
 ];
 
-export const AMENITIES: AmenityMeta[] = [
-  { key: 'toilet', label: 'Toilet', emoji: '🚻', group: 'general' },
-  { key: 'shower', label: 'Shower', emoji: '🚿', group: 'general' },
-  { key: 'changing_room', label: 'Changing room', emoji: '🚪', group: 'general' },
-  { key: 'lockers', label: 'Lockers', emoji: '🔐', group: 'general' },
-  { key: 'car_parking', label: 'Car parking', emoji: '🅿️', group: 'general' },
-  { key: 'bike_parking', label: 'Bike parking', emoji: '🏍️', group: 'general' },
-  { key: 'drinking_water', label: 'Drinking water', emoji: '🚰', group: 'general' },
-  { key: 'shed', label: 'Shed / seating', emoji: '⛱️', group: 'general' },
-  { key: 'floodlights', label: 'Night lights', emoji: '💡', group: 'general' },
-  { key: 'first_aid', label: 'First aid', emoji: '⛑️', group: 'general' },
-  { key: 'cctv', label: 'CCTV', emoji: '📹', group: 'general' },
-  { key: 'power_backup', label: 'Power backup', emoji: '🔋', group: 'general' },
-  { key: 'cafe', label: 'Café / snacks', emoji: '☕', group: 'general' },
-  { key: 'wifi', label: 'Wi-Fi', emoji: '📶', group: 'general' },
-  { key: 'wheelchair', label: 'Wheelchair access', emoji: '♿', group: 'general' },
-  { key: 'turf_artificial', label: 'Artificial turf', emoji: '🟩', group: 'surface' },
-  { key: 'natural_grass', label: 'Natural grass', emoji: '🌱', group: 'surface' },
-  { key: 'mud', label: 'Mud ground', emoji: '🟫', group: 'surface' },
-  { key: 'hard_court', label: 'Hard court', emoji: '🧱', group: 'surface' },
-  { key: 'wooden_court', label: 'Wooden court', emoji: '🪵', group: 'surface' },
-  { key: 'synthetic_court', label: 'Synthetic court', emoji: '🟦', group: 'surface' },
-  { key: 'indoor', label: 'Indoor', emoji: '🏟️', group: 'surface' },
-  { key: 'outdoor', label: 'Outdoor', emoji: '☀️', group: 'surface' },
-  { key: 'ball_boy', label: 'Ball boy', emoji: '🧒', group: 'staff' },
-  { key: 'coach', label: 'Coach', emoji: '🧑‍🏫', group: 'staff' },
-  { key: 'referee', label: 'Referee / umpire', emoji: '🧑‍⚖️', group: 'staff' },
-  { key: 'shoes', label: 'Shoes', emoji: '👟', group: 'gear' },
-  { key: 'shorts', label: 'Shorts', emoji: '🩳', group: 'gear' },
-  { key: 'socks', label: 'Socks', emoji: '🧦', group: 'gear' },
-  { key: 'tshirts', label: 'T-shirts', emoji: '👕', group: 'gear' },
-  { key: 'bibs', label: 'Bibs / vests', emoji: '🦺', group: 'gear' },
-  { key: 'ball', label: 'Ball', emoji: '⚽', group: 'gear' },
-  { key: 'goalposts', label: 'Goalposts', emoji: '🥅', group: 'sport', sport: 'soccer' },
-  { key: 'shuttles', label: 'Shuttles', emoji: '🏸', group: 'sport', sport: 'badminton' },
-  { key: 'badminton_rackets', label: 'Badminton rackets', emoji: '🏸', group: 'sport', sport: 'badminton' },
-  { key: 'cricket_bats', label: 'Cricket bats', emoji: '🏏', group: 'sport', sport: 'cricket' },
-  { key: 'cricket_balls', label: 'Cricket balls', emoji: '🔴', group: 'sport', sport: 'cricket' },
-  { key: 'stumps', label: 'Stumps', emoji: '🏏', group: 'sport', sport: 'cricket' },
-  { key: 'cricket_nets', label: 'Practice nets', emoji: '🥅', group: 'sport', sport: 'cricket' },
-  { key: 'basketballs', label: 'Basketballs', emoji: '🏀', group: 'sport', sport: 'basketball' },
-  { key: 'hockey_sticks', label: 'Hockey sticks', emoji: '🏒', group: 'sport', sport: 'hockey' },
-];
+export interface PitchLayout {
+  format: string;
+  count: number;
+}
+
+export interface SportDetail {
+  timing: string;
+  price: string;
+  surface: string;
+  size: string;
+  contact_name: string;
+  contact_phone: string;
+  notes: string;
+  items: Record<string, AmenityValue>;
+  pitches: PitchLayout[];
+}
+
+export interface SportConfig {
+  surfaceLabel: string;
+  surfaces: string[];
+  sizeLabel: string;
+  sizePlaceholder: string;
+  items: AmenityMeta[];
+  pitchLabel: string;
+  defaultPitches: PitchLayout[];
+}
+
+const COACHING: AmenityMeta = { key: 'coaching', label: 'Coaching', emoji: '🧑‍🏫' };
+
+export const SPORT_CONFIG: Record<string, SportConfig> = {
+  soccer: {
+    surfaceLabel: 'Ground type', surfaces: ['Artificial turf', 'Natural grass', 'Mud'],
+    sizeLabel: 'Ground size', sizePlaceholder: 'e.g. 60m x 40m',
+    items: [
+      { key: 'football', label: 'Football', emoji: '⚽' }, COACHING,
+      { key: 'ball_boy', label: 'Ball boy', emoji: '🧒' },
+      { key: 'cleats', label: 'Cleats / studs', emoji: '👟' },
+      { key: 'socks', label: 'Socks', emoji: '🧦' },
+      { key: 'bibs', label: 'Bibs', emoji: '🦺' },
+      { key: 'tshirts', label: 'T-shirts', emoji: '👕' },
+    ],
+    pitchLabel: 'Pitch splits',
+    defaultPitches: [{ format: '5-a-side', count: 3 }, { format: '7-a-side', count: 2 }, { format: '9-a-side', count: 1 }],
+  },
+  badminton: {
+    surfaceLabel: 'Court type', surfaces: ['Wooden', 'Synthetic mat', 'Cement'],
+    sizeLabel: 'Courts', sizePlaceholder: 'e.g. 4 indoor courts',
+    items: [
+      { key: 'shuttles', label: 'Shuttles', emoji: '🏸' },
+      { key: 'racket', label: 'Racket', emoji: '🏸' }, COACHING,
+      { key: 'non_marking_shoes', label: 'Non-marking shoes', emoji: '👟' },
+    ],
+    pitchLabel: 'Courts', defaultPitches: [{ format: 'Court', count: 2 }],
+  },
+  swimming: {
+    surfaceLabel: 'Pool type', surfaces: ['Indoor', 'Outdoor'],
+    sizeLabel: 'Pool size', sizePlaceholder: 'e.g. 25m x 12m, 4 lanes, 1.2-2m deep',
+    items: [
+      { key: 'swimsuit', label: 'Swim suit', emoji: '🩱' },
+      { key: 'cap', label: 'Cap', emoji: '🧢' },
+      { key: 'ear_plug', label: 'Ear plugs', emoji: '👂' },
+      { key: 'goggles', label: 'Goggles', emoji: '🥽' },
+      { key: 'towel', label: 'Towel', emoji: '🧺' }, COACHING,
+    ],
+    pitchLabel: 'Lanes', defaultPitches: [{ format: 'Lane', count: 4 }],
+  },
+  pickleball: {
+    surfaceLabel: 'Court type', surfaces: ['Hard court', 'Synthetic', 'Wooden'],
+    sizeLabel: 'Courts', sizePlaceholder: 'e.g. 3 courts',
+    items: [
+      { key: 'paddle', label: 'Paddle', emoji: '🏓' },
+      { key: 'balls', label: 'Balls', emoji: '🟡' }, COACHING,
+    ],
+    pitchLabel: 'Courts', defaultPitches: [{ format: 'Court', count: 2 }],
+  },
+  tennis: {
+    surfaceLabel: 'Court type', surfaces: ['Hard court', 'Clay', 'Grass', 'Synthetic'],
+    sizeLabel: 'Courts', sizePlaceholder: 'e.g. 2 floodlit courts',
+    items: [
+      { key: 'racket', label: 'Racket', emoji: '🎾' },
+      { key: 'balls', label: 'Balls', emoji: '🟡' },
+      { key: 'ball_boy', label: 'Ball boy', emoji: '🧒' }, COACHING,
+    ],
+    pitchLabel: 'Courts', defaultPitches: [{ format: 'Court', count: 2 }],
+  },
+  cricket: {
+    surfaceLabel: 'Pitch type', surfaces: ['Turf', 'Matting', 'Cement', 'Natural grass'],
+    sizeLabel: 'Ground size', sizePlaceholder: 'e.g. 60m boundary',
+    items: [
+      { key: 'bat', label: 'Bat', emoji: '🏏' },
+      { key: 'balls', label: 'Balls', emoji: '🔴' },
+      { key: 'stumps', label: 'Stumps', emoji: '🏏' },
+      { key: 'nets', label: 'Practice nets', emoji: '🥅' },
+      { key: 'umpire', label: 'Umpire', emoji: '🧑‍⚖️' }, COACHING,
+    ],
+    pitchLabel: 'Pitches / nets', defaultPitches: [],
+  },
+  basketball: {
+    surfaceLabel: 'Court type', surfaces: ['Wooden', 'Hard court', 'Synthetic'],
+    sizeLabel: 'Courts', sizePlaceholder: 'e.g. 1 full court',
+    items: [{ key: 'basketball', label: 'Basketball', emoji: '🏀' }, COACHING],
+    pitchLabel: 'Courts', defaultPitches: [{ format: 'Half court', count: 2 }, { format: 'Full court', count: 1 }],
+  },
+  hockey: {
+    surfaceLabel: 'Ground type', surfaces: ['Artificial turf', 'Natural grass'],
+    sizeLabel: 'Ground size', sizePlaceholder: 'e.g. 91m x 55m',
+    items: [
+      { key: 'sticks', label: 'Hockey sticks', emoji: '🏒' },
+      { key: 'balls', label: 'Balls', emoji: '⚪' }, COACHING,
+    ],
+    pitchLabel: 'Pitch splits', defaultPitches: [],
+  },
+};
+
+export function sportConfig(sport: string): SportConfig {
+  return SPORT_CONFIG[sport] || {
+    surfaceLabel: 'Surface', surfaces: [], sizeLabel: 'Size', sizePlaceholder: '', items: [COACHING],
+    pitchLabel: 'Courts / pitches', defaultPitches: [],
+  };
+}
+
+export const EMPTY_SPORT_DETAIL: SportDetail = {
+  timing: '', price: '', surface: '', size: '', contact_name: '', contact_phone: '', notes: '', items: {}, pitches: [],
+};
+
+export function parsePitchValue(value: string): { pitch_format?: string; pitch_number?: number } {
+  if (!value) return {};
+  const [format, number] = value.split('|');
+  return { pitch_format: format, pitch_number: Number(number) || undefined };
+}
+
+export function defaultPitchValue(layouts: PitchLayout[]): string {
+  return layouts.length > 0 ? `${layouts[0].format}|0` : '';
+}
+
+export function pitchLabel(format: string, number: number): string {
+  if (!format) return '';
+  return number ? `${format} · Pitch ${number}` : format;
+}
 
 export const AMENITY_STATUS_LABELS: Record<AmenityStatus, string> = {
   free: 'Free',
@@ -76,12 +180,7 @@ export const AMENITY_STATUS_LABELS: Record<AmenityStatus, string> = {
 
 export const PRICED_STATUSES: AmenityStatus[] = ['paid', 'rent', 'buy', 'rent_buy'];
 
-export function amenitiesForSports(sports: string[]): AmenityMeta[] {
-  return AMENITIES.filter(a => !a.sport || sports.includes(a.sport));
-}
-
-export function amenityStatusText(value: AmenityValue, group: AmenityMeta['group']): string {
-  if (group === 'surface') return '';
+export function amenityStatusText(value: AmenityValue): string {
   const label = AMENITY_STATUS_LABELS[value.status];
   return value.price ? `${label} · ${value.price}` : label;
 }
@@ -104,6 +203,7 @@ export interface GroundDetails {
   price_info: string;
   amenities: Record<string, AmenityValue>;
   amenities_other: string;
+  sport_details: Record<string, SportDetail>;
   contact_public: boolean;
   owner_name: string;
   owner_phone: string;
@@ -113,7 +213,7 @@ export interface GroundDetails {
   upcoming_games: {
     game_id: number; title: string; sport_type: string; status: string; game_date: string; game_time: string;
     duration_minutes: number; max_players: number; player_count: number; cost_per_person: number;
-    organiser_name: string; organiser_phone: string;
+    organiser_name: string; organiser_phone: string; pitch_format: string; pitch_number: number;
   }[];
   can_manage: boolean;
   is_member: boolean;
@@ -136,11 +236,13 @@ export interface GroundDetailsInput {
   sports: string[];
   amenities: Record<string, AmenityValue>;
   amenities_other: string;
+  sport_details: Record<string, SportDetail>;
 }
 
 export const EMPTY_GROUND_DETAILS: GroundDetailsInput = {
   address: '', latitude: null, longitude: null, maps_url: '', owner_name: '', owner_phone: '', owner_email: '',
   contact_public: true, opening_hours: '', price_info: '', description: '', sports: [], amenities: {}, amenities_other: '',
+  sport_details: {},
 };
 
 export function directionsUrl(g: { latitude: number | null; longitude: number | null; maps_url: string; address: string; display_name: string }): string {
