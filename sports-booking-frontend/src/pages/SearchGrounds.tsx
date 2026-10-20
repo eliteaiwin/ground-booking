@@ -108,6 +108,22 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
   const [playerSearch, setPlayerSearch] = useState('');
   const [viewGroundId, setViewGroundId] = useState<number | null>(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [registerAccess, setRegisterAccess] = useState<{ allowed: boolean; status: string; reason: string } | null>(null);
+
+  useEffect(() => {
+    api.getRegisterAccess().then(setRegisterAccess).catch(() => setRegisterAccess(null));
+  }, []);
+
+  const requestTurfAccess = async () => {
+    const note = window.prompt('Tell Admin about the turf (name, area) — optional:', '');
+    if (note === null) return;
+    try {
+      setRegisterAccess(await api.requestRegisterAccess(note));
+      alert('Admin has been informed. You will get a notification once approved.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to send request');
+    }
+  };
   const [nearby, setNearby] = useState<NearbyGround[] | null>(null);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState('');
@@ -242,10 +258,23 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
           <Button onClick={findNearby} disabled={nearbyLoading} style={{ backgroundColor: activeTheme.button_bg }}>
             <LocateFixed size={16} className="mr-2" /> {nearbyLoading ? 'Locating...' : 'Grounds near me'}
           </Button>
-          <Button variant="outline" onClick={() => setShowRegister(true)}>
-            <Plus size={16} className="mr-2" /> Register your ground
-          </Button>
+          {registerAccess?.allowed ? (
+            <Button variant="outline" onClick={() => setShowRegister(true)}>
+              <Plus size={16} className="mr-2" /> Register a Ground
+            </Button>
+          ) : registerAccess?.status === 'pending' ? (
+            <Button variant="outline" disabled className="whitespace-normal h-auto py-2 text-xs">
+              Request sent to Admin
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={requestTurfAccess} className="whitespace-normal h-auto py-2 text-xs">
+              <Plus size={16} className="mr-1 shrink-0" /> Request Admin to add a New Turf
+            </Button>
+          )}
         </div>
+        {registerAccess?.status === 'rejected' && (
+          <p className="text-xs text-red-600">Admin did not approve your last request{registerAccess.reason ? `: ${registerAccess.reason}` : ''}. You can ask again.</p>
+        )}
         {nearbyError && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{nearbyError}</div>}
 
         {nearby ? (

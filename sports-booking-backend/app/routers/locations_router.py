@@ -2045,6 +2045,118 @@ async def _grant_ground_owner_access(db: aiosqlite.Connection, owner_id: int, gr
     )
 
 
+class TurfAccessRequest(BaseModel):
+    note: Optional[str] = ""
+
+
+class TurfAccessReject(BaseModel):
+    reason: Optional[str] = ""
+
+
+async def _register_access(db: aiosqlite.Connection, user_id: int) -> dict:
+    if await (await db.execute("SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))).fetchone():
+        return {"allowed": True, "status": "approved", "reason": ""}
+    row = await (await db.execute(
+        "SELECT status, reason FROM ground_register_requests WHERE user_id = ?", (user_id,)
+    )).fetchone()
+    status = row["status"] if row else "none"
+    return {"allowed": status == "approved", "status": status, "reason": (row["reason"] if row else "") or ""}
+
+
+@router.get("/ground-register-access")
+async def get_ground_register_access(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    return await _register_access(db, user_id)
+
+
+@router.post("/ground-register-access/request")
+async def request_ground_register_access(
+    req: TurfAccessRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """User asks Admin for permission to add a new turf."""
+    access = await _register_access(db, user_id)
+    if access["allowed"]:
+        return access
+    if access["status"] == "pending":
+        raise HTTPException(status_code=400, detail="Your request is already with Admin")
+    note = (req.note or "").strip()[:300]
+    await db.execute(
+        """INSERT INTO ground_register_requests (user_id, status, note, reason, created_at)
+           VALUES (?, 'pending', ?, '', CURRENT_TIMESTAMP)
+           ON CONFLICT(user_id) DO UPDATE SET status = 'pending', note = excluded.note, reason = '',
+             decided_by = NULL, decided_at = NULL, created_at = CURRENT_TIMESTAMP""",
+        (user_id, note)
+    )
+    u = await (await db.execute("SELECT name, phone FROM users WHERE id = ?", (user_id,))).fetchone()
+    who = f"{u['name']} ({u['phone']})" if u else "A user"
+    admins = await (await db.execute("SELECT user_id FROM user_roles WHERE role = 'admin'")).fetchall()
+    for admin in admins:
+        await db.execute(
+            "INSERT INTO notifications (user_id, type, message) VALUES (?, 'turf_access_request', ?)",
+            (admin["user_id"], f"{who} wants to add a new turf." + (f" Details: {note}" if note else "") + " Review it in Ground Mgmt.")
+        )
+    await db.commit()
+    return await _register_access(db, user_id)
+
+
+@router.get("/ground-register-requests")
+async def list_ground_register_requests(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    rows = await (await db.execute(
+        """SELECT r.id, r.user_id, r.note, r.created_at, u.name, u.phone
+           FROM ground_register_requests r JOIN users u ON u.id = r.user_id
+           WHERE r.status = 'pending' ORDER BY r.created_at"""
+    )).fetchall()
+    return [dict(r) for r in rows]
+
+
+async def _decide_register_request(db: aiosqlite.Connection, req_id: int, admin_id: int, status: str, reason: str = ""):
+    row = await (await db.execute("SELECT user_id FROM ground_register_requests WHERE id = ?", (req_id,))).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Request not found")
+    await db.execute(
+        "UPDATE ground_register_requests SET status = ?, reason = ?, decided_by = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (status, reason, admin_id, req_id)
+    )
+    msg = ("Admin approved your request. You can now use Register a Ground in Search Grounds." if status == "approved"
+           else "Admin did not approve your request to add a new turf." + (f" Reason: {reason}" if reason else ""))
+    await db.execute(
+        "INSERT INTO notifications (user_id, type, message) VALUES (?, ?, ?)",
+        (row["user_id"], f"turf_access_{status}", msg)
+    )
+    await db.commit()
+
+
+@router.post("/ground-register-requests/{req_id}/approve")
+async def approve_ground_register_request(
+    req_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    await _decide_register_request(db, req_id, user_id, "approved")
+    return {"message": "Approved"}
+
+
+@router.post("/ground-register-requests/{req_id}/reject")
+async def reject_ground_register_request(
+    req_id: int,
+    req: TurfAccessReject,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    await _decide_register_request(db, req_id, user_id, "rejected", (req.reason or "").strip()[:300])
+    return {"message": "Rejected"}
+
+
 @router.post("/grounds/register")
 async def register_ground(
     req: RegisterGroundRequest,
@@ -2067,6 +2179,8 @@ async def register_ground(
 
     admin_cursor = await db.execute("SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))
     is_admin = await admin_cursor.fetchone() is not None
+    if not (await _register_access(db, user_id))["allowed"]:
+        raise HTTPException(status_code=403, detail="Ask Admin to approve your request to add a new turf first")
     ground_code = await generate_ground_code(db)
     await db.execute("INSERT OR IGNORE INTO locations (name, created_by) VALUES (?, ?)", (location, user_id))
     try:

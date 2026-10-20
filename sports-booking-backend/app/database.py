@@ -559,6 +559,16 @@ async def init_db():
         )""",
         "CREATE INDEX IF NOT EXISTS idx_allotments_ground_date ON ground_allotments(ground_id, allot_date)",
         "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
+        """CREATE TABLE IF NOT EXISTS ground_register_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+            status TEXT NOT NULL DEFAULT 'pending',
+            note TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            decided_by INTEGER,
+            decided_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
     ]
     for migration in migrations:
         try:

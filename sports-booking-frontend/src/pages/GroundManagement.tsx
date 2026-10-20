@@ -356,6 +356,27 @@ export default function GroundManagement({ onBack }: Props) {
       .catch(err => console.error('Failed to load ground details:', err));
   }, [selectedGround]);
 
+  const [turfRequests, setTurfRequests] = useState<{ id: number; user_id: number; name: string; phone: string; note: string; created_at: string }[]>([]);
+  const loadTurfRequests = () => {
+    if (!isAdmin) return;
+    api.listRegisterRequests().then(setTurfRequests).catch(err => console.error('Failed to load turf requests:', err));
+  };
+  useEffect(loadTurfRequests, [isAdmin]);
+
+  const decideTurfRequest = async (id: number, approve: boolean) => {
+    try {
+      if (approve) await api.approveRegisterRequest(id);
+      else {
+        const reason = window.prompt('Reason (shown to the user):', '');
+        if (reason === null) return;
+        await api.rejectRegisterRequest(id, reason);
+      }
+      loadTurfRequests();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update request');
+    }
+  };
+
   const loadPendingGrounds = () => {
     if (!isAdmin) return;
     api.listPendingGrounds()
@@ -890,6 +911,24 @@ export default function GroundManagement({ onBack }: Props) {
         </header>
 
         <div className="max-w-lg mx-auto px-4 py-4 space-y-3">
+          {turfRequests.length > 0 && (
+            <Card className="border-blue-300">
+              <CardContent className="p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-blue-800 flex items-center gap-2"><Bell size={14} /> Requests to add a New Turf ({turfRequests.length})</h3>
+                {turfRequests.map(r => (
+                  <div key={r.id} className="border rounded-lg p-3 space-y-1" data-testid="turf-request">
+                    <p className="font-semibold text-gray-800">{r.name} · {r.phone}</p>
+                    {r.note && <p className="text-xs text-gray-600">{r.note}</p>}
+                    <p className="text-xs text-gray-400">{new Date(r.created_at.replace(' ', 'T') + 'Z').toLocaleString()}</p>
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => decideTurfRequest(r.id, true)}><Check size={12} className="mr-1" /> Approve</Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-600" onClick={() => decideTurfRequest(r.id, false)}><X size={12} className="mr-1" /> Reject</Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
           {pendingGrounds.length > 0 && (
             <Card className="border-yellow-300">
               <CardContent className="p-4 space-y-3">

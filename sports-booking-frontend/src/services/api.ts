@@ -816,6 +816,15 @@ export const api = {
 
   myGroundRegistrations: () => request('/api/locations/my-ground-registrations'),
 
+  getRegisterAccess: () => request('/api/locations/ground-register-access'),
+  requestRegisterAccess: (note: string) =>
+    request('/api/locations/ground-register-access/request', { method: 'POST', body: JSON.stringify({ note }) }),
+  listRegisterRequests: () => request('/api/locations/ground-register-requests'),
+  approveRegisterRequest: (id: number) =>
+    request(`/api/locations/ground-register-requests/${id}/approve`, { method: 'POST' }),
+  rejectRegisterRequest: (id: number, reason: string) =>
+    request(`/api/locations/ground-register-requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
   listPendingGrounds: () => request('/api/locations/grounds/pending'),
 
   approveGround: (groundId: number, managerUserIds: number[]) =>
