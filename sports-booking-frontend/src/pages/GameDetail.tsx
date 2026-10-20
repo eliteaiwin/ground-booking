@@ -175,6 +175,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const { user, isAdmin, isModerator, isGroundManagement, isReadOnly } = useAuth();
   const [game, setGame] = useState<Game | null>(null);
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
+  const [waitingOpen, setWaitingOpen] = useState(false);
   const [nominateUserId, setNominateUserId] = useState('');
   const [nominateMode, setNominateMode] = useState<'self' | 'others'>('self');
   const [nominatePosition, setNominatePosition] = useState('Anywhere');
@@ -1585,10 +1586,22 @@ export default function GameDetail({ gameId, onBack }: Props) {
         {game.waiting_list.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2 text-orange-600">
-                <Clock size={16} /> Waiting List ({game.waiting_list.length})
+              <CardTitle className="text-base text-orange-600">
+                <button
+                  type="button"
+                  className="flex items-center gap-2 w-full text-left"
+                  disabled={game.status !== 'completed'}
+                  onClick={() => setWaitingOpen(o => !o)}
+                  data-testid="waiting-list-toggle"
+                >
+                  <Clock size={16} /> Waiting List ({game.waiting_list.length})
+                  {game.status === 'completed' && (
+                    <span className="ml-auto text-xs font-normal text-gray-500">{waitingOpen ? 'Hide' : 'Show'}</span>
+                  )}
+                </button>
               </CardTitle>
             </CardHeader>
+            {(game.status !== 'completed' || waitingOpen) && (
             <CardContent className="p-4 pt-0">
               <div className="space-y-2">
                 {game.waiting_list.map((player, idx) => (
@@ -1613,6 +1626,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 ))}
               </div>
             </CardContent>
+            )}
           </Card>
         )}
 
