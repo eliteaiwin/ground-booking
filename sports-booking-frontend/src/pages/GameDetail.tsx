@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { FeeBreakdownTable } from '@/components/CostBreakdown';
+import { computeFeeBreakdown, type FeeSettings } from '@/lib/fees';
+import { openCashfreeCheckout } from '@/lib/cashfree';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -68,6 +71,12 @@ interface Game {
   per_person_amount: number;
   payments_enabled: boolean;
   payment_surcharge_percent: number;
+  payment_gst_percent?: number;
+  payment_commission_percent?: number;
+  payment_app_fee_gst_percent?: number;
+  payment_collection?: string;
+  online_payment_ready?: boolean;
+  payment_mode?: string;
   payment_timing: string;
   status: string;
   quit_penalty_hours: number;
@@ -323,6 +332,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
     }
   };
 
+  const payOnline = (gameId: number) =>
+    handleAction('pay', async () => {
+      const order = await api.createPaymentOrder(gameId);
+      const sdkError = await openCashfreeCheckout(order);
+      const result = await api.verifyPaymentOrder(order.order_id);
+      if (result.status !== 'paid') {
+        throw new Error(sdkError || 'Payment not completed. If money was deducted, it will update here automatically.');
+      }
+    });
+
   const handleAction = async (action: string, fn: () => Promise<unknown>) => {
     setActionLoading(action);
     setError('');
@@ -529,6 +548,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
   const totalPending = (game.payment_details || []).reduce((sum, p) => sum + p.pending, 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
+  const payOnlineAvailable = game.payment_collection === 'app' && !!game.online_payment_ready;
+  const myPendingAmount = (game.payment_details || []).find(d => d.user_id === user?.id)?.pending ?? game.cost_per_person;
+  const gameFees: FeeSettings = {
+    fee_percent: game.payment_surcharge_percent,
+    gst_percent: game.payment_gst_percent ?? 0,
+    commission_percent: game.payment_commission_percent ?? 0,
+    app_fee_gst_percent: game.payment_app_fee_gst_percent ?? 0,
+  };
+  const myFeeBreakdown = computeFeeBreakdown(myPendingAmount, gameFees);
   const totalOutstanding = perPerson * game.selected_players.length;
   const pendingAmount = totalPending;
   const allParticipants = [...game.selected_players, ...game.waiting_list];
@@ -1204,29 +1232,44 @@ export default function GameDetail({ gameId, onBack }: Props) {
           />
 
           {/* Payment for current user - PrePaid */}
-          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payment_timing === 'before' && (game.status === 'voting_open' || game.status === 'in_progress') && (
+          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && (game.payment_timing === 'before' || myPlayerRecord.must_prepay) && (game.status === 'voting_open' || game.status === 'in_progress') && (
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
                 <h4 className="font-semibold text-orange-800 mb-1 flex items-center gap-2">
-                  <CreditCard size={16} /> PrePaid - Payment Required
+                  <CreditCard size={16} /> Pay Before the Game
                 </h4>
+                {game.payment_timing !== 'before' && (
+                  <p className="text-xs text-orange-700 mb-1">The moderator has asked you to pay before this game.</p>
+                )}
                 <p className="text-sm text-orange-700 mb-2">Amount: <strong>{game.cost_per_person} {currency}</strong></p>
                 {game.payee && (
                   <p className="text-sm text-orange-700 mb-3">
                     Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
                   </p>
                 )}
-                <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                  onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
-                  disabled={actionLoading === 'pay'}>
-                  {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
-                </Button>
+                {payOnlineAvailable ? (
+                  <>
+                    <div className="mb-2"><FeeBreakdownTable breakdown={myFeeBreakdown} fees={gameFees} currency={currency} /></div>
+                    <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-online"
+                      onClick={() => payOnline(game.id)}
+                      disabled={actionLoading === 'pay'}>
+                      <Wallet size={16} className="mr-1" />
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(2)} ${currency} online`}
+                    </Button>
+                  </>
+                ) : (
+                  <Button className="w-full bg-orange-600 hover:bg-orange-700"
+                    onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
+                    disabled={actionLoading === 'pay'}>
+                    {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
 
           {/* Payment for current user - PostPaid */}
-          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payee && game.payment_timing !== 'before' && (game.status === 'in_progress' || game.status === 'completed') && (
+          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payee && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && (game.status === 'in_progress' || game.status === 'completed') && (
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
                 <h4 className="font-semibold text-orange-800 mb-1">Payment Due</h4>
@@ -1234,11 +1277,23 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
                 </p>
-                <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                  onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
-                  disabled={actionLoading === 'pay'}>
-                  {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
-                </Button>
+                {payOnlineAvailable ? (
+                  <>
+                    <div className="mb-2"><FeeBreakdownTable breakdown={myFeeBreakdown} fees={gameFees} currency={currency} /></div>
+                    <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-online"
+                      onClick={() => payOnline(game.id)}
+                      disabled={actionLoading === 'pay'}>
+                      <Wallet size={16} className="mr-1" />
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(2)} ${currency} online`}
+                    </Button>
+                  </>
+                ) : (
+                  <Button className="w-full bg-orange-600 hover:bg-orange-700"
+                    onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
+                    disabled={actionLoading === 'pay'}>
+                    {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1843,6 +1898,26 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {player?.nominated_by_info && (
                         <div className="pt-2 border-t text-xs text-gray-500">
                           <span className="font-medium">Nomination:</span> {player.nominated_by_info}
+                        </div>
+                      )}
+                      {player && (isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
+                        <div className="pt-2 border-t space-y-2" data-testid="prepay-controls">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <Checkbox
+                              checked={!!player.must_prepay}
+                              disabled={!!player.always_prepay || actionLoading === 'prepay'}
+                              onCheckedChange={(v) => handleAction('prepay', () => api.setPlayerPrepay(game.id, player.user_id, { must_prepay: !!v }))}
+                            />
+                            <span>Must pay before this game</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <Checkbox
+                              checked={!!player.always_prepay}
+                              disabled={actionLoading === 'prepay'}
+                              onCheckedChange={(v) => handleAction('prepay', () => api.setPlayerPrepay(game.id, player.user_id, { must_prepay: !!v || !!player.must_prepay, always: !!v }))}
+                            />
+                            <span>Always pay before games</span>
+                          </label>
                         </div>
                       )}
                     </div>
