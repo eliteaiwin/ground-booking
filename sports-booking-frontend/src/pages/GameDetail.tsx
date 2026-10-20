@@ -173,7 +173,7 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle }: {
 const PREF_LABEL = ['', '1st', '2nd', '3rd'];
 
 // POTD points badge; hover (desktop) or tap (phone) shows how the points add up.
-// Moderators/admins get voter names; players see only vote counts.
+// Lists every voter with their preference and points.
 function PotdPointsBadge({ result }: { result: POTDResult }) {
   const [tip, setTip] = useState(false);
   const counts = ([[1, result.first_pref, 3], [2, result.second_pref, 2], [3, result.third_pref, 1]] as const)
