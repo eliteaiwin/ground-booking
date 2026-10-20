@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -666,7 +667,7 @@ export default function AdminScreens({ onBack }: Props) {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Phone size={14} /> {searchedUser.phone}
+                      <Phone size={14} /> {formatPhone(searchedUser.phone)}
                     </div>
                     <div className="flex gap-1">
                       {searchedUser.roles.map(role => (

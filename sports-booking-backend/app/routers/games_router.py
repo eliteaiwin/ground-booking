@@ -1,3 +1,4 @@
+import math
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -201,7 +202,7 @@ def _check_collection(value: str) -> str:
 
 DEFAULT_GATEWAY_FEE_PERCENT = '2'
 DEFAULT_GATEWAY_GST_PERCENT = '18'
-DEFAULT_COMMISSION_PERCENT = '3'
+DEFAULT_COMMISSION_PERCENT = '4'
 DEFAULT_APP_FEE_GST_PERCENT = '0'
 
 
@@ -221,12 +222,14 @@ def online_breakdown(base: float, fees: dict) -> dict:
     app_fee_gst = round(commission * fees["app_fee_gst_percent"] / 100, 2)
     subtotal = base + commission + app_fee_gst
     rate = fees["surcharge_percent"] * (1 + fees["gst_percent"] / 100) / 100
-    total = round(subtotal / (1 - rate), 2) if 0 < rate < 1 else round(subtotal, 2)
+    exact = round(subtotal / (1 - rate), 2) if 0 < rate < 1 else round(subtotal, 2)
+    # Players pay a whole-rupee amount; the round-up goes to the app fee.
+    total = float(math.ceil(exact - 0.001))
     return {
         "base": round(base, 2),
-        "app_fee": commission,
+        "app_fee": round(commission + total - exact, 2),
         "app_fee_gst": app_fee_gst,
-        "gateway_fee": round(total - subtotal, 2),
+        "gateway_fee": round(exact - subtotal, 2),
         "total": total,
     }
 
@@ -246,6 +249,10 @@ async def _get_game(db: aiosqlite.Connection, game_id: int) -> aiosqlite.Row:
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     return game
+
+
+def _whole_rupees(amount: float) -> float:
+    return float(math.ceil(amount - 0.001)) if amount > 0 else 0.0
 
 
 def _per_person_amount(ground_cost: float, player_count: int, max_players: int) -> float:
@@ -277,9 +284,11 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
     )
 
     # Update payment amounts for selected/waiting players; preserve paid_amount where already paid.
+    # App payments keep the exact share (fees are added at checkout); offline amounts are whole rupees.
+    due = new_cost if (await _payment_settings(db, game))["enabled"] else _whole_rupees(new_cost)
     await db.execute(
         "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id IN (SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected')",
-        (new_cost, game_id, game_id)
+        (due, game_id, game_id)
     )
 
     # Adjust payment status based on paid_amount
@@ -810,7 +819,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     selected_count = len(selected)
     base_per_person_amount = _per_person_amount(base_ground_cost, selected_count, game["max_players"])
     fee_breakdown = online_breakdown(base_per_person_amount, pay_settings) if pay_settings["enabled"] else None
-    per_person_amount = fee_breakdown["total"] if fee_breakdown else base_per_person_amount
+    per_person_amount = fee_breakdown["total"] if fee_breakdown else _whole_rupees(base_per_person_amount)
     ground_cost = online_breakdown(base_ground_cost, pay_settings)["total"] if fee_breakdown else base_ground_cost
 
     group_name = ""

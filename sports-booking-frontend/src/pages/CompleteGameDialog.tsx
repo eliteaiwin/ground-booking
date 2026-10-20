@@ -66,7 +66,7 @@ export default function CompleteGameDialog({
     }
   };
 
-  const perPerson = selectedIds.size > 0 ? groundCost / selectedIds.size : 0;
+  const perPerson = selectedIds.size > 0 ? Math.ceil(groundCost / selectedIds.size - 0.001) : 0;
 
   const handleConfirm = () => {
     if (selectedIds.size === 0) return;
@@ -149,7 +149,7 @@ export default function CompleteGameDialog({
               <DollarSign size={14} /> Per person
             </span>
             <span className="font-bold text-green-700">
-              {perPerson.toFixed(2)} {currency}
+              {perPerson.toFixed(0)} {currency}
             </span>
           </div>
         </div>

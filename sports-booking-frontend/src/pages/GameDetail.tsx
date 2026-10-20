@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { FeeBreakdownTable } from '@/components/CostBreakdown';
 import { computeFeeBreakdown, type FeeBreakdown, type FeeSettings } from '@/lib/fees';
@@ -154,8 +155,7 @@ const statusColor = (status: string) => {
   }
 };
 
-const statusLabel = (status: string, isArchived: boolean) => {
-  if (isArchived) return 'Archived';
+const statusLabel = (status: string) => {
   switch (status) {
     case 'draft': return 'Draft';
     case 'voting_open': return 'Open for Voting';
@@ -446,7 +446,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `Date: ${formatGameDate(game!.game_date)}\n`;
     msg += `Start Time: ${formatTime12h(game!.game_time)} (Duration: ${duration} mins)\n`;
     msg += `Reporting Time: ${getReportingTime(game!.game_time)}\n`;
-    msg += `Per Person Cost: ${perPerson.toFixed(2)} ${currency}\n\n`;
+    msg += `Per Person Cost: ${perPerson.toFixed(0)} ${currency}\n\n`;
 
     msg += `Confirmed:\n------------\n`;
     game!.selected_players.forEach((p, i) => {
@@ -505,6 +505,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     app_fee_gst_percent: game.payment_app_fee_gst_percent ?? 0,
   };
   const myFeeBreakdown = computeFeeBreakdown(myPendingAmount, gameFees);
+  const dueAmount = (n: number) => (game.payment_collection === 'app' ? computeFeeBreakdown(n, gameFees).total : Math.ceil(n - 0.001));
   const totalOutstanding = perPerson * game.selected_players.length;
   const pendingAmount = totalPending;
   const allParticipants = [...game.selected_players, ...game.waiting_list];
@@ -526,7 +527,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
               {game.title && <p className="text-sm font-medium text-white/90">{game.title}</p>}
               {game.game_code && <p className="text-xs font-mono text-white/70">{game.game_code}</p>}
               <div className="flex gap-2 mt-1">
-                <Badge className={`${statusColor(game.status)} mt-1`}>{statusLabel(game.status, game.is_archived)}</Badge>
+                {(!game.is_archived || ['completed', 'cancelled'].includes(game.status)) && (
+                  <Badge className={`${statusColor(game.status)} mt-1`}>{statusLabel(game.status)}</Badge>
+                )}
                 {game.is_archived && <Badge className="bg-gray-200 text-gray-700 mt-1"><Archive size={10} className="mr-1" /> Archived</Badge>}
               </div>
             </div>
@@ -659,7 +662,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{game.ground_name}{game.pitch_format && ` · ${pitchLabel(game.pitch_format, game.pitch_number)}`}</span></div>
-            {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
+            {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived && new Date(`${game.game_date}T${game.game_time || '23:59'}`) > new Date() && (
               <div className={`text-xs rounded px-2 py-1 ${game.ground_confirmed ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-800'}`}>
                 {game.ground_confirmed
                   ? `Ground confirmed by Ground Manager${game.moderator_group_name ? ` · ${game.moderator_group_name}` : ''}`
@@ -674,7 +677,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <div className="flex items-center gap-2 text-gray-600">
               <DollarSign size={16} />
               <span>
-                Ground fee {(game.base_ground_cost || game.ground_cost).toFixed(2)} {currency} / {perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
+                Ground fee {(game.base_ground_cost || game.ground_cost).toFixed(2)} {currency} / {perPerson.toFixed(0)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
               </span>
               {game.fee_breakdown && (
                 <button type="button" aria-label="Show cost breakdown" onClick={() => setShowCostBreakdown(v => !v)} className="text-gray-500">
@@ -693,7 +696,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             {game.payee && (
               <div className="flex items-center gap-2 text-gray-600">
                 <Phone size={16} />
-                <span>Payment Receiver: {game.payee.name} ({game.payee.phone})</span>
+                <span>Payment Receiver: {game.payee.name} ({formatPhone(game.payee.phone)})</span>
                 <button
                   type="button"
                   onClick={() => navigator.clipboard.writeText(game.payee!.phone)}
@@ -880,7 +883,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         const total = parseFloat(editGroundCost) || 0;
                         const players = game.max_players || 1;
                         if (total <= 0 || players <= 0) return null;
-                        return <p className="text-xs text-green-600 mt-1">Cost per person: {(total / players).toFixed(2)} {currency}</p>;
+                        return <p className="text-xs text-green-600 mt-1">Cost per person: {Math.ceil(total / players - 0.001)} {currency}</p>;
                       })()}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -1242,7 +1245,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
                 <h4 className="font-semibold text-orange-800 mb-1">Payment Due</h4>
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{perPerson.toFixed(2)} {currency}</strong></p>
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{perPerson.toFixed(0)} {currency}</strong></p>
                 <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
                 </p>
@@ -1464,7 +1467,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           )}
                           {(() => {
                             const pd = paymentByUser.get(player.user_id);
-                            if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {pd.pending.toFixed(2)} {currency})</span>;
+                            if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {dueAmount(pd.pending)} {currency})</span>;
                             if (pd && pd.pending <= 0 && pd.paid_amount > 0) return <span className="ml-2 text-xs text-green-600">(Paid {pd.paid_amount.toFixed(2)} {currency})</span>;
                             return null;
                           })()}
@@ -1648,7 +1651,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       <div key={p.user_id} className="flex flex-col text-sm bg-red-50 p-2 rounded">
                         <div className="flex items-center gap-2">
                           <span className="flex-1">{p.name}</span>
-                          <span className="text-red-600 font-medium">Due: {p.pending.toFixed(2)} {currency}</span>
+                          <span className="text-red-600 font-medium">Due: {dueAmount(p.pending)} {currency}</span>
                         </div>
                         {(p.paid_amount || 0) > 0 && (
                           <p className="text-xs text-gray-500">Paid {p.paid_amount.toFixed(2)} {currency} of {p.amount.toFixed(2)} {currency}</p>
@@ -1658,7 +1661,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </div>
                   <Button className="w-full mt-3 bg-green-600 hover:bg-green-700"
                     onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(2)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(2)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${game.payee.phone})` : ''}`;
+                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(0)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(2)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
                       handleAction('remind', () => api.remindUnpaid(game.id));
                     }}

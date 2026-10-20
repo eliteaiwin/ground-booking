@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { Plus, Search, Trash2, Users, X } from 'lucide-react';
 import { api } from '@/services/api';
 import { Button } from '@/components/ui/button';
@@ -111,7 +112,7 @@ export default function ModeratorGroups({ groundId, location, groups, canManage,
                         className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 border-b last:border-b-0"
                         onClick={() => run(() => api.addModeratorGroupMember(g.id, u.id)).then(() => { setQuery(''); setHits([]); })}
                       >
-                        {u.name} <span className="text-xs text-gray-500">{u.phone}</span>
+                        {u.name} <span className="text-xs text-gray-500">{formatPhone(u.phone)}</span>
                       </button>
                     ))}
                   </div>

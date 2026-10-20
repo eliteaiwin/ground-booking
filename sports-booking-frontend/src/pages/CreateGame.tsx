@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import CostBreakdown from '@/components/CostBreakdown';
 import { api } from '../services/api';
@@ -452,7 +453,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                             className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex justify-between items-center"
                           >
                             <span>{u.name || u.phone}</span>
-                            <span className="text-xs text-gray-400">{u.phone}</span>
+                            <span className="text-xs text-gray-400">{formatPhone(u.phone)}</span>
                           </button>
                         ))}
                       </div>

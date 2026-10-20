@@ -21,6 +21,9 @@ export function computeFeeBreakdown(base: number, fees: FeeSettings): FeeBreakdo
   const appFeeGst = round2((appFee * fees.app_fee_gst_percent) / 100);
   const net = base + appFee + appFeeGst;
   const gatewayRate = (fees.fee_percent * (1 + fees.gst_percent / 100)) / 100;
-  const total = gatewayRate > 0 && gatewayRate < 1 ? round2(net / (1 - gatewayRate)) : round2(net);
-  return { base: round2(base), app_fee: appFee, app_fee_gst: appFeeGst, gateway_fee: round2(total - net), total };
+  const exact = gatewayRate > 0 && gatewayRate < 1 ? round2(net / (1 - gatewayRate)) : round2(net);
+  // Players pay a whole-rupee amount; the round-up goes to the app fee.
+  const total = Math.ceil(exact - 0.001);
+  const gatewayFee = round2(exact - net);
+  return { base: round2(base), app_fee: round2(appFee + total - exact), app_fee_gst: appFeeGst, gateway_fee: gatewayFee, total };
 }

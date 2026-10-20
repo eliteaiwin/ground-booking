@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -114,7 +115,7 @@ export default function AdminSummary({ onBack }: Props) {
     api.getAppSettings().then(setAppSettings).catch(() => setAppSettings({
       payments_enabled: false,
       payment_surcharge_percent: 2,
-      payment_dev_share_percent: 3,
+      payment_dev_share_percent: 4,
       payment_gst_percent: 18,
       payment_app_fee_gst_percent: 0,
     }));
@@ -337,7 +338,7 @@ export default function AdminSummary({ onBack }: Props) {
                       <button onClick={() => setExpandedUserId(expandedUserId === u.user_id ? null : u.user_id)} className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50">
                         <div>
                           <p className="font-medium text-sm">{u.name}</p>
-                          <p className="text-xs text-gray-500">{u.phone} - {u.games.length} game(s)</p>
+                          <p className="text-xs text-gray-500">{formatPhone(u.phone)} - {u.games.length} game(s)</p>
                         </div>
                         <div className="flex items-center gap-2">
                           {u.total_pending > 0 && <Badge className="bg-red-100 text-red-700">${u.total_pending.toFixed(2)}</Badge>}

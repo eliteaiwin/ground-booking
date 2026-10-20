@@ -555,6 +555,17 @@ async def get_ground_players(
             st["potd_wins"] += r.get("potd_wins", 0) or 0
             st["games_played"] += r.get("games_played", 0) or 0
             st["goals"] += r.get("total_goals", 0) or 0
+    gnames = list({display_name, ground["name"]})
+    gp_sql = f"""SELECT gp.user_id, COUNT(DISTINCT gp.game_id) AS n FROM game_players gp
+                  JOIN games g ON g.id = gp.game_id
+                  WHERE gp.status = 'selected' AND g.status = 'completed'
+                    AND g.ground_name IN ({",".join("?" * len(gnames))})"""
+    gp_params: list = list(gnames)
+    if sport_type:
+        gp_sql += " AND g.sport_type = ?"
+        gp_params.append(sport_type)
+    for r in await (await db.execute(gp_sql + " GROUP BY gp.user_id", gp_params)).fetchall():
+        stats.setdefault(r["user_id"], {"potd_wins": 0, "games_played": 0, "goals": 0})["games_played"] = r["n"]
 
     order: list[int] = []
     for g in games_info:

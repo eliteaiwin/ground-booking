@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -449,7 +450,7 @@ export default function ManageUsers({ onBack }: Props) {
                         <div className="text-[10px] text-red-500 italic">Reason: {u.disabled_reason}</div>
                       )}
                     </div>
-                    <div className="col-span-2 text-sm text-gray-600">{u.phone}</div>
+                    <div className="col-span-2 text-sm text-gray-600">{formatPhone(u.phone)}</div>
                     <div className="col-span-2 text-sm text-gray-600 truncate">{u.email || '-'}</div>
                     <div className="col-span-1 text-xs text-gray-500">{u.locations.join(', ') || '-'}</div>
                     <div className="col-span-2 flex flex-wrap gap-1">

@@ -44,7 +44,7 @@ export default function CostBreakdown({ groundCost, players, collection, currenc
     <div className="p-2 bg-green-50 rounded text-sm text-green-800" data-testid="cost-breakdown">
       <div className="flex items-center gap-1">
         <span>
-          Per player: <span className="font-semibold">{(breakdown ? breakdown.total : share).toFixed(2)} {currency}</span>
+          Per player: <span className="font-semibold">{breakdown ? breakdown.total : Math.ceil(share - 0.001)} {currency}</span>
           <span className="text-xs text-green-700"> (read-only, {players} players)</span>
         </span>
         {breakdown && (

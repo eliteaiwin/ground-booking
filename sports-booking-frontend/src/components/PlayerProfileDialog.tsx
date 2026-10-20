@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { X, Sparkles, Trophy, Goal, Frown, Wallet, Flame, Users, Phone, Mail } from 'lucide-react';
 import { api } from '../services/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -129,8 +130,8 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
                   {s.display_name && <Row label="Display Name">{s.display_name}</Row>}
                   <Row label="Phone">
                     {s.contact_visible && s.phone ? (
-                      <a href={`tel:${s.phone}`} className="inline-flex items-center gap-1 text-blue-600"><Phone size={12} />{s.phone}</a>
-                    ) : s.phone}
+                      <a href={`tel:${s.phone}`} className="inline-flex items-center gap-1 text-blue-600"><Phone size={12} />{formatPhone(s.phone)}</a>
+                    ) : formatPhone(s.phone)}
                   </Row>
                   {s.email && (
                     <Row label="Email">

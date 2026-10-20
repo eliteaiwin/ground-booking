@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -917,7 +918,7 @@ export default function GroundManagement({ onBack }: Props) {
                 <h3 className="text-sm font-semibold text-blue-800 flex items-center gap-2"><Bell size={14} /> Requests to add a New Turf ({turfRequests.length})</h3>
                 {turfRequests.map(r => (
                   <div key={r.id} className="border rounded-lg p-3 space-y-1" data-testid="turf-request">
-                    <p className="font-semibold text-gray-800">{r.name} · {r.phone}</p>
+                    <p className="font-semibold text-gray-800">{r.name} · {formatPhone(r.phone)}</p>
                     {r.note && <p className="text-xs text-gray-600">{r.note}</p>}
                     <p className="text-xs text-gray-400">{new Date(r.created_at.replace(' ', 'T') + 'Z').toLocaleString()}</p>
                     <div className="flex gap-2 pt-1">
@@ -964,7 +965,7 @@ export default function GroundManagement({ onBack }: Props) {
                             .map(u => (
                               <button key={u.id} className="w-full text-left px-2 py-1 text-xs hover:bg-gray-50"
                                 onClick={() => { toggleManagerPick(pg.id, u.id); setManagerSearch(prev => ({ ...prev, [pg.id]: '' })); }}>
-                                {u.name} · {u.phone}
+                                {u.name} · {formatPhone(u.phone)}
                               </button>
                             ))}
                         </div>
@@ -1056,7 +1057,7 @@ export default function GroundManagement({ onBack }: Props) {
                           <Check size={14} className="text-green-600" />
                           <div className="flex-1 min-w-0">
                             <span className="text-sm font-medium text-gray-800">{mod.name}</span>
-                            <span className="text-xs text-gray-500 ml-2">{mod.phone}</span>
+                            <span className="text-xs text-gray-500 ml-2">{formatPhone(mod.phone)}</span>
                           </div>
                           <button onClick={() => removeModerator(mod.id)} className="p-0.5 rounded-full hover:bg-red-100">
                             <X size={14} className="text-red-500" />
@@ -1092,7 +1093,7 @@ export default function GroundManagement({ onBack }: Props) {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">{user.name}</p>
-                                <p className="text-xs text-gray-500">{user.phone}{user.email ? ` • ${user.email}` : ''}</p>
+                                <p className="text-xs text-gray-500">{formatPhone(user.phone)}{user.email ? ` • ${user.email}` : ''}</p>
                               </div>
                               <Plus size={14} className="text-green-500" />
                             </button>
@@ -1343,7 +1344,7 @@ export default function GroundManagement({ onBack }: Props) {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{user.name}</p>
-                              <p className="text-xs text-gray-500">{user.phone}{user.email ? ` • ${user.email}` : ''}</p>
+                              <p className="text-xs text-gray-500">{formatPhone(user.phone)}{user.email ? ` • ${user.email}` : ''}</p>
                             </div>
                             <Plus size={14} className="text-green-500" />
                           </button>
@@ -1569,7 +1570,7 @@ export default function GroundManagement({ onBack }: Props) {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium truncate">{user.name}</p>
-                              <p className="text-xs text-gray-500">{user.phone}{user.email ? ` • ${user.email}` : ''}</p>
+                              <p className="text-xs text-gray-500">{formatPhone(user.phone)}{user.email ? ` • ${user.email}` : ''}</p>
                             </div>
                             <Ban size={14} className="text-red-400" />
                           </button>
@@ -1802,7 +1803,7 @@ export default function GroundManagement({ onBack }: Props) {
                   {hoveredGame.moderators.map((m, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <Phone size={10} />
-                      <span>{m.name} - {m.phone}</span>
+                      <span>{m.name} - {formatPhone(m.phone)}</span>
                     </div>
                   ))}
                 </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { maskedPhoneText } from '@/lib/player';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
@@ -37,14 +38,9 @@ interface Notification {
   sport_type: string;
 }
 
-const maskPhone = (phone?: string) => {
-  if (!phone || phone.length < 4) return phone || '';
-  return phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
-};
-
 const formatNamePhone = (name: string, phone?: string) => {
   const firstName = (name || '').split(' ')[0];
-  const masked = maskPhone(phone);
+  const masked = maskedPhoneText(phone);
   return masked ? `${firstName} - ${masked}` : firstName;
 };
 

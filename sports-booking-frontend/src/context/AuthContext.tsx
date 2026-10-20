@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('player_name_display', settings.player_name_display);
       }
     } catch {
-      setAppSettings({ payments_enabled: false, payment_surcharge_percent: 7, payment_gateway_percent: 2, payment_dev_share_percent: 5, enabled_sports: ['soccer'], player_name_display: 'first_phone_masked' });
+      setAppSettings({ payments_enabled: false, payment_surcharge_percent: 2, payment_gateway_percent: 2, payment_dev_share_percent: 4, enabled_sports: ['soccer'], player_name_display: 'first_phone_masked' });
     }
   };
 

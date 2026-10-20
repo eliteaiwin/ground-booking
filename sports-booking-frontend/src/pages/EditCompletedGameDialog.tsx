@@ -133,7 +133,7 @@ export default function EditCompletedGameDialog({
     playedPlayers.reduce((sum, p) => sum + (scorerGoals[p.user_id]?.own_goals || 0), 0),
     [playedPlayers, scorerGoals]
   );
-  const perPerson = playedIds.size > 0 ? groundCost / playedIds.size : 0;
+  const perPerson = playedIds.size > 0 ? Math.ceil(groundCost / playedIds.size - 0.001) : 0;
 
   const canNext = () => {
     if (step === 'players') return playedIds.size > 0;
@@ -326,7 +326,7 @@ export default function EditCompletedGameDialog({
           <span className="font-semibold text-gray-800 flex items-center gap-1">
             <DollarSign size={14} /> Per player
           </span>
-          <span className="font-bold text-green-700">{perPerson.toFixed(2)} {currency}</span>
+          <span className="font-bold text-green-700">{perPerson.toFixed(0)} {currency}</span>
         </div>
         {hasTeams && (
           <>

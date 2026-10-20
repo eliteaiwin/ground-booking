@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -311,7 +312,7 @@ export default function ProfilePage({ onBack }: Props) {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-2 text-gray-500 text-sm"><Phone size={14} /> {user?.phone}
+            <div className="flex items-center gap-2 text-gray-500 text-sm"><Phone size={14} /> {formatPhone(user?.phone)}
               {user?.phone_verified ? (
                 <Badge className="bg-green-100 text-green-700 text-xs"><ShieldCheck size={10} className="mr-1" />Verified</Badge>
               ) : (
