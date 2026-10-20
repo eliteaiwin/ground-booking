@@ -2460,6 +2460,28 @@ async def get_potd_results(
         "third_pref": r["third_pref_count"],
     } for r in results]
 
+    try:
+        await require_game_moderator(user_id, game_id, db)
+        can_see_voters = True
+    except HTTPException:
+        can_see_voters = False
+    if can_see_voters:
+        vote_rows = await (await db.execute(
+            """SELECT pv.player_id, pv.voter_id, pv.preference,
+                      COALESCE(NULLIF(u.display_name, ''), u.name) AS voter_name
+               FROM potd_votes pv JOIN users u ON u.id = pv.voter_id
+               WHERE pv.game_id = ? ORDER BY pv.preference, voter_name""",
+            (game_id,)
+        )).fetchall()
+        by_player: dict = {}
+        for v in vote_rows:
+            by_player.setdefault(v["player_id"], []).append({
+                "voter_id": v["voter_id"], "voter_name": v["voter_name"],
+                "preference": v["preference"], "points": {1: 3, 2: 2, 3: 1}.get(v["preference"], 0),
+            })
+        for r in result_list:
+            r["voters"] = by_player.get(r["player_id"], [])
+
     # Handle ties: if top 2 players have equal points, both get equal recognition
     winner = None
     if result_list:

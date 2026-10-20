@@ -170,6 +170,45 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle }: {
   );
 }
 
+const PREF_LABEL = ['', '1st', '2nd', '3rd'];
+
+// POTD points badge; hover (desktop) or tap (phone) shows how the points add up.
+// Moderators/admins get voter names; players see only vote counts.
+function PotdPointsBadge({ result }: { result: POTDResult }) {
+  const [tip, setTip] = useState(false);
+  const counts = ([[1, result.first_pref, 3], [2, result.second_pref, 2], [3, result.third_pref, 1]] as const)
+    .filter(([, n]) => n > 0);
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+      <button type="button" data-testid="potd-points" onClick={() => setTip(t => !t)}>
+        <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300">
+          <Star size={10} className="mr-0.5" />{result.points} pts
+        </Badge>
+      </button>
+      {tip && (
+        <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1.5 shadow">
+          <span className="block font-semibold mb-1">POTD votes</span>
+          {result.voters
+            ? result.voters.map(v => (
+              <span key={`${v.voter_id}-${v.preference}`} className="flex justify-between gap-2">
+                <span className="truncate">{v.voter_name}: {PREF_LABEL[v.preference]}</span><span>{v.points} pts</span>
+              </span>
+            ))
+            : counts.map(([pref, n, pts]) => (
+              <span key={pref} className="flex justify-between gap-2">
+                <span>{PREF_LABEL[pref]} choice × {n}</span><span>{n * pts} pts</span>
+              </span>
+            ))}
+          <span className="flex justify-between gap-2 border-t border-gray-600 mt-1 pt-1 font-semibold">
+            <span>Total</span><span>{result.points} pts</span>
+          </span>
+          <span className="block text-gray-400 mt-1">1st = 3 pts, 2nd = 2 pts, 3rd = 1 pt</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface PaymentDetail {
   user_id: number;
   name: string;
@@ -254,6 +293,7 @@ interface POTDResult {
   second_pref: number;
   third_pref: number;
   tied?: boolean;
+  voters?: { voter_id: number; voter_name: string; preference: number; points: number }[];
 }
 
 interface POTDData {
@@ -1679,9 +1719,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               } : undefined}
                             />
                             {game.status === 'completed' && playerVotes && playerVotes.points > 0 && (
-                              <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300">
-                                <Star size={10} className="mr-0.5" />{playerVotes.points} pts
-                              </Badge>
+                              <PotdPointsBadge result={playerVotes} />
                             )}
                           </>
                         )}
