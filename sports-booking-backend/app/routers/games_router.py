@@ -5,8 +5,10 @@ import aiosqlite
 import hashlib
 from datetime import datetime, timedelta, timezone
 
+from .. import cashfree
 from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
+from ..pitches import resolve_game_slot, user_group_ids
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -33,6 +35,8 @@ class CreateGameRequest(BaseModel):
     series_day: Optional[str] = None
     pitch_format: Optional[str] = None
     pitch_number: Optional[int] = None
+    allotment_id: Optional[int] = None
+    payment_collection: str = "offline"  # offline, app
 
 
 class EditGameRequest(BaseModel):
@@ -55,6 +59,7 @@ class EditGameRequest(BaseModel):
     series_day: Optional[str] = None
     pitch_format: Optional[str] = None
     pitch_number: Optional[int] = None
+    payment_collection: Optional[str] = None  # offline, app
 
 
 class SeriesDay(BaseModel):
@@ -79,11 +84,17 @@ class CreateSeriesRequest(BaseModel):
     weeks: int = 4
     pitch_format: Optional[str] = None
     start_date: Optional[str] = None  # YYYY-MM-DD; defaults to today
+    payment_collection: str = "offline"  # offline, app
 
 
 class NominateRequest(BaseModel):
     user_id: int
     position: str = ""
+
+
+class PlayerPrepayRequest(BaseModel):
+    must_prepay: bool
+    always: Optional[bool] = None
 
 
 class StartGameRequest(BaseModel):
@@ -171,14 +182,53 @@ def _parse_game_datetime(game_date: str, game_time: str) -> datetime:
     return datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M")
 
 
-async def _payment_settings(db: aiosqlite.Connection) -> dict:
+async def _payment_settings(db: aiosqlite.Connection, game: Optional[aiosqlite.Row] = None) -> dict:
     enabled = (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true'
-    surcharge = float(await get_app_setting(db, 'payment_surcharge_percent', '7'))
-    return {"enabled": enabled, "surcharge_percent": surcharge}
+    if game is not None and (game["payment_collection"] or "offline") != "app":
+        enabled = False
+    fees = await payment_fee_settings(db)
+    return {"enabled": enabled, **fees}
 
 
-def _with_surcharge(amount: float, surcharge_percent: float) -> float:
-    return amount * (1 + surcharge_percent / 100)
+PAYMENT_COLLECTIONS = ("offline", "app")
+
+
+def _check_collection(value: str) -> str:
+    if value not in PAYMENT_COLLECTIONS:
+        raise HTTPException(status_code=400, detail="payment_collection must be 'offline' or 'app'")
+    return value
+
+
+DEFAULT_GATEWAY_FEE_PERCENT = '2'
+DEFAULT_GATEWAY_GST_PERCENT = '18'
+DEFAULT_COMMISSION_PERCENT = '3'
+DEFAULT_APP_FEE_GST_PERCENT = '0'
+
+
+async def payment_fee_settings(db: aiosqlite.Connection) -> dict:
+    return {
+        "surcharge_percent": float(await get_app_setting(db, 'payment_surcharge_percent', DEFAULT_GATEWAY_FEE_PERCENT)),
+        "gst_percent": float(await get_app_setting(db, 'payment_gst_percent', DEFAULT_GATEWAY_GST_PERCENT)),
+        "commission_percent": float(await get_app_setting(db, 'payment_dev_share_percent', DEFAULT_COMMISSION_PERCENT)),
+        "app_fee_gst_percent": float(await get_app_setting(db, 'payment_app_fee_gst_percent', DEFAULT_APP_FEE_GST_PERCENT)),
+    }
+
+
+def online_breakdown(base: float, fees: dict) -> dict:
+    """App fee (plus GST on it) is added on top of the base; the total is then grossed up so the
+    gateway fee (plus GST on it) is also covered by the payer."""
+    commission = round(base * fees["commission_percent"] / 100, 2)
+    app_fee_gst = round(commission * fees["app_fee_gst_percent"] / 100, 2)
+    subtotal = base + commission + app_fee_gst
+    rate = fees["surcharge_percent"] * (1 + fees["gst_percent"] / 100) / 100
+    total = round(subtotal / (1 - rate), 2) if 0 < rate < 1 else round(subtotal, 2)
+    return {
+        "base": round(base, 2),
+        "app_fee": commission,
+        "app_fee_gst": app_fee_gst,
+        "gateway_fee": round(total - subtotal, 2),
+        "total": total,
+    }
 
 
 async def _get_sport_max_players(db: aiosqlite.Connection, sport_type: str) -> int | None:
@@ -254,132 +304,64 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
     await db.commit()
 
 
-def _pitch_label(pitch_format: str, pitch_number: int, count: int) -> str:
-    if not pitch_format:
-        return "the whole ground"
-    if not pitch_number:
-        return pitch_format
-    return f"{pitch_format} Pitch {pitch_number}"
-
-
-async def _check_ground_time_overlap(
-    db: aiosqlite.Connection,
-    ground_name: str,
-    game_date: str,
-    game_time: str,
-    duration_minutes: int,
-    exclude_game_id: Optional[int] = None,
-    sport_type: str = "",
-    pitch_format: Optional[str] = None,
-    pitch_number: Optional[int] = None,
-) -> tuple[str, int]:
-    """Block a game whose time overlaps another non-cancelled game on the same ground.
-
-    Grounds can define pitch layouts per sport (e.g. 5-a-side x3, 7-a-side x2, 9-a-side x1). Each
-    booking on a layout with N pitches uses 1/N of the ground; a booking without a pitch uses all of
-    it. Overlapping bookings conflict when they use the same pitch or their combined share exceeds
-    the whole ground. Returns the (pitch_format, pitch_number) to store.
-    """
-    from .locations_router import pitch_layouts
-
-    try:
-        new_start = _parse_game_datetime(game_date, game_time)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid game date or time format")
-    new_end = new_start + timedelta(minutes=duration_minutes)
-
-    ground = await (await db.execute(
-        "SELECT * FROM grounds WHERE location || ' - ' || name = ? OR name = ? ORDER BY is_approved DESC LIMIT 1",
-        (ground_name, ground_name)
+async def can_moderate_game(user_id: int, game_id: int, db: aiosqlite.Connection) -> bool:
+    row = await (await db.execute(
+        "SELECT created_by, moderator_group_id FROM games WHERE id = ?", (game_id,)
     )).fetchone()
-    layouts = {p["format"].lower(): p for p in pitch_layouts(ground, sport_type)} if ground else {}
-    ground_sports = [x for x in (ground["sports"] or "").split(",") if x] if ground else []
+    if not row or not row["moderator_group_id"] or row["created_by"] == user_id:
+        return True
+    admin = await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+    )).fetchone()
+    return admin is not None or row["moderator_group_id"] in await user_group_ids(db, user_id)
 
-    fmt = (pitch_format or "").strip()
-    number = pitch_number or 0
-    count = 1
-    if fmt:
-        layout = layouts.get(fmt.lower())
-        if not layout:
-            raise HTTPException(status_code=400, detail=f"'{fmt}' is not a pitch layout of this ground for {sport_type}")
-        fmt, count = layout["format"], layout["count"]
-        if number and not 1 <= number <= count:
-            raise HTTPException(status_code=400, detail=f"{fmt} has only {count} pitch(es) at this ground")
-        if count == 1:
-            number = 0
-    else:
-        number = 0
 
-    query = """SELECT id, title, sport_type, game_date, game_time, duration_minutes, status, pitch_format, pitch_number
-               FROM games
-               WHERE ground_name = ? AND status != 'cancelled'"""
-    params: list = [ground_name]
-    if exclude_game_id is not None:
-        query += " AND id != ?"
-        params.append(exclude_game_id)
-    if len(ground_sports) > 1 and sport_type:
-        query += " AND LOWER(sport_type) = ?"
-        params.append(sport_type.lower())
+async def require_game_moderator(user_id: int, game_id: int, db: aiosqlite.Connection):
+    await require_admin_or_moderator(user_id, db)
+    if not await can_moderate_game(user_id, game_id, db):
+        raise HTTPException(status_code=403, detail="Only moderators in this game's moderator group can manage it")
 
-    overlapping = []
-    cursor = await db.execute(query, params)
-    async with cursor:
-        async for row in cursor:
-            try:
-                existing_start = _parse_game_datetime(row["game_date"], row["game_time"])
-            except ValueError:
-                continue
-            existing_end = existing_start + timedelta(minutes=row["duration_minutes"] or 90)
-            if new_start < existing_end and new_end > existing_start:
-                overlapping.append(row)
 
-    def describe(row, label: str) -> str:
-        return f"'{row['title']}' ({row['game_date']} {row['game_time']}, {label}, status: {row['status']})"
+async def _hidden_group_game_ids(db: aiosqlite.Connection, user_id: int) -> set[int]:
+    """Games run by a moderator group stay hidden from moderators outside that group."""
+    roles = {r["role"] for r in await (await db.execute(
+        "SELECT role FROM user_roles WHERE user_id = ?", (user_id,)
+    )).fetchall()}
+    if "admin" in roles or "moderator" not in roles:
+        return set()
+    groups = await user_group_ids(db, user_id)
+    rows = await (await db.execute(
+        """SELECT g.id, g.moderator_group_id FROM games g
+           WHERE g.moderator_group_id IS NOT NULL AND g.created_by != ?
+             AND NOT EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = g.id AND gp.user_id = ?)""",
+        (user_id, user_id)
+    )).fetchall()
+    return {r["id"] for r in rows if r["moderator_group_id"] not in groups}
 
-    if not layouts or not overlapping:
-        if overlapping:
-            row = overlapping[0]
-            raise HTTPException(
-                status_code=409,
-                detail=f"Time slot conflict: {describe(row, 'same ground')} already occupies this ground. Only cancelled games can overlap."
-            )
-        return (fmt, number or (1 if fmt and count > 1 else 0))
 
-    used = 0.0
-    taken_numbers: set[int] = set()
-    for row in overlapping:
-        layout = layouts.get((row["pitch_format"] or "").lower())
-        row_count = layout["count"] if layout else 1
-        row_label = _pitch_label(layout["format"] if layout else "", row["pitch_number"], row_count)
-        if not layout or not fmt:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Pitch conflict: {describe(row, row_label)} overlaps and {_pitch_label(fmt, number, count) if fmt else 'the whole ground'} cannot be booked at the same time."
-            )
-        used += 1.0 / row_count
-        if layout["format"] == fmt:
-            taken_numbers.add(row["pitch_number"])
-            if number and row["pitch_number"] == number:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Pitch conflict: {row_label} is already booked by {describe(row, row_label)}."
-                )
-
-    if used + 1.0 / count > 1.0 + 1e-9:
-        row = overlapping[0]
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Pitch conflict: not enough free space for {fmt} at this time — "
-                f"{len(overlapping)} overlapping game(s) already use the ground, e.g. {describe(row, row['pitch_format'] or 'whole ground')}."
-            )
-        )
-    if not number and count > 1:
-        free = [n for n in range(1, count + 1) if n not in taken_numbers]
-        if not free:
-            raise HTTPException(status_code=409, detail=f"Pitch conflict: all {count} {fmt} pitches are booked at this time.")
-        number = free[0]
-    return (fmt, number)
+async def _potd_win_counts(db: aiosqlite.Connection, where: str = "g.status = 'completed'", params: Optional[list] = None) -> Dict[int, int]:
+    """Number of games each player was chosen Player of the Day (same tie-break as the game view)."""
+    cursor = await db.execute(
+        f"""SELECT pv.game_id, pv.player_id,
+                   SUM(CASE WHEN pv.preference = 1 THEN 3
+                            WHEN pv.preference = 2 THEN 2
+                            WHEN pv.preference = 3 THEN 1 ELSE 0 END) as points,
+                   COUNT(*) as total_votes
+            FROM potd_votes pv
+            JOIN games g ON pv.game_id = g.id
+            WHERE {where}
+            GROUP BY pv.game_id, pv.player_id""",
+        params or [],
+    )
+    best: Dict[int, tuple] = {}
+    for r in await cursor.fetchall():
+        key = (-(r["points"] or 0), -r["total_votes"], r["player_id"])
+        if r["game_id"] not in best or key < best[r["game_id"]]:
+            best[r["game_id"]] = key
+    wins: Dict[int, int] = {}
+    for key in best.values():
+        wins[key[2]] = wins.get(key[2], 0) + 1
+    return wins
 
 
 async def _build_rankings(
@@ -417,7 +399,7 @@ async def _build_rankings(
 
     # POTD points
     cursor = await db.execute(
-        f"""SELECT pv.player_id, u.name, u.first_name, u.phone,
+        f"""SELECT pv.player_id, u.name, u.display_name, u.first_name, u.phone,
                    SUM(CASE WHEN pv.preference = 1 THEN 3
                             WHEN pv.preference = 2 THEN 2
                             WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
@@ -435,7 +417,7 @@ async def _build_rankings(
 
     # Goals (net of own goals)
     cursor = await db.execute(
-        f"""SELECT gs.user_id, u.name, u.first_name, u.phone,
+        f"""SELECT gs.user_id, u.name, u.display_name, u.first_name, u.phone,
                    SUM(gs.goals - gs.own_goals) as total_goals,
                    COUNT(DISTINCT gs.game_id) as games_scored_in
             FROM goal_scorers gs
@@ -459,6 +441,7 @@ async def _build_rankings(
     )
     games_played_rows = await cursor.fetchall()
     games_played_map = {r["user_id"]: r["games_played"] for r in games_played_rows}
+    potd_wins = await _potd_win_counts(db, where, params)
 
     goals_map = {}
     for r in goals_rows:
@@ -476,10 +459,12 @@ async def _build_rankings(
         rankings.append({
             "user_id": pid,
             "name": r["name"],
+            "display_name": r["display_name"] or "",
             "first_name": r["first_name"],
             "phone": r["phone"],
             "potd_points": r["potd_points"],
             "first_pref_wins": r["first_pref_wins"],
+            "potd_wins": potd_wins.get(pid, 0),
             "total_goals": goal_data["total_goals"],
             "games_played": games_played_map.get(pid, 0),
             "combined_score": r["potd_points"] + goal_data["total_goals"],
@@ -491,10 +476,12 @@ async def _build_rankings(
             rankings.append({
                 "user_id": pid,
                 "name": r["name"],
+                "display_name": r["display_name"] or "",
                 "first_name": r["first_name"],
                 "phone": r["phone"],
                 "potd_points": 0,
                 "first_pref_wins": 0,
+                "potd_wins": potd_wins.get(pid, 0),
                 "total_goals": r["total_goals"],
                 "games_played": games_played_map.get(pid, 0),
                 "combined_score": r["total_goals"],
@@ -611,7 +598,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get players
     cursor = await db.execute(
-        """SELECT gp.*, u.name, u.phone FROM game_players gp 
+        """SELECT gp.*, u.name, u.phone, u.display_name, u.always_prepay FROM game_players gp 
            JOIN users u ON gp.user_id = u.id 
            WHERE gp.game_id = ? ORDER BY gp.joined_at""",
         (game_id,)
@@ -693,11 +680,14 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "id": p["id"],
             "user_id": p["user_id"],
             "name": p["name"],
+            "display_name": p["display_name"] or "",
             "phone": p["phone"],
             "status": p["status"],
             "position": p["position"] or "",
             "team_id": p["team_id"],
             "payment_confirmed": p["payment_confirmed"],
+            "must_prepay": bool(p["must_prepay"] or p["always_prepay"]),
+            "always_prepay": bool(p["always_prepay"]),
             "played": bool(p["played"]),
             "nominated_by": p["nominated_by"],
             "nominated_by_info": nom_info,
@@ -738,7 +728,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
                            WHEN p.preference = 3 THEN 1 ELSE 0 END) as points,
                   COUNT(*) as total_votes
            FROM potd_votes p JOIN users u ON p.player_id = u.id 
-           WHERE p.game_id = ? GROUP BY p.player_id ORDER BY points DESC, total_votes DESC LIMIT 1""",
+           WHERE p.game_id = ? GROUP BY p.player_id ORDER BY points DESC, total_votes DESC, p.player_id LIMIT 1""",
         (game_id,)
     )
     potd = await cursor.fetchone()
@@ -774,32 +764,15 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     except Exception:
         pass
 
-    # Check if game is archived:
-    # 1) Completed more than 7 days ago, OR
-    # 2) Auto-archived because there are >10 completed games (oldest get archived)
+    # Games archive automatically once over: completed/cancelled games as soon as
+    # their end time passes, any other game 24 hours after it ends.
     is_archived = False
-    if game["status"] == "completed":
-        try:
-            game_dt = datetime.strptime(game["game_date"], "%Y-%m-%d")
-            game_dt = game_dt.replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
-            if (now - game_dt).days >= 7:
-                is_archived = True
-        except Exception:
-            pass
-
-        # Auto-archive: check if this game is beyond the 10 most recent completed games
-        if not is_archived:
-            try:
-                cursor2 = await db.execute(
-                    "SELECT id FROM games WHERE status = 'completed' ORDER BY game_date DESC, game_time DESC LIMIT 10"
-                )
-                recent_10 = await cursor2.fetchall()
-                recent_10_ids = {r["id"] for r in recent_10}
-                if game["id"] not in recent_10_ids:
-                    is_archived = True
-            except Exception:
-                pass
+    try:
+        game_end = datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M") + timedelta(minutes=duration_minutes)
+        grace = timedelta(0) if game["status"] in ("completed", "cancelled") else timedelta(hours=24)
+        is_archived = datetime.now() >= game_end + grace
+    except (TypeError, ValueError):
+        is_archived = game["status"] in ("completed", "cancelled")
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
@@ -832,11 +805,20 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         pass
 
     # Calculate ground cost and per-person amount
-    pay_settings = await _payment_settings(db)
+    pay_settings = await _payment_settings(db, game)
     base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
-    ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
     selected_count = len(selected)
-    per_person_amount = _per_person_amount(ground_cost, selected_count, game["max_players"])
+    base_per_person_amount = _per_person_amount(base_ground_cost, selected_count, game["max_players"])
+    fee_breakdown = online_breakdown(base_per_person_amount, pay_settings) if pay_settings["enabled"] else None
+    per_person_amount = fee_breakdown["total"] if fee_breakdown else base_per_person_amount
+    ground_cost = online_breakdown(base_ground_cost, pay_settings)["total"] if fee_breakdown else base_ground_cost
+
+    group_name = ""
+    if game["moderator_group_id"]:
+        group_row = await (await db.execute(
+            "SELECT name FROM moderator_groups WHERE id = ?", (game["moderator_group_id"],)
+        )).fetchone()
+        group_name = group_row["name"] if group_row else ""
 
     result = {
         "id": game["id"],
@@ -846,6 +828,10 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "ground_name": game["ground_name"],
         "pitch_format": game["pitch_format"],
         "pitch_number": game["pitch_number"],
+        "allotment_id": game["allotment_id"],
+        "moderator_group_id": game["moderator_group_id"],
+        "moderator_group_name": group_name,
+        "ground_confirmed": game["allotment_id"] is not None,
         "game_date": game["game_date"],
         "game_time": game["game_time"],
         "max_players": game["max_players"],
@@ -855,7 +841,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "per_person_amount": per_person_amount,
         "payments_enabled": pay_settings["enabled"],
         "payment_surcharge_percent": pay_settings["surcharge_percent"],
+        "payment_gst_percent": pay_settings["gst_percent"],
+        "payment_commission_percent": pay_settings["commission_percent"],
+        "fee_breakdown": fee_breakdown,
+        "base_per_person_amount": base_per_person_amount,
+        "online_payment_ready": pay_settings["enabled"] and cashfree.configured(),
         "payment_timing": game["payment_timing"],
+        "payment_collection": game["payment_collection"] or "offline",
         "status": game["status"],
         "payee": payee_info,
         "quit_penalty_hours": quit_penalty_hours,
@@ -917,14 +909,14 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
         # Get goal scorers
         cursor = await db.execute(
-            """SELECT gs.user_id, gs.goals, gs.own_goals, u.name, u.phone
+            """SELECT gs.user_id, gs.goals, gs.own_goals, u.name, u.display_name, u.phone
                FROM goal_scorers gs JOIN users u ON gs.user_id = u.id
                WHERE gs.game_id = ? ORDER BY (gs.goals - gs.own_goals) DESC, gs.goals DESC""",
             (game_id,)
         )
         scorer_rows = await cursor.fetchall()
         result["goal_scorers"] = [
-            {"user_id": s["user_id"], "name": s["name"], "phone": s["phone"], "goals": s["goals"], "own_goals": s["own_goals"]}
+            {"user_id": s["user_id"], "name": s["name"], "display_name": s["display_name"] or "", "phone": s["phone"], "goals": s["goals"], "own_goals": s["own_goals"]}
             for s in scorer_rows
         ]
     except Exception:
@@ -942,9 +934,9 @@ async def create_game(
     await require_admin_or_moderator(user_id, db)
 
     # Prevent overlapping games on the same ground unless the existing game is cancelled
-    pitch_format, pitch_number = await _check_ground_time_overlap(
-        db, req.ground_name, req.game_date, req.game_time, req.duration_minutes,
-        sport_type=req.sport_type, pitch_format=req.pitch_format, pitch_number=req.pitch_number
+    slot = await resolve_game_slot(
+        db, user_id, req.ground_name, req.sport_type, req.game_date, req.game_time, req.duration_minutes,
+        pitch_format=req.pitch_format, pitch_number=req.pitch_number, allotment_id=req.allotment_id,
     )
 
     # Enforce sport max-player preference cap
@@ -990,12 +982,12 @@ async def create_game(
         """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
            max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
            payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day,
-           pitch_format, pitch_number)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           pitch_format, pitch_number, allotment_id, moderator_group_id, payment_collection)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
          req.max_players, req.ground_cost, cost_per_person, payment_timing, user_id, req.duration_minutes,
          req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day,
-         pitch_format, pitch_number)
+         slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
     )
     game_id = cursor.lastrowid
     await db.commit()
@@ -1069,9 +1061,9 @@ async def create_game_series(
             time_str = game_date.strftime("%H:%M")
 
             try:
-                pitch_format, pitch_number = await _check_ground_time_overlap(
-                    db, req.ground_name, date_str, time_str, req.duration_minutes,
-                    sport_type=req.sport_type, pitch_format=req.pitch_format
+                slot = await resolve_game_slot(
+                    db, user_id, req.ground_name, req.sport_type, date_str, time_str, req.duration_minutes,
+                    pitch_format=req.pitch_format,
                 )
             except HTTPException as e:
                 skipped.append({"date": date_str, "time": time_str, "reason": e.detail})
@@ -1104,12 +1096,12 @@ async def create_game_series(
                 """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
                    max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
                    payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day,
-                   pitch_format, pitch_number)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   pitch_format, pitch_number, allotment_id, moderator_group_id, payment_collection)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (title, game_code_display, req.sport_type, req.ground_name, date_str, time_str,
                  req.max_players, req.ground_cost, series_cost_per_person, payment_timing, user_id, req.duration_minutes,
                  req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day,
-                 pitch_format, pitch_number)
+                 slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
             )
             created_games.append(await get_game_dict(db, cursor.lastrowid))
 
@@ -1129,8 +1121,11 @@ async def list_games(
         cursor = await db.execute("SELECT id FROM games ORDER BY game_date DESC, game_time DESC")
     games = await cursor.fetchall()
 
+    hidden = await _hidden_group_game_ids(db, user_id)
     result = []
     for g in games:
+        if g["id"] in hidden:
+            continue
         game_data = await get_game_dict(db, g["id"])
         result.append(game_data)
     return result
@@ -1142,7 +1137,9 @@ async def get_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    return await get_game_dict(db, game_id)
+    result = await get_game_dict(db, game_id)
+    result["can_moderate"] = await can_moderate_game(user_id, game_id, db)
+    return result
 
 
 @router.put("/{game_id}")
@@ -1152,7 +1149,7 @@ async def edit_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1191,6 +1188,10 @@ async def edit_game(
         updates.append("payment_timing = ?")
         params.append(new_timing)
 
+    if req.payment_collection is not None:
+        updates.append("payment_collection = ?")
+        params.append(_check_collection(req.payment_collection))
+
     pitch_changed = req.pitch_format is not None or req.pitch_number is not None
     if not updates and not pitch_changed:
         return await get_game_dict(db, game_id)
@@ -1204,12 +1205,12 @@ async def edit_game(
     final_number = req.pitch_number if req.pitch_number is not None else (
         game["pitch_number"] if req.pitch_format is None else None
     )
-    pitch_format, pitch_number = await _check_ground_time_overlap(
-        db, final_ground, final_date, final_time, final_duration, exclude_game_id=game_id,
-        sport_type=final_sport, pitch_format=final_pitch, pitch_number=final_number
+    slot = await resolve_game_slot(
+        db, game["created_by"], final_ground, final_sport, final_date, final_time, final_duration,
+        pitch_format=final_pitch, pitch_number=final_number, exclude_game_id=game_id,
     )
-    updates.extend(["pitch_format = ?", "pitch_number = ?"])
-    params.extend([pitch_format, pitch_number])
+    updates.extend(["pitch_format = ?", "pitch_number = ?", "allotment_id = ?", "moderator_group_id = ?"])
+    params.extend([slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"]])
 
     params.append(game_id)
     await db.execute(f"UPDATE games SET {', '.join(updates)} WHERE id = ?", params)
@@ -1240,7 +1241,7 @@ async def open_voting(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1555,7 +1556,7 @@ async def nominate_player(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1688,6 +1689,39 @@ async def nominate_player(
     return {"status": player_status, "message": f"User nominated as {player_status}"}
 
 
+@router.post("/{game_id}/players/{player_user_id}/prepay")
+async def set_player_prepay(
+    game_id: int,
+    player_user_id: int,
+    req: PlayerPrepayRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator marks a player as having to pay before the game (this game, or always)."""
+    await require_game_moderator(user_id, game_id, db)
+    game = await _get_game(db, game_id)
+    cursor = await db.execute(
+        "SELECT id FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, player_user_id)
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Player is not in this game")
+    await db.execute(
+        "UPDATE game_players SET must_prepay = ? WHERE game_id = ? AND user_id = ?",
+        (1 if req.must_prepay else 0, game_id, player_user_id),
+    )
+    if req.always is not None:
+        await db.execute(
+            "UPDATE users SET always_prepay = ? WHERE id = ?", (1 if req.always else 0, player_user_id)
+        )
+    if req.must_prepay or req.always:
+        await create_notification(
+            db, player_user_id, game_id, "payment_due",
+            f"Please pay {game['cost_per_person']:.0f} for {game['title']} before the game starts."
+        )
+    await db.commit()
+    return {"message": "Saved"}
+
+
 @router.post("/{game_id}/start")
 async def start_game(
     game_id: int,
@@ -1696,7 +1730,7 @@ async def start_game(
 ):
     """Start a game. Payee, quit_penalty, and payment_mode are already set
     at create/edit time — this endpoint just transitions the status."""
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1712,7 +1746,9 @@ async def start_game(
 
     # Create payment records for all selected players
     cursor = await db.execute(
-        "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'",
+        """SELECT gp.user_id, gp.must_prepay, u.always_prepay FROM game_players gp
+           JOIN users u ON u.id = gp.user_id
+           WHERE gp.game_id = ? AND gp.status = 'selected'""",
         (game_id,)
     )
     selected = await cursor.fetchall()
@@ -1726,7 +1762,8 @@ async def start_game(
             "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
             (game_id, p["user_id"], game["cost_per_person"])
         )
-        if game["payment_timing"] == "before" and payee_info:
+        pays_first = game["payment_timing"] == "before" or p["must_prepay"] or p["always_prepay"]
+        if pays_first and payee_info:
             await create_notification(
                 db, p["user_id"], game_id, "payment_due",
                 f"Payment of {game['cost_per_person']} is due for {game['title']}. Pay to {payee_info['name']} ({payee_info['phone']})"
@@ -1743,7 +1780,7 @@ async def complete_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -1846,10 +1883,8 @@ async def complete_game(
 
     # Refresh game to get updated cost_per_person and ground_cost
     game = await _get_game(db, game_id)
-    pay_settings = await _payment_settings(db)
     base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
-    ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
-    per_person_amount = _per_person_amount(ground_cost, len(played_user_ids), game["max_players"])
+    per_person_amount = _per_person_amount(base_ground_cost, len(played_user_ids), game["max_players"])
 
     # Insert pending payments for played players that do not yet have one.
     for uid in played_user_ids:
@@ -1891,7 +1926,7 @@ async def edit_completed_game_result(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Edit who played, team assignments, score, and goal scorers after a game is completed."""
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     game = await _get_game(db, game_id)
     if game["status"] != "completed":
@@ -1973,9 +2008,7 @@ async def edit_completed_game_result(
 
     # Recalculate per-player cost and payment amounts.
     base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
-    pay_settings = await _payment_settings(db)
-    ground_cost = _with_surcharge(base_ground_cost, pay_settings["surcharge_percent"]) if pay_settings["enabled"] else base_ground_cost
-    per_person = _per_person_amount(ground_cost, len(played_user_ids), game["max_players"])
+    per_person = _per_person_amount(base_ground_cost, len(played_user_ids), game["max_players"])
 
     await db.execute(
         "UPDATE games SET cost_per_person = ?, ground_cost = ? WHERE id = ?",
@@ -2025,7 +2058,7 @@ async def cancel_game_preview(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Preview cancel impact: confirmed player count, paid count, refund amount."""
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -2072,7 +2105,7 @@ async def cancel_game(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Cancel a game. Refund paid players, notify all participants and subscribed users."""
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -2293,7 +2326,7 @@ async def broadcast_game_status(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -2429,7 +2462,7 @@ async def create_teams(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -2458,7 +2491,7 @@ async def move_player_to_team(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     # Validate team exists if team_id provided
     if req.team_id is not None:
@@ -2484,7 +2517,7 @@ async def delete_teams(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
     await db.execute("UPDATE game_players SET team_id = NULL WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_teams WHERE game_id = ?", (game_id,))
     await db.commit()
@@ -2537,7 +2570,7 @@ async def mark_payment_made(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Moderator marks a user's payment as made from backend."""
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -2589,7 +2622,7 @@ async def remind_unpaid_players(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     """Moderator sends payment reminder to all unpaid players."""
-    await require_admin_or_moderator(user_id, db)
+    await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -2847,6 +2880,12 @@ async def get_player_insights(
         elif fp:
             facts.append({"category": "payments", "text": f"Was the first to pay in {_count_label(fp, 'game')}."})
 
+    potd_wins = await _potd_win_counts(db)
+    pw = potd_wins.get(player_id, 0)
+    if pw > 0:
+        text = f"Chosen Player of the Day in {pw}/{games} games"
+        facts.append({"category": "fame", "text": text + _leader_suffix(pw, potd_wins, player_id, "times") + "."})
+
     rankings = await _build_rankings(db)
     fame = next((r for r in rankings if r["user_id"] == player_id), None)
     if fame and fame["rank"] <= 10:
@@ -2898,6 +2937,7 @@ async def get_player_stats(
     scopes["overall"]["potd_points"] = player_overall.get("potd_points", 0)
     scopes["overall"]["total_goals"] = player_overall.get("total_goals", 0)
     scopes["overall"]["games_played"] = player_overall.get("games_played", 0)
+    scopes["overall"]["potd_wins"] = player_overall.get("potd_wins", 0)
     scopes["overall"]["combined_score"] = player_overall.get("combined_score", 0)
 
     # Collect distinct scope rankings the player appears in
@@ -2970,6 +3010,7 @@ async def get_player_stats(
         "first_name": player["first_name"],
         "overall_potd_rank": scopes["overall"]["rank"],
         "total_potd_points": scopes["overall"]["potd_points"],
+        "potd_wins": scopes["overall"]["potd_wins"],
         "total_goals": scopes["overall"]["total_goals"],
         "games_played": scopes["overall"]["games_played"],
         "combined_score": scopes["overall"]["combined_score"],

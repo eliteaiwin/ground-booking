@@ -112,6 +112,7 @@ class UpdateProfileRequest(BaseModel):
     locations: Optional[List[str]] = None
     sport_positions: Optional[dict] = None
     currency: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 async def _assign_roles(db: aiosqlite.Connection, user_id: int):
@@ -565,7 +566,7 @@ async def get_profile(
 ):
     import json as json_lib
     cursor = await db.execute(
-        """SELECT id, user_code, first_name, last_name, name, phone, email,
+        """SELECT id, user_code, first_name, last_name, name, display_name, phone, email,
            notification_preference, sports, locations, sport_positions, profile_pic, created_at
            FROM users WHERE id = ?""",
         (user_id,)
@@ -619,6 +620,7 @@ async def get_profile(
         "first_name": first_name,
         "last_name": last_name,
         "name": display_name,
+        "display_name": user["display_name"] or "",
         "phone": user["phone"],
         "email": user["email"],
         "notification_preference": user["notification_preference"],
@@ -655,6 +657,12 @@ async def update_profile(
         ln = req.last_name if req.last_name is not None else (current["last_name"] or "")
         updates.append("name = ?")
         params.append(f"{fn} {ln}".strip())
+    if req.display_name is not None:
+        dn = req.display_name.strip()
+        if len(dn) > 30:
+            raise HTTPException(status_code=400, detail="Display name must be 30 characters or fewer")
+        updates.append("display_name = ?")
+        params.append(dn)
     if req.email is not None:
         # Check email uniqueness
         cursor = await db.execute("SELECT id FROM users WHERE email = ? AND id != ?", (req.email, user_id))

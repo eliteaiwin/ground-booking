@@ -13,6 +13,7 @@ from datetime import datetime
 from ..database import get_db, get_app_setting, set_app_setting, DATABASE_PATH
 from ..auth import get_current_user_id, hash_password
 from ..routers.auth_router import generate_user_code, _assign_roles, UPLOAD_DIR
+from .games_router import payment_fee_settings
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -66,6 +67,9 @@ class BulkImportRequest(BaseModel):
 class AppSettingsRequest(BaseModel):
     payments_enabled: Optional[bool] = None
     payment_surcharge_percent: Optional[float] = None
+    payment_dev_share_percent: Optional[float] = None
+    payment_gst_percent: Optional[float] = None
+    payment_app_fee_gst_percent: Optional[float] = None
     enabled_sports: Optional[List[str]] = None
     player_name_display: Optional[str] = None
 
@@ -114,7 +118,7 @@ async def list_users(
 ):
     await require_admin(user_id, db)
 
-    query = "SELECT id, user_code, first_name, last_name, name, phone, email, notification_preference, sports, locations, sport_positions, profile_pic, is_disabled, disabled_reason, created_at FROM users WHERE 1=1"
+    query = "SELECT id, user_code, first_name, last_name, name, display_name, always_prepay, phone, email, notification_preference, sports, locations, sport_positions, profile_pic, is_disabled, disabled_reason, created_at FROM users WHERE 1=1"
     params: list = []
 
     if search:
@@ -236,6 +240,8 @@ async def list_users(
             "id": uid, "user_code": user_code,
             "first_name": first_name, "last_name": last_name,
             "name": display_name, "phone": u["phone"],
+            "display_name": u["display_name"] or "",
+            "always_prepay": bool(u["always_prepay"]),
             "email": u["email"],
             "notification_preference": u["notification_preference"],
             "sports": sports_list, "locations": locations_list,
@@ -582,17 +588,18 @@ async def get_app_settings(
 ):
     """Get app-wide settings. Public keys are readable by any logged-in user."""
     payments_enabled = (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true'
-    surcharge = float(await get_app_setting(db, 'payment_surcharge_percent', '7'))
+    fees = await payment_fee_settings(db)
     gateway = float(await get_app_setting(db, 'payment_gateway_percent', '2'))
-    dev_share = float(await get_app_setting(db, 'payment_dev_share_percent', '5'))
     enabled_sports_raw = await get_app_setting(db, 'enabled_sports', 'soccer')
     enabled_sports = [s.strip() for s in enabled_sports_raw.split(',') if s.strip()]
     player_name_display = await get_app_setting(db, 'player_name_display', 'first_phone_masked')
     return {
         "payments_enabled": payments_enabled,
-        "payment_surcharge_percent": surcharge,
+        "payment_surcharge_percent": fees["surcharge_percent"],
         "payment_gateway_percent": gateway,
-        "payment_dev_share_percent": dev_share,
+        "payment_dev_share_percent": fees["commission_percent"],
+        "payment_gst_percent": fees["gst_percent"],
+        "payment_app_fee_gst_percent": fees["app_fee_gst_percent"],
         "enabled_sports": enabled_sports,
         "player_name_display": player_name_display,
     }
@@ -610,6 +617,18 @@ async def update_app_settings(
         await set_app_setting(db, 'payments_enabled', 'true' if req.payments_enabled else 'false')
     if req.payment_surcharge_percent is not None:
         await set_app_setting(db, 'payment_surcharge_percent', str(req.payment_surcharge_percent))
+    if req.payment_dev_share_percent is not None:
+        if not 0 <= req.payment_dev_share_percent < 100:
+            raise HTTPException(status_code=400, detail="Commission must be between 0 and 100")
+        await set_app_setting(db, 'payment_dev_share_percent', str(req.payment_dev_share_percent))
+    if req.payment_gst_percent is not None:
+        if not 0 <= req.payment_gst_percent <= 100:
+            raise HTTPException(status_code=400, detail="GST must be between 0 and 100")
+        await set_app_setting(db, 'payment_gst_percent', str(req.payment_gst_percent))
+    if req.payment_app_fee_gst_percent is not None:
+        if not 0 <= req.payment_app_fee_gst_percent <= 100:
+            raise HTTPException(status_code=400, detail="GST must be between 0 and 100")
+        await set_app_setting(db, 'payment_app_fee_gst_percent', str(req.payment_app_fee_gst_percent))
     if req.enabled_sports is not None:
         await set_app_setting(db, 'enabled_sports', ','.join(req.enabled_sports))
     if req.player_name_display is not None:

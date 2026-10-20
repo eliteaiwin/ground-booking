@@ -4,7 +4,8 @@ from typing import Optional
 from datetime import datetime, timezone, timedelta
 import aiosqlite
 
-from ..database import get_db
+from .. import cashfree
+from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
@@ -40,8 +41,27 @@ async def record_payment(
         (req.game_id, user_id)
     )
     payment = await cursor.fetchone()
+    game_row = await (await db.execute("SELECT payment_collection FROM games WHERE id = ?", (req.game_id,))).fetchone()
+    if game_row and (game_row["payment_collection"] or "offline") == "app" and cashfree.configured() \
+            and (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true':
+        raise HTTPException(status_code=400, detail="This game is paid through the app. Use Pay online.")
     if not payment:
-        raise HTTPException(status_code=404, detail="No payment record found")
+        cursor = await db.execute(
+            """SELECT g.cost_per_person FROM game_players gp JOIN games g ON g.id = gp.game_id
+               WHERE gp.game_id = ? AND gp.user_id = ? AND gp.status = 'selected'""",
+            (req.game_id, user_id)
+        )
+        player = await cursor.fetchone()
+        if not player:
+            raise HTTPException(status_code=404, detail="No payment record found")
+        await db.execute(
+            "INSERT INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
+            (req.game_id, user_id, player["cost_per_person"])
+        )
+        cursor = await db.execute(
+            "SELECT * FROM payments WHERE game_id = ? AND user_id = ?", (req.game_id, user_id)
+        )
+        payment = await cursor.fetchone()
     if (payment["paid_amount"] or 0) >= payment["amount"]:
         raise HTTPException(status_code=400, detail="Already paid")
 
