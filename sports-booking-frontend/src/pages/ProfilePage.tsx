@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { ImageCropDialog } from '../components/ImageCropDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,6 +67,8 @@ export default function ProfilePage({ onBack }: Props) {
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
   const [displayName, setDisplayName] = useState(user?.display_name || '');
+  const [gender, setGender] = useState(user?.gender || '');
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [dateOfBirth, setDateOfBirth] = useState(user?.date_of_birth || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
@@ -109,6 +112,12 @@ export default function ProfilePage({ onBack }: Props) {
     if (!file) return;
     if (!file.type.startsWith('image/')) { alert('Only image files allowed'); return; }
     if (file.size > 5 * 1024 * 1024) { alert('Max 5MB file size'); return; }
+    e.target.value = '';
+    setCropFile(file);
+  };
+
+  const uploadPic = async (file: File) => {
+    setCropFile(null);
     setUploadingPic(true);
     try {
       const result = await api.uploadProfilePic(file);
@@ -232,6 +241,7 @@ export default function ProfilePage({ onBack }: Props) {
       if (firstName !== user?.first_name) data.first_name = firstName;
       if (lastName !== user?.last_name) data.last_name = lastName;
       if (displayName !== (user?.display_name || '')) data.display_name = displayName;
+      if (gender !== (user?.gender || '')) data.gender = gender;
       if (dateOfBirth !== (user?.date_of_birth || '')) data.date_of_birth = dateOfBirth;
       if (email !== user?.email) data.email = email;
       if (phone !== user?.phone) data.phone = phone;
@@ -297,6 +307,7 @@ export default function ProfilePage({ onBack }: Props) {
                   <Camera size={14} />
                 </button>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUploadPic} />
+                <ImageCropDialog file={cropFile} onCancel={() => setCropFile(null)} onDone={uploadPic} />
               </div>
               <div>
                 <CardTitle className="text-lg">{user?.first_name} {user?.last_name}</CardTitle>
@@ -380,6 +391,16 @@ export default function ProfilePage({ onBack }: Props) {
               <Label htmlFor="prof-dn">Display Name</Label>
               <Input id="prof-dn" value={displayName} maxLength={30} placeholder="e.g. Rocky" onChange={(e) => setDisplayName(e.target.value)} />
               <p className="text-xs text-gray-400">Shown to other players in game lists. Leave empty to use your first name.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prof-gender">Gender</Label>
+              <select id="prof-gender" data-testid="prof-gender" className="w-full border rounded-md h-9 px-2 text-sm bg-white"
+                value={gender} onChange={(e) => setGender(e.target.value)}>
+                <option value="">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+              <p className="text-xs text-gray-400">Used for the placeholder icon when you have no profile photo.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="prof-dob">Date of Birth</Label>

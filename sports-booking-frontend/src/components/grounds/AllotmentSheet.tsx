@@ -324,8 +324,8 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
               <Select value={draft.repeat} onValueChange={(v) => setDraft({ ...draft, repeat: v })}>
                 <SelectTrigger aria-label="Repeat weekly"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4, 5, 8, 12].map((w) => (
-                    <SelectItem key={w} value={String(w)}>{w === 1 ? 'Just this date' : `${w} weeks`}</SelectItem>
+                  {[1, 2, 3, 4, 5, 8, 12, 26, 52].map((w) => (
+                    <SelectItem key={w} value={String(w)}>{w === 1 ? 'Just this date' : w === 52 ? '52 weeks (1 year)' : `${w} weeks`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

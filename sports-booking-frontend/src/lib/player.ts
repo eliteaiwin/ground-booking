@@ -15,6 +15,7 @@ export interface Player {
   nominated_by: number | null;
   nominated_by_info: string | null;
   nominated_by_name?: string;
+  gender?: string;
   joined_at: string;
   photo: string;
 }

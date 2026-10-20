@@ -281,7 +281,7 @@ async def create_allotment(
 
     if not 15 <= req.duration_minutes <= 1440:
         raise HTTPException(status_code=400, detail="Duration must be between 15 minutes and 24 hours")
-    weeks = max(1, min(req.repeat_weeks, 26))
+    weeks = max(1, min(req.repeat_weeks, 53))
     try:
         first_start = parse_dt(req.allot_date, req.start_time)
     except ValueError:

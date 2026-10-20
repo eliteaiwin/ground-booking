@@ -3,6 +3,7 @@ import { ContactReveal } from '@/components/ContactReveal';
 import { maskedPhoneText } from '@/lib/player';
 import { X, Sparkles, Trophy, Goal, Frown, Wallet, Flame, Users } from 'lucide-react';
 import { api } from '../services/api';
+import { PlayerAvatar } from './PlayerAvatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { sportIconChar, sportLabel } from '../lib/sportIcon';
 
@@ -20,6 +21,7 @@ export interface PlayerSummary {
   roles: string[];
   member_since: string;
   profile_pic: string;
+  gender?: string;
   stats: { rank: number | null; games_played: number; potd_wins: number; potd_points: number; goals: number };
   grounds: { ground_name: string; games: number }[];
   photos: { id: number; filename: string; purpose: string }[];
@@ -107,9 +109,7 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
                   <img src={api.getProfilePicUrl(s.profile_pic)} alt={s.name} className="w-20 h-20 rounded-full object-cover mb-2" />
                 </button>
               ) : (
-                <span className="w-20 h-20 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-2xl font-bold mb-2">
-                  {(s.display_name || s.name || '').charAt(0).toUpperCase()}
-                </span>
+                <span className="mb-2"><PlayerAvatar size="lg" gender={s.gender} /></span>
               )}
               <h3 className="text-lg font-bold text-center">{s.display_name || s.name}</h3>
               {s.display_name && <p className="text-xs text-gray-500">{s.name}</p>}

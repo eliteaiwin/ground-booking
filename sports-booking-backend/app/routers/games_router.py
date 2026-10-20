@@ -612,7 +612,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get players
     cursor = await db.execute(
-        """SELECT gp.*, u.name, u.phone, u.display_name, u.always_prepay FROM game_players gp 
+        """SELECT gp.*, u.name, u.phone, u.display_name, u.gender, u.always_prepay FROM game_players gp 
            JOIN users u ON gp.user_id = u.id 
            WHERE gp.game_id = ? ORDER BY gp.joined_at""",
         (game_id,)
@@ -708,6 +708,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "nominated_by_name": nominator_map[nom_by]["name"] if nom_by and nom_by != p["user_id"] and nom_by in nominator_map else "",
             "joined_at": p["joined_at"],
             "photo": player_photo_map.get(p["user_id"], ""),
+            "gender": p["gender"] or "",
         }
         if p["status"] == "selected":
             selected.append(player_data)

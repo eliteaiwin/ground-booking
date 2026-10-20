@@ -114,6 +114,7 @@ class UpdateProfileRequest(BaseModel):
     currency: Optional[str] = None
     display_name: Optional[str] = None
     date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
 
 
 def age_from_dob(dob: str) -> Optional[int]:
@@ -639,6 +640,7 @@ async def get_profile(
         "last_name": last_name,
         "name": display_name,
         "display_name": user["display_name"] or "",
+        "gender": (user["gender"] if "gender" in user.keys() else "") or "",
         "date_of_birth": user["date_of_birth"] or "",
         "phone": user["phone"],
         "email": user["email"],
@@ -682,6 +684,12 @@ async def update_profile(
             raise HTTPException(status_code=400, detail="Display name must be 30 characters or fewer")
         updates.append("display_name = ?")
         params.append(dn)
+    if req.gender is not None:
+        g = req.gender.strip().lower()
+        if g not in ("", "male", "female"):
+            raise HTTPException(status_code=400, detail="Gender must be male, female or blank")
+        updates.append("gender = ?")
+        params.append(g)
     if req.date_of_birth is not None:
         dob = req.date_of_birth.strip()
         if dob:
@@ -1061,6 +1069,7 @@ async def get_user_summary(
         "first_name": first_name,
         "last_name": last_name,
         "display_name": u["display_name"] or "",
+        "gender": (u["gender"] if "gender" in u.keys() else "") or "",
         "phone": u["phone"] if full else mask_phone(u["phone"]),
         "email": (u["email"] or "") if full else "",
         "contact_visible": full,

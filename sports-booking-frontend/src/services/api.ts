@@ -142,7 +142,7 @@ export const api = {
   updateProfile: (data: {
     first_name?: string; last_name?: string; email?: string; phone?: string;
     notification_preference?: string; sports?: string[]; locations?: string[];
-    sport_positions?: Record<string, string[]>; currency?: string; display_name?: string; date_of_birth?: string;
+    sport_positions?: Record<string, string[]>; currency?: string; display_name?: string; gender?: string; date_of_birth?: string;
   }) =>
     request('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
 

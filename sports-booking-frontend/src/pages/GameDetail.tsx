@@ -5,6 +5,7 @@ import { FeeBreakdownTable } from '@/components/CostBreakdown';
 import { computeFeeBreakdown, type FeeBreakdown, type FeeSettings } from '@/lib/fees';
 import { openCashfreeCheckout } from '@/lib/cashfree';
 import { api } from '../services/api';
+import { PlayerAvatar } from '../components/PlayerAvatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -1685,18 +1686,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <p className="text-sm text-gray-400">No players yet</p>
               ) : (
                 <div className="space-y-2">
-                  {game.selected_players.map((player, idx) => {
+                  {game.selected_players.map((player) => {
                     const playerVotes = potdResults.find(r => r.player_id === player.user_id);
                     return (
                     <div key={player.id}>
                       <div className="flex items-center gap-2 text-sm">
-                        {player.photo ? (
-                          <img src={api.getProfilePicUrl(player.photo)} alt={player.name} className="w-6 h-6 rounded-full object-cover" />
-                        ) : (
-                          <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs font-bold">
-                            {idx + 1}
-                          </span>
-                        )}
+                        <PlayerAvatar photo={player.photo} gender={player.gender} alt={player.name} />
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.must_prepay && player.payment_confirmed !== 1 && (
@@ -1830,11 +1825,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
             {(game.status !== 'completed' || waitingOpen) && (
             <CardContent className="p-4 pt-0">
               <div className="space-y-2">
-                {game.waiting_list.map((player, idx) => (
+                {game.waiting_list.map((player) => (
                   <div key={player.id} className="flex items-center gap-2 text-sm">
-                    <span className="w-6 h-6 bg-orange-100 text-orange-700 rounded-full flex items-center justify-center text-xs font-bold">
-                      {idx + 1}
-                    </span>
+                    <PlayerAvatar photo={player.photo} gender={player.gender} alt={player.name} />
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
