@@ -23,6 +23,8 @@ import NotificationSettings from './pages/NotificationSettings';
 import OnboardingProfile from './pages/OnboardingProfile';
 import ForgotPassword from './pages/ForgotPassword';
 import DeleteAccount from './pages/DeleteAccount';
+import { api } from './services/api';
+import { gameIdFromOrderId } from './lib/cashfree';
 
 type Page = 'dashboard' | 'game-detail' | 'create-game' | 'create-series' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
 
@@ -47,6 +49,28 @@ function AppContent() {
     if (!user && !loading) {
       setAuthMode('login');
     }
+  }, [user, loading]);
+
+  // Returning from the Cashfree payment page (?cf_order=...)
+  useEffect(() => {
+    if (!user || loading) return;
+    const orderId = new URLSearchParams(window.location.search).get('cf_order');
+    if (!orderId) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    const gameId = gameIdFromOrderId(orderId);
+    api.verifyPaymentOrder(orderId)
+      .then((r: { status: string }) => {
+        alert(r.status === 'paid'
+          ? 'Payment received. Thank you!'
+          : 'Payment not completed yet. If money was deducted, it will update automatically.');
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (gameId) {
+          setSelectedGameId(gameId);
+          setCurrentPage('game-detail');
+        }
+      });
   }, [user, loading]);
 
   if (loading) {

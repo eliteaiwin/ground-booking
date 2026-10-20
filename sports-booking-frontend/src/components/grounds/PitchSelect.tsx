@@ -1,3 +1,4 @@
+import { pitchLabel } from '@/lib/grounds';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { PitchLayout } from '@/lib/grounds';
@@ -23,13 +24,13 @@ export default function PitchSelect({ layouts, value, onChange, allowNumber = tr
             </SelectItem>,
             ...(allowNumber && l.count > 1
               ? Array.from({ length: l.count }, (_, i) => (
-                <SelectItem key={`${l.format}|${i + 1}`} value={`${l.format}|${i + 1}`}>{l.format} · Pitch {i + 1}</SelectItem>
+                <SelectItem key={`${l.format}|${i + 1}`} value={`${l.format}|${i + 1}`}>{pitchLabel(l.format, i + 1)}</SelectItem>
               ))
               : []),
           ])}
         </SelectContent>
       </Select>
-      <p className="text-xs text-gray-500">Formats share the ground: a bigger format can't be booked while a smaller pitch is booked at the same time.</p>
+      <p className="text-xs text-gray-500">Pitches sit side by side (A is leftmost); a bigger format can't be booked over a smaller pitch that is already taken.</p>
     </div>
   );
 }

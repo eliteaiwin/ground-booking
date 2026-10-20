@@ -1512,6 +1512,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         )}
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                          {player.must_prepay && player.payment_confirmed !== 1 && (
+                            <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-orange-700 border-orange-300">Pay first</Badge>
+                          )}
                           {(() => {
                             const pd = paymentByUser.get(player.user_id);
                             if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {pd.pending.toFixed(2)} {currency})</span>;
@@ -1906,6 +1909,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </TabsList>
                   <TabsContent value="info">
                     <div className="space-y-2 text-sm">
+                      <div className="flex justify-between"><span className="text-gray-500">Full Name</span><span className="font-medium">{displayUser.name}</span></div>
                       <div className="flex justify-between"><span className="text-gray-500">Phone</span><span className="font-medium">{displayUser.phone}</span></div>
                       {email && <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-medium">{email}</span></div>}
                       {profileRank && (
