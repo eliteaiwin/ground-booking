@@ -28,3 +28,6 @@ poetry.lock
 
 # Logs
 *.log
+
+# Local uploads
+sports-booking-backend/uploads/

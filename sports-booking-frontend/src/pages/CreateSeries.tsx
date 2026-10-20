@@ -11,6 +11,7 @@ import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useSports } from '../lib/sports';
 import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
+import { localYmd } from '../lib/utils';
 
 interface UserItem {
   id: number;
@@ -85,7 +86,7 @@ export default function CreateSeries({ onBack }: Props) {
 
 
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localYmd();
     setStartDate(today);
 
     Promise.all([

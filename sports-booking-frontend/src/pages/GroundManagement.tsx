@@ -13,6 +13,7 @@ import GroundDetailsForm from '@/components/grounds/GroundDetailsForm';
 import AllotmentSheet from '@/components/grounds/AllotmentSheet';
 import ModeratorGroups, { type ModeratorGroup } from '@/components/grounds/ModeratorGroups';
 import { EMPTY_GROUND_DETAILS, type GroundDetails, type GroundDetailsInput } from '@/lib/grounds';
+import { localYmd } from '../lib/utils';
 
 interface Ground {
   id: number;
@@ -73,7 +74,7 @@ function formatDate(dateStr: string): string {
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return localYmd(d);
 }
 
 function getDaysInRange(start: string, end: string): string[] {
@@ -127,7 +128,7 @@ export default function GroundManagement({ onBack }: Props) {
   }, [selectedGround?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [scheduleData, setScheduleData] = useState<ScheduleData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
-  const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [currentDate, setCurrentDate] = useState(localYmd());
   const [hoveredGame, setHoveredGame] = useState<ScheduleItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [loading, setLoading] = useState(true);
@@ -314,7 +315,7 @@ export default function GroundManagement({ onBack }: Props) {
         const dayOfWeek = d.getDay();
         const monday = new Date(d);
         monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7));
-        startDate = monday.toISOString().split('T')[0];
+        startDate = localYmd(monday);
         endDate = addDays(startDate, 6);
       } else {
         // month
@@ -648,7 +649,7 @@ export default function GroundManagement({ onBack }: Props) {
     } else {
       const d = new Date(currentDate + 'T00:00:00');
       d.setMonth(d.getMonth() + direction);
-      setCurrentDate(d.toISOString().split('T')[0]);
+      setCurrentDate(localYmd(d));
     }
   };
 
@@ -745,7 +746,7 @@ export default function GroundManagement({ onBack }: Props) {
   const renderWeekView = () => {
     if (!scheduleData) return null;
     const days = getDaysInRange(scheduleData.start_date, scheduleData.end_date);
-    const today = new Date().toISOString().split('T')[0];
+    const today = localYmd();
 
     return (
       <div className="overflow-x-auto" ref={chartRef}>
@@ -807,7 +808,7 @@ export default function GroundManagement({ onBack }: Props) {
     const lastDay = new Date(year, month + 1, 0);
     const startOffset = (firstDay.getDay() + 6) % 7; // Monday start
     const totalDays = lastDay.getDate();
-    const today = new Date().toISOString().split('T')[0];
+    const today = localYmd();
 
     const weeks: string[][] = [];
     let week: string[] = [];
@@ -1706,7 +1707,7 @@ export default function GroundManagement({ onBack }: Props) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentDate(new Date().toISOString().split('T')[0])}
+              onClick={() => setCurrentDate(localYmd())}
               className="text-xs"
             >
               Today

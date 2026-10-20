@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Search, Users, Trophy, Calendar, MapPin, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSports, sportLabel } from '../lib/sports';
+import { localYmd } from '../lib/utils';
 
 interface Player {
   user_id: number;
@@ -56,7 +57,7 @@ const TIME_RANGES = [
 
 function getDateRange(rangeKey: string): { from: string; to: string } {
   const today = new Date();
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  const fmt = (d: Date) => localYmd(d);
 
   switch (rangeKey) {
     case 'next_1_week': {
