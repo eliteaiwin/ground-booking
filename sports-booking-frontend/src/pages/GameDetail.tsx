@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { FeeBreakdownTable } from '@/components/CostBreakdown';
-import { computeFeeBreakdown, type FeeSettings } from '@/lib/fees';
+import { computeFeeBreakdown, type FeeBreakdown, type FeeSettings } from '@/lib/fees';
 import { openCashfreeCheckout } from '@/lib/cashfree';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -76,6 +76,7 @@ interface Game {
   payment_app_fee_gst_percent?: number;
   payment_collection?: string;
   online_payment_ready?: boolean;
+  fee_breakdown?: FeeBreakdown | null;
   ground_confirmed?: boolean;
   moderator_group_name?: string | null;
   payment_mode?: string;
@@ -193,6 +194,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
   const [editPaymentCollection, setEditPaymentCollection] = useState('offline');
+  const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [editGroundCost, setEditGroundCost] = useState('');
   const [editNoteBefore, setEditNoteBefore] = useState('');
   const [editNoteAfter, setEditNoteAfter] = useState('');
@@ -729,14 +731,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <div className="flex items-center gap-2 text-gray-600">
               <DollarSign size={16} />
               <span>
-                Ground cost {game.ground_cost.toFixed(2)} {currency} / {perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
-                {game.payments_enabled && (
-                  <span className="text-xs text-orange-600 ml-1">(incl. {game.payment_surcharge_percent}% surcharge)</span>
-                )}
+                Ground fee {(game.base_ground_cost || game.ground_cost).toFixed(2)} {currency} / {perPerson.toFixed(2)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
               </span>
+              {game.fee_breakdown && (
+                <button type="button" aria-label="Show cost breakdown" onClick={() => setShowCostBreakdown(v => !v)} className="text-gray-500">
+                  <Info size={14} />
+                </button>
+              )}
             </div>
-            {game.payments_enabled && game.base_ground_cost > 0 && game.ground_cost !== game.base_ground_cost && (
-              <div className="text-xs text-gray-500 ml-6">Base ground cost {game.base_ground_cost.toFixed(2)} {currency}, with surcharge {game.ground_cost.toFixed(2)} {currency}</div>
+            {game.fee_breakdown && showCostBreakdown && (
+              <div className="ml-6"><FeeBreakdownTable breakdown={game.fee_breakdown} fees={gameFees} currency={currency} /></div>
             )}
             {game.quit_penalty_hours > 0 && (
               <div className="flex items-center gap-2 text-orange-600">
