@@ -1215,26 +1215,67 @@ async def _edit_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, re
     if req.ground_cost is not None and req.ground_cost != game["ground_cost"]:
         await db.execute("UPDATE games SET ground_cost = ? WHERE id = ?", (req.ground_cost, game_id))
         await _recalc_game_cost(db, game_id)
-        rows = await (await db.execute(
-            "SELECT p.user_id, p.amount, COALESCE(p.paid_amount, 0) AS paid FROM payments p "
-            "JOIN game_players gp ON gp.game_id = p.game_id AND gp.user_id = p.user_id "
-            "WHERE p.game_id = ? AND gp.played = 1", (game_id,)
-        )).fetchall()
-        for r in rows:
-            if r["paid"] <= 0:
-                continue
-            diff = round(r["paid"] - r["amount"], 2)
-            if diff > 0:
-                note = f"You paid {r['paid']:.0f}; the excess {diff:.0f} will be adjusted by the moderator."
-            elif diff < 0:
-                note = f"You paid {r['paid']:.0f}; please pay the remaining {-diff:.0f}."
-            else:
-                continue
-            await db.execute(
-                "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
-                (r["user_id"], game_id,
-                 f"Ground cost for {game['title']} changed. Your share is now {r['amount']:.0f}. {note}")
-            )
+        await _notify_share_change(db, game, "Ground cost")
+    await db.commit()
+    return await get_game_dict(db, game_id)
+
+
+async def _notify_share_change(db: aiosqlite.Connection, game: aiosqlite.Row, reason: str):
+    """Tell players who already paid that their share changed, with the excess or deficit."""
+    game_id = game["id"]
+    rows = await (await db.execute(
+        "SELECT p.user_id, p.amount, COALESCE(p.paid_amount, 0) AS paid FROM payments p "
+        "JOIN game_players gp ON gp.game_id = p.game_id AND gp.user_id = p.user_id "
+        "WHERE p.game_id = ? AND gp.played = 1", (game_id,)
+    )).fetchall()
+    for r in rows:
+        if r["paid"] <= 0:
+            continue
+        diff = round(r["paid"] - r["amount"], 2)
+        if diff > 0:
+            note = f"You paid {r['paid']:.0f}; the excess {diff:.0f} will be adjusted by the moderator."
+        elif diff < 0:
+            note = f"You paid {r['paid']:.0f}; please pay the remaining {-diff:.0f}."
+        else:
+            continue
+        await db.execute(
+            "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
+            (r["user_id"], game_id,
+             f"{reason} for {game['title']} changed. Your share is now {r['amount']:.0f}. {note}")
+        )
+
+
+async def _add_to_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, player_id: int, moderator_id: int):
+    """A player who turned up (late or from the waiting list) is added as played, even beyond max players;
+    the same ground cost is re-split among everyone who played."""
+    game_id = game["id"]
+    if not await (await db.execute("SELECT 1 FROM users WHERE id = ?", (player_id,))).fetchone():
+        raise HTTPException(status_code=404, detail="User not found")
+    existing = await (await db.execute(
+        "SELECT id, played FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, player_id)
+    )).fetchone()
+    if existing and existing["played"]:
+        raise HTTPException(status_code=400, detail="Player already marked as played")
+    if existing:
+        await db.execute("UPDATE game_players SET status = 'selected', played = 1 WHERE id = ?", (existing["id"],))
+    else:
+        await db.execute(
+            "INSERT INTO game_players (game_id, user_id, status, played, nominated_by) VALUES (?, ?, 'selected', 1, ?)",
+            (game_id, player_id, moderator_id)
+        )
+    await db.execute(
+        "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
+        (game_id, player_id, game["cost_per_person"])
+    )
+    await _recalc_game_cost(db, game_id)
+    await _notify_share_change(db, game, "Number of players")
+    share = (await (await db.execute(
+        "SELECT amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, player_id)
+    )).fetchone())["amount"]
+    await db.execute(
+        "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
+        (player_id, game_id, f"You were added to {game['title']} as a player. Your share is {_whole_rupees(share):.0f}.")
+    )
     await db.commit()
     return await get_game_dict(db, game_id)
 
@@ -1661,8 +1702,10 @@ async def nominate_player(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] == "completed":
+        return await _add_to_completed_game(db, game, req.user_id, user_id)
     if game["status"] not in ("draft", "voting_open", "in_progress"):
-        raise HTTPException(status_code=400, detail="Players can only be added to games that are draft, open for voting, or in progress")
+        raise HTTPException(status_code=400, detail="Players can only be added to games that are draft, open for voting, in progress or completed")
 
     # Check if user exists
     cursor = await db.execute("SELECT id FROM users WHERE id = ?", (req.user_id,))

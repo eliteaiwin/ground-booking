@@ -1628,9 +1628,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   {game.note_before_players}
                 </div>
               )}
-              {(isAdmin || isModerator || isGroundManagement) && game.status !== 'completed' && game.status !== 'cancelled' && (
+              {(isAdmin || isModerator || isGroundManagement) && game.status !== 'cancelled' && (
                 <div className="space-y-2">
-                  <Label className="text-xs text-gray-500 flex items-center gap-1"><Search size={12} /> Add player by name or phone</Label>
+                  <Label className="text-xs text-gray-500 flex items-center gap-1"><Search size={12} /> {game.status === 'completed' ? 'Add a player who played (cost is re-split)' : 'Add player by name or phone'}</Label>
                   <div className="relative">
                     <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
                     <Input
@@ -1839,6 +1839,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
                     <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
+                    {game.status === 'completed' && (isAdmin || isModerator || isGroundManagement) && (
+                      <Button size="sm" variant="outline" className="h-6 px-2 text-xs" data-testid="mark-played"
+                        onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, player.user_id))}>
+                        + Played
+                      </Button>
+                    )}
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
                 ))}

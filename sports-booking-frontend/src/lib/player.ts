@@ -36,7 +36,7 @@ function getLastInitial(name: string): string {
 
 function maskPhone(phone?: string): string {
   if (!phone || phone.length < 4) return phone || '';
-  return phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
+  return phone[0] + 'x'.repeat(phone.length - 3) + phone.slice(-2);
 }
 
 function phoneText(phone: string, masked: boolean): string {
