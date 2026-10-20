@@ -40,10 +40,10 @@ function maskPhone(phone?: string): string {
 
 function phoneText(phone: string, masked: boolean): string {
   const f = formatPhone(phone);
-  const i = f.indexOf('-');
+  const i = f.indexOf('\u2011');
   if (!f.startsWith('+') || i < 0) return masked ? maskPhone(f) : f;
   const local = f.slice(i + 1);
-  return `${f.slice(0, i)}-${masked ? maskPhone(local) : local}`;
+  return `${f.slice(0, i)}\u2011${masked ? maskPhone(local) : local}`;
 }
 
 export const maskedPhoneText = (phone?: string) => (phone ? phoneText(phone, true) : '');

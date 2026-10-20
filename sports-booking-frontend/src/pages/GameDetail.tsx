@@ -677,7 +677,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <div className="flex items-center gap-2 text-gray-600">
               <DollarSign size={16} />
               <span>
-                Ground fee {(game.base_ground_cost || game.ground_cost).toFixed(2)} {currency} / {perPerson.toFixed(0)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
+                Ground fee {(game.base_ground_cost || game.ground_cost).toFixed(0)} {currency} / {perPerson.toFixed(0)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
               </span>
               {game.fee_breakdown && (
                 <button type="button" aria-label="Show cost breakdown" onClick={() => setShowCostBreakdown(v => !v)} className="text-gray-500">
