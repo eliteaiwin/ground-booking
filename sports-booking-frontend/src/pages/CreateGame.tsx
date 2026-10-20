@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import CostBreakdown from '@/components/CostBreakdown';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -71,6 +72,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [payeeUserId, setPayeeUserId] = useState('');
   const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
   const [paymentMode, setPaymentMode] = useState('postpaid');
+  const [paymentCollection, setPaymentCollection] = useState('offline');
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [playerSearch, setPlayerSearch] = useState('');
@@ -87,12 +89,6 @@ export default function CreateGame({ onBack, onCreated }: Props) {
 
   const currency = user?.currency || 'Rs';
 
-  const costPerPerson = (() => {
-    const total = parseFloat(groundCost) || 0;
-    const players = parseInt(maxPlayers) || 1;
-    if (total <= 0 || players <= 0) return '';
-    return (total / players).toFixed(2);
-  })();
 
   useEffect(() => {
     Promise.all([
@@ -191,6 +187,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         payee_user_id: payeeUserId ? Number(payeeUserId) : undefined,
         quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
         payment_mode: paymentMode,
+        payment_collection: paymentCollection,
         potd_congrats_delay_minutes: parseInt(potdDelayMinutes) || 1440,
         note_before_players: noteBefore || undefined,
         note_after_players: noteAfter || undefined,
@@ -297,15 +294,11 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="groundCost">Ground Cost ({currency})</Label>
+                  <Label htmlFor="groundCost">Ground Fee ({currency})</Label>
                   <Input id="groundCost" type="number" min="0" step="0.01" placeholder="0.00" value={groundCost} onChange={(e) => setGroundCost(e.target.value)} required />
                 </div>
               </div>
-              {costPerPerson && (
-                <div className="p-2 bg-green-50 rounded text-sm text-green-800">
-                  Cost per player: <span className="font-semibold">{costPerPerson} {currency}</span> (read-only, based on max players)
-                </div>
-              )}
+              <CostBreakdown groundCost={parseFloat(groundCost) || 0} players={parseInt(maxPlayers) || 0} collection={paymentCollection} currency={currency} />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="duration">Duration (minutes)</Label>
@@ -416,15 +409,26 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                           onChange={e => setQuitPenaltyHours(e.target.value)} />
                       </div>
                       <div className="space-y-2">
-                        <Label>Payment Mode</Label>
+                        <Label>When to pay</Label>
                         <Select value={paymentMode} onValueChange={setPaymentMode}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="postpaid">PostPaid</SelectItem>
-                            <SelectItem value="prepaid">PrePaid</SelectItem>
+                            <SelectItem value="postpaid">After the game</SelectItem>
+                            <SelectItem value="prepaid">Before the game</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>How to pay</Label>
+                      <Select value={paymentCollection} onValueChange={setPaymentCollection}>
+                        <SelectTrigger data-testid="payment-collection"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="offline">Track offline (cash / UPI to receiver)</SelectItem>
+                          <SelectItem value="app">Pay through the app</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500">You can still mark selected players "Must pay before game" from their profile.</p>
                     </div>
                   </div>
                 )}
