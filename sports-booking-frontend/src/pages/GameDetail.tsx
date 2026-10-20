@@ -1216,7 +1216,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <p className="text-sm text-orange-700 mb-2">Amount: <strong>{game.cost_per_person} {currency}</strong></p>
                 {game.payee && (
                   <p className="text-sm text-orange-700 mb-3">
-                    Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
+                    Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                   </p>
                 )}
                 {payOnlineAvailable ? (
@@ -1226,7 +1226,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       onClick={() => payOnline(game.id)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
-                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(2)} ${currency} online`}
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(0)} ${currency} online`}
                     </Button>
                   </>
                 ) : (
@@ -1247,7 +1247,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <h4 className="font-semibold text-orange-800 mb-1">Payment Due</h4>
                 <p className="text-sm text-orange-700 mb-2">Amount: <strong>{perPerson.toFixed(0)} {currency}</strong></p>
                 <p className="text-sm text-orange-700 mb-3">
-                  Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{game.payee.phone}</a>
+                  Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                 </p>
                 {payOnlineAvailable ? (
                   <>
@@ -1256,7 +1256,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       onClick={() => payOnline(game.id)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
-                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(2)} ${currency} online`}
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(0)} ${currency} online`}
                     </Button>
                   </>
                 ) : (
@@ -1513,7 +1513,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           {(() => {
                             const pd = paymentByUser.get(player.user_id);
                             if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {dueAmount(pd.pending)} {currency})</span>;
-                            if (pd && pd.pending <= 0 && pd.paid_amount > 0) return <span className="ml-2 text-xs text-green-600">(Paid {pd.paid_amount.toFixed(2)} {currency})</span>;
+                            if (pd && pd.pending <= 0 && pd.paid_amount > 0) return <span className="ml-2 text-xs text-green-600">(Paid {pd.paid_amount.toFixed(0)} {currency})</span>;
                             return null;
                           })()}
                         </span>
