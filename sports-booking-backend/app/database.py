@@ -705,6 +705,11 @@ async def init_db():
         await db.execute("ALTER TABLE payments ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0")
     except Exception:
         pass
+    for col in ("paid_by INTEGER", "paid_via TEXT NOT NULL DEFAULT ''"):
+        try:
+            await db.execute(f"ALTER TABLE payments ADD COLUMN {col}")
+        except Exception:
+            pass
     try:
         # Backfill ground_cost for existing games where it is 0
         cursor = await db.execute("SELECT id, cost_per_person, max_players FROM games WHERE ground_cost = 0 OR ground_cost IS NULL")

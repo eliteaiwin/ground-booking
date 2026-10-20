@@ -271,7 +271,7 @@ async def _confirm_order(db: aiosqlite.Connection, row: aiosqlite.Row, cf_paymen
         )
         if cursor.rowcount == 1:
             await db.execute(
-                "UPDATE payments SET paid_amount = MIN(amount, COALESCE(paid_amount, 0) + ?), paid_at = ? WHERE game_id = ? AND user_id = ?",
+                "UPDATE payments SET paid_amount = MIN(amount, COALESCE(paid_amount, 0) + ?), paid_at = ?, paid_by = user_id, paid_via = 'online' WHERE game_id = ? AND user_id = ?",
                 (row["base_amount"], now, row["game_id"], row["user_id"]),
             )
             await db.execute(

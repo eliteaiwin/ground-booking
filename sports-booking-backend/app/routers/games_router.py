@@ -790,9 +790,11 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
-        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, u.name
+        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, u.name,
+                  p.paid_by, p.paid_via, m.name AS paid_by_name
            FROM payments p
            JOIN users u ON p.user_id = u.id
+           LEFT JOIN users m ON m.id = p.paid_by
            JOIN game_players gp ON p.user_id = gp.user_id AND p.game_id = gp.game_id
            WHERE p.game_id = ? AND (gp.status = 'selected' OR gp.played = 1)""",
         (game_id,)
@@ -808,6 +810,9 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "pending": max(0, pr["amount"] - (pr["paid_amount"] or 0)),
             "excess": max(0, round((pr["paid_amount"] or 0) - pr["amount"], 2)),
             "paid_at": pr["paid_at"],
+            "paid_by": pr["paid_by"],
+            "paid_by_name": pr["paid_by_name"] or "",
+            "paid_via": pr["paid_via"] or "",
         }
         for pr in payment_rows
     ]
@@ -2670,14 +2675,16 @@ async def mark_payment_made(
         now = datetime.now(timezone.utc).isoformat()
         amount = game["cost_per_person"]
         await db.execute(
-            "INSERT INTO payments (game_id, user_id, amount, paid_amount, status, paid_at) VALUES (?, ?, ?, ?, 'paid', ?)",
-            (game_id, req.user_id, amount, amount, now)
+            "INSERT INTO payments (game_id, user_id, amount, paid_amount, status, paid_at, paid_by, paid_via) "
+            "VALUES (?, ?, ?, ?, 'paid', ?, ?, 'moderator')",
+            (game_id, req.user_id, amount, amount, now, user_id)
         )
     elif (payment["paid_amount"] or 0) < payment["amount"]:
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
-            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ? WHERE game_id = ? AND user_id = ?",
-            (now, game_id, req.user_id)
+            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ?, paid_by = ?, paid_via = 'moderator' "
+            "WHERE game_id = ? AND user_id = ?",
+            (now, user_id, game_id, req.user_id)
         )
 
     # Always update player payment_confirmed (fixes inconsistency if payment was

@@ -67,8 +67,9 @@ async def record_payment(
 
     now = datetime.now(timezone.utc).isoformat()
     await db.execute(
-        "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ? WHERE game_id = ? AND user_id = ?",
-        (now, req.game_id, user_id)
+        "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ?, paid_by = ?, paid_via = 'self' "
+        "WHERE game_id = ? AND user_id = ?",
+        (now, user_id, req.game_id, user_id)
     )
 
     # Update player payment_confirmed so frontend shows correct status
@@ -310,13 +311,15 @@ async def mark_paid_with_comment(
     payment = await cursor.fetchone()
     if not payment:
         await db.execute(
-            "INSERT INTO payments (game_id, user_id, amount, paid_amount, status, paid_at) VALUES (?, ?, ?, ?, 'paid', ?)",
-            (req.game_id, req.user_id, game["cost_per_person"], game["cost_per_person"], now)
+            "INSERT INTO payments (game_id, user_id, amount, paid_amount, status, paid_at, paid_by, paid_via) "
+            "VALUES (?, ?, ?, ?, 'paid', ?, ?, 'moderator')",
+            (req.game_id, req.user_id, game["cost_per_person"], game["cost_per_person"], now, user_id)
         )
     elif (payment["paid_amount"] or 0) < payment["amount"]:
         await db.execute(
-            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ? WHERE game_id = ? AND user_id = ?",
-            (now, req.game_id, req.user_id)
+            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ?, paid_by = ?, paid_via = 'moderator' "
+            "WHERE game_id = ? AND user_id = ?",
+            (now, user_id, req.game_id, req.user_id)
         )
 
     # Always update player payment_confirmed (fixes inconsistency if payment was

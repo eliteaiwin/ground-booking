@@ -90,6 +90,65 @@ function PlayerInfoButton({ info, highlight, onOpen }: { info?: string | null; h
   );
 }
 
+const shortDateTime = (iso?: string | null): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+// Cash icon beside a player: red = due, green = paid, amber = paid too little or too much.
+// Hover (desktop) or tap (phone) shows the details.
+function PaymentIcon({ pd, confirmed, due, currency, onSettle }: {
+  pd?: PaymentDetail; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void;
+}) {
+  const [tip, setTip] = useState(false);
+  const paid = pd?.paid_amount || 0;
+  const excess = pd?.excess || 0;
+  const pending = pd?.pending || 0;
+  const rs = (n: number) => `${Math.ceil(n - 0.001)} ${currency}`;
+  let color = 'text-gray-300';
+  let text = 'No payment yet';
+  if (pd && excess > 0) {
+    color = 'text-amber-500';
+    text = `Paid ${rs(paid)}, excess ${rs(excess)}. Share is ${rs(pd.amount)}.`;
+  } else if (pd && paid > 0 && pending > 0) {
+    color = 'text-amber-500';
+    text = `Paid ${rs(paid)}, remaining ${rs(pending)}. Share is ${rs(pd.amount)}.`;
+  } else if ((pd && pending <= 0 && paid > 0) || confirmed) {
+    color = 'text-green-600';
+    const when = shortDateTime(pd?.paid_at);
+    if (pd?.paid_via === 'moderator') text = `Moderator ${pd.paid_by_name || ''} marked it as paid${when ? ` on ${when}` : ''}`.replace('  ', ' ');
+    else if (pd?.paid_via === 'online') text = `Paid ${rs(paid)} online by Self${when ? ` on ${when}` : ''}`;
+    else if (pd?.paid_via === 'self') text = `Paid ${rs(paid)} by Self${when ? ` on ${when}` : ''}`;
+    else text = pd ? `Paid ${rs(paid)}${when ? ` on ${when}` : ''}` : 'Paid';
+  } else if (pd && pending > 0 && due) {
+    color = 'text-red-500';
+    text = `Due ${rs(pending)}`;
+  } else if (pd && pending > 0) {
+    text = `${rs(pending)} to pay after the game`;
+  }
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+      <button type="button" className={color} data-testid="payment-icon" aria-label={text} onClick={() => setTip(t => !t)}>
+        <Banknote size={16} />
+      </button>
+      {tip && (
+        <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
+          {text}
+          {excess > 0 && onSettle && (
+            <button type="button" className="block mt-1 underline font-medium text-amber-300"
+              onClick={(e) => { e.stopPropagation(); setTip(false); onSettle(String(Math.ceil(excess - 0.001))); }}>
+              Settle (returned offline)
+            </button>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface PaymentDetail {
   user_id: number;
   name: string;
@@ -99,6 +158,9 @@ interface PaymentDetail {
   pending: number;
   excess?: number;
   paid_at: string | null;
+  paid_by?: number | null;
+  paid_by_name?: string;
+  paid_via?: string;
 }
 
 interface Game {
@@ -1577,24 +1639,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           {player.must_prepay && player.payment_confirmed !== 1 && (
                             <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-orange-700 border-orange-300">Pay first</Badge>
                           )}
-                          {(() => {
-                            const pd = paymentByUser.get(player.user_id);
-                            if (pd && (pd.excess || 0) > 0) return (
-                              <span className="ml-2 text-xs text-blue-600" data-testid="excess-label">(Excess {(pd.excess || 0).toFixed(0)} {currency})
-                                {(isModerator || isAdmin) && (
-                                  <button type="button" className="ml-1 underline font-medium"
-                                    onClick={() => {
-                                      if (window.confirm(`Returned ${(pd.excess || 0).toFixed(0)} ${currency} to this player offline? This marks the excess as settled.`)) {
-                                        handleAction('settle', () => api.settleExcess(game.id, player.user_id));
-                                      }
-                                    }}>Settle</button>
-                                )}
-                              </span>
-                            );
-                            if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {dueAmount(pd.pending)} {currency})</span>;
-                            if (pd && pd.pending <= 0 && pd.paid_amount > 0) return <span className="ml-2 text-xs text-green-600">(Paid {pd.paid_amount.toFixed(0)} {currency})</span>;
-                            return null;
-                          })()}
                         </span>
                         {/* Profile info */}
                         <PlayerInfoButton info={player.nominated_by_info} highlight={player.nominated_by != null && player.nominated_by !== player.user_id} onOpen={() => openProfile(player.user_id)} />
@@ -1602,11 +1646,17 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
                         {!showPaymentDetails && (
                           <>
-                            {player.payment_confirmed === 1 ? (
-                              <span className="text-green-600" title="Paid"><Banknote size={16} /></span>
-                            ) : (
-                              <span className="text-gray-300" title="Unpaid"><Banknote size={16} /></span>
-                            )}
+                            <PaymentIcon
+                              pd={paymentByUser.get(player.user_id)}
+                              confirmed={player.payment_confirmed === 1}
+                              due={game.status === 'completed' || game.payment_timing === 'before' || !!player.must_prepay}
+                              currency={currency}
+                              onSettle={(isModerator || isAdmin) ? (amt) => {
+                                if (window.confirm(`Returned ${amt} ${currency} to this player offline? This marks the excess as settled.`)) {
+                                  handleAction('settle', () => api.settleExcess(game.id, player.user_id));
+                                }
+                              } : undefined}
+                            />
                             {game.status === 'completed' && playerVotes && playerVotes.points > 0 && (
                               <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300">
                                 <Star size={10} className="mr-0.5" />{playerVotes.points} pts
