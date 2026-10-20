@@ -495,7 +495,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const paymentByUser = new Map((game.payment_details || []).map(p => [p.user_id, p]));
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.pending > 0);
   const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
-  const totalPending = (game.payment_details || []).reduce((sum, p) => sum + p.pending, 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
   const payOnlineAvailable = game.payment_collection === 'app' && !!game.online_payment_ready;
   const myPendingAmount = (game.payment_details || []).find(d => d.user_id === user?.id)?.pending ?? game.cost_per_person;
@@ -508,7 +507,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const myFeeBreakdown = computeFeeBreakdown(myPendingAmount, gameFees);
   const dueAmount = (n: number) => (game.payment_collection === 'app' ? computeFeeBreakdown(n, gameFees).total : Math.ceil(n - 0.001));
   const totalOutstanding = perPerson * game.selected_players.length;
-  const pendingAmount = totalPending;
+  const pendingAmount = (game.payment_details || []).reduce((sum, p) => sum + (p.pending > 0 ? dueAmount(p.pending) : 0), 0);
   const allParticipants = [...game.selected_players, ...game.waiting_list];
   const playedParticipants = pendingPlayedUserIds
     ? allParticipants.filter(p => pendingPlayedUserIds.includes(p.user_id))
@@ -1639,15 +1638,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <CardContent className="p-4 pt-0">
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{totalOutstanding.toFixed(2)} {currency}</p>
+                  <p className="text-lg font-bold text-gray-800">{totalOutstanding.toFixed(0)} {currency}</p>
                   <p className="text-xs text-gray-500">Total Outstanding</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-green-600">{totalReceived.toFixed(2)} {currency}</p>
+                  <p className="text-lg font-bold text-green-600">{totalReceived.toFixed(0)} {currency}</p>
                   <p className="text-xs text-gray-500">Received</p>
                 </div>
                 <div className="bg-red-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-red-600">{pendingAmount.toFixed(2)} {currency}</p>
+                  <p className="text-lg font-bold text-red-600">{pendingAmount.toFixed(0)} {currency}</p>
                   <p className="text-xs text-gray-500">Pending</p>
                 </div>
               </div>
@@ -1675,7 +1674,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </div>
                   <Button className="w-full mt-3 bg-green-600 hover:bg-green-700"
                     onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(0)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(2)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
+                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(0)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(0)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
                       handleAction('remind', () => api.remindUnpaid(game.id));
                     }}
