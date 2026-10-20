@@ -57,6 +57,20 @@ const sportIcon = (type: string) => {
   return <span className="text-2xl">&#127941;</span>;
 };
 
+const ARCHIVE_PERIODS = [
+  { key: 'week', label: 'Last week', maxDays: 7 },
+  { key: 'month', label: 'Last month', maxDays: 30 },
+  { key: 'six_months', label: 'Last 6 months', maxDays: 182 },
+  { key: 'year', label: 'Last year', maxDays: 365 },
+  { key: 'older', label: 'Older', maxDays: Infinity },
+] as const;
+type ArchivePeriod = typeof ARCHIVE_PERIODS[number]['key'];
+
+const archivePeriodOf = (gameDate: string): ArchivePeriod => {
+  const days = (Date.now() - new Date(`${gameDate}T00:00:00`).getTime()) / 86400000;
+  return (ARCHIVE_PERIODS.find(p => days <= p.maxDays) ?? ARCHIVE_PERIODS[ARCHIVE_PERIODS.length - 1]).key;
+};
+
 const statusColor = (status: string, isArchived?: boolean) => {
   if (isArchived) return 'bg-gray-200 text-gray-600';
   switch (status) {
@@ -98,6 +112,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('games');
+  const [archivePeriod, setArchivePeriod] = useState<ArchivePeriod>('week');
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [showSwitchRole, setShowSwitchRole] = useState(false);
@@ -131,6 +146,12 @@ export default function Dashboard({ onNavigate }: Props) {
 
   const activeGames = games.filter(g => !g.is_archived);
   const archivedGames = games.filter(g => g.is_archived);
+  const archiveCounts = archivedGames.reduce<Record<string, number>>((acc, g) => {
+    const k = archivePeriodOf(g.game_date);
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  const archivedInPeriod = archivedGames.filter(g => archivePeriodOf(g.game_date) === archivePeriod);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -537,15 +558,26 @@ export default function Dashboard({ onNavigate }: Props) {
           </TabsContent>
 
           <TabsContent value="archived" className="mt-4 space-y-3">
-            {archivedGames.length === 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+              {ARCHIVE_PERIODS.map(p => (
+                <button
+                  key={p.key}
+                  onClick={() => setArchivePeriod(p.key)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${archivePeriod === p.key ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                >
+                  {p.label}{archiveCounts[p.key] ? ` (${archiveCounts[p.key]})` : ''}
+                </button>
+              ))}
+            </div>
+            {archivedInPeriod.length === 0 && (
               <Card>
                 <CardContent className="py-8 text-center text-gray-500">
                   <Archive size={24} className="mx-auto mb-2 text-gray-400" />
-                  No archived games yet. Games are archived 1 week after completion.
+                  No archived games in this period. Games move here automatically once they're over.
                 </CardContent>
               </Card>
             )}
-            {archivedGames.map(game => (
+            {archivedInPeriod.map(game => (
               <Card
                 key={game.id}
                 className="cursor-pointer hover:shadow-md transition-shadow opacity-80"

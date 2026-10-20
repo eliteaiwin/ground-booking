@@ -17,6 +17,7 @@ interface Ranking {
   potd_points: number;
   first_pref_wins: number;
   total_goals: number;
+  potd_wins?: number;
   games_played: number;
   combined_score: number;
 }
@@ -126,6 +127,9 @@ export default function HallOfFame({ onBack }: Props) {
                         </span>
                         <span className="text-xs text-green-600 flex items-center gap-0.5">
                           <Target size={10} /> {r.total_goals} goals
+                        </span>
+                        <span className="text-xs text-amber-600 whitespace-nowrap">
+                          POTD {r.potd_wins ?? 0}/{r.games_played}
                         </span>
                         <span className="text-xs text-gray-400">
                           {r.games_played} games

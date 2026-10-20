@@ -82,7 +82,7 @@ export default function CompleteGameDialog({
         onCheckedChange={() => toggleId(player.user_id)}
       />
       <Label htmlFor={`player-${player.user_id}`} className="flex-1 text-sm font-normal cursor-pointer">
-        {formatPlayerDisplay(player.name, player.phone)}
+        {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}
         {player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
       </Label>
     </div>

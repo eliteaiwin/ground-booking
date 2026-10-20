@@ -63,6 +63,7 @@ export default function ProfilePage({ onBack }: Props) {
   const { user, refreshUser, logout } = useAuth();
   const [firstName, setFirstName] = useState(user?.first_name || '');
   const [lastName, setLastName] = useState(user?.last_name || '');
+  const [displayName, setDisplayName] = useState(user?.display_name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const initNotifPrefs = (user?.notification_preference || 'whatsapp').split(',').filter(Boolean);
@@ -227,6 +228,7 @@ export default function ProfilePage({ onBack }: Props) {
       const data: Record<string, unknown> = {};
       if (firstName !== user?.first_name) data.first_name = firstName;
       if (lastName !== user?.last_name) data.last_name = lastName;
+      if (displayName !== (user?.display_name || '')) data.display_name = displayName;
       if (email !== user?.email) data.email = email;
       if (phone !== user?.phone) data.phone = phone;
       const notifPrefStr = notifPrefs.join(',');
@@ -369,6 +371,11 @@ export default function ProfilePage({ onBack }: Props) {
                 <Label htmlFor="prof-ln">Last Name</Label>
                 <Input id="prof-ln" value={lastName} onChange={(e) => setLastName(e.target.value)} />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="prof-dn">Display Name</Label>
+              <Input id="prof-dn" value={displayName} maxLength={30} placeholder="e.g. Rocky" onChange={(e) => setDisplayName(e.target.value)} />
+              <p className="text-xs text-gray-400">Shown to other players in game lists. Leave empty to use your first name.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="prof-email">Email</Label>

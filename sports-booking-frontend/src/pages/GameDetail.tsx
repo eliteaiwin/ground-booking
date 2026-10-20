@@ -86,7 +86,7 @@ interface Game {
     team_a_id: number | null; team_a_name: string; team_a_score: number;
     team_b_id: number | null; team_b_name: string; team_b_score: number;
   } | null;
-  goal_scorers: { user_id: number; name: string; phone: string; goals: number; own_goals: number }[];
+  goal_scorers: { user_id: number; name: string; display_name?: string; phone: string; goals: number; own_goals: number }[];
   note_before_players: string;
   note_after_players: string;
 }
@@ -210,12 +210,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
   const [profileUserId, setProfileUserId] = useState<number | null>(null);
-  const [profileRank, setProfileRank] = useState<{ rank: number; points: number; goals: number; games: number } | null>(null);
+  const [profileRank, setProfileRank] = useState<{ rank: number; points: number; potdWins: number; goals: number; games: number } | null>(null);
   const profileUserIdRef = useRef<number | null>(null);
   const [profileTab, setProfileTab] = useState('info');
   const [profileInsights, setProfileInsights] = useState<{ category: string; text: string }[] | null>(null);
   const [profileInsightsError, setProfileInsightsError] = useState('');
-  const [hallOfFameRankings, setHallOfFameRankings] = useState<{ rank: number; user_id: number; name: string; potd_points: number; total_goals: number; games_played: number }[]>([]);
+  const [hallOfFameRankings, setHallOfFameRankings] = useState<{ rank: number; user_id: number; name: string; potd_points: number; potd_wins?: number; total_goals: number; games_played: number }[]>([]);
 
   const currency = user?.currency || 'Rs';
 
@@ -264,7 +264,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   useEffect(() => {
     if (!game?.sport_type) return;
     api.getHallOfFame(game.sport_type)
-      .then((data: { rankings?: { rank: number; user_id: number; name: string; potd_points: number; total_goals: number; games_played: number }[] }) => {
+      .then((data: { rankings?: { rank: number; user_id: number; name: string; potd_points: number; potd_wins?: number; total_goals: number; games_played: number }[] }) => {
         setHallOfFameRankings(data.rankings || []);
       })
       .catch(() => setHallOfFameRankings([]));
@@ -286,7 +286,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const openProfile = (userId: number) => {
     const rank = hallOfFameRankings.find(r => r.user_id === userId);
     if (rank) {
-      setProfileRank({ rank: rank.rank, points: rank.potd_points, goals: rank.total_goals, games: rank.games_played });
+      setProfileRank({ rank: rank.rank, points: rank.potd_points, potdWins: rank.potd_wins ?? 0, goals: rank.total_goals, games: rank.games_played });
     } else {
       setProfileRank(null);
     }
@@ -484,13 +484,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `Confirmed:\n------------\n`;
     game!.selected_players.forEach((p, i) => {
       const paidMark = p.payment_confirmed === 1 ? ' \u2705' : '';
-      msg += `${i + 1}. ${formatPlayerDisplay(p.name, p.phone)}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}${paidMark}\n`;
+      msg += `${i + 1}. ${formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}${paidMark}\n`;
     });
 
     if (game!.waiting_list.length > 0) {
       msg += `\nWaiting List:\n-------------\n`;
       game!.waiting_list.forEach((p, i) => {
-        msg += `${i + 1}. ${formatPlayerDisplay(p.name, p.phone)}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}\n`;
+        msg += `${i + 1}. ${formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}${p.position && p.position !== 'Anywhere' ? ` (${p.position})` : ''}\n`;
       });
     }
 
@@ -612,7 +612,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <div className="space-y-1">
                     {game.goal_scorers.map(s => (
                       <div key={s.user_id} className="flex justify-between text-sm">
-                        <span className="text-green-800">{formatPlayerDisplay(s.name, s.phone)}</span>
+                        <span className="text-green-800">{formatPlayerDisplay(s.name, s.phone, undefined, s.display_name)}</span>
                         <span className="font-semibold text-green-700">
                           {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
                           {s.own_goals > 0 && <span className="text-red-600 ml-1">({s.own_goals} own)</span>}
@@ -1135,7 +1135,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                             const canAdd = totalAttributed < totalGoals;
                             return (
                               <div key={player.user_id} className="flex items-center justify-between bg-white rounded p-2">
-                                <span className="text-sm">{formatPlayerDisplay(player.name, player.phone)}</span>
+                                <span className="text-sm">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
                                 <div className="flex items-center gap-2">
                                   <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-xs"
                                     disabled={currentGoals === 0}
@@ -1311,7 +1311,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         onDragStart={() => handleDragStart(player)}
                         className={`flex items-center gap-2 text-sm p-1.5 bg-white rounded ${(isAdmin || isModerator) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                         {(isAdmin || isModerator) && <GripVertical size={12} className="text-gray-400" />}
-                        <span className="flex-1">{formatPlayerDisplay(player.name, player.phone)}</span>
+                        <span className="flex-1">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
                         {player.payment_confirmed === 1 && <CheckCircle size={14} className="text-green-600" />}
                       </div>
                     ))}
@@ -1334,7 +1334,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         onDragStart={() => handleDragStart(player)}
                         className={`flex items-center gap-2 text-sm p-1.5 bg-white rounded ${(isAdmin || isModerator) ? 'cursor-grab active:cursor-grabbing' : ''}`}>
                         {(isAdmin || isModerator) && <GripVertical size={12} className="text-gray-400" />}
-                        <span className="flex-1">{formatPlayerDisplay(player.name, player.phone)}</span>
+                        <span className="flex-1">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
                       </div>
                     ))}
                   </div>
@@ -1434,7 +1434,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           </span>
                         )}
                         <span className="flex-1">
-                          {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                          {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {(() => {
                             const pd = paymentByUser.get(player.user_id);
                             if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {pd.pending.toFixed(2)} {currency})</span>;
@@ -1567,7 +1567,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {idx + 1}
                     </span>
                     <span className="flex-1">
-                      {formatPlayerDisplay(player.name, player.phone)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
                     <button
                       type="button"
@@ -1670,7 +1670,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <SelectTrigger><SelectValue placeholder="Select best player" /></SelectTrigger>
                   <SelectContent>
                     {game.selected_players.filter(p => p.user_id !== user?.id).map(p => (
-                      <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
+                      <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1687,7 +1687,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     {game.selected_players
                       .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref)
                       .map(p => (
-                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
+                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>
@@ -1701,7 +1701,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     {game.selected_players
                       .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref && String(p.user_id) !== potdSecondPref)
                       .map(p => (
-                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone)}</SelectItem>
+                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>
@@ -1835,6 +1835,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         <>
                           <div className="flex justify-between"><span className="text-gray-500">Rank</span><span className="font-medium">#{profileRank.rank}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">POTD Points</span><span className="font-medium">{profileRank.points}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-500">Player of the Day</span><span className="font-medium">{profileRank.potdWins}/{profileRank.games}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">Goals</span><span className="font-medium">{profileRank.goals}</span></div>
                           <div className="flex justify-between"><span className="text-gray-500">Games Played</span><span className="font-medium">{profileRank.games}</span></div>
                         </>

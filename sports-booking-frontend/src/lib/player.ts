@@ -1,4 +1,7 @@
 export interface Player {
+  display_name?: string;
+  must_prepay?: boolean;
+  always_prepay?: boolean;
   id: number;
   user_id: number;
   name: string;
@@ -34,10 +37,11 @@ function maskPhone(phone?: string): string {
   return phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
 }
 
-export const formatPlayerDisplay = (name: string, phone: string, mode?: string) => {
+export const formatPlayerDisplay = (name: string, phone: string, mode?: string, displayName?: string | null) => {
   const displayMode = mode || getDisplayMode();
-  const first = getFirstName(name);
-  const lastInitial = getLastInitial(name);
+  const custom = (displayName || '').trim();
+  const first = custom || getFirstName(name);
+  const lastInitial = custom ? '' : getLastInitial(name);
   switch (displayMode) {
     case 'first':
       return first;
@@ -48,10 +52,11 @@ export const formatPlayerDisplay = (name: string, phone: string, mode?: string) 
     case 'first_phone_visible':
       return phone ? `${first} - ${phone}` : first;
     case 'first_last':
-      return (name || '').trim() || first;
-    case 'first_last_initial_phone_visible':
+      return custom || (name || '').trim() || first;
+    case 'first_last_initial_phone_visible': {
       const base = lastInitial ? `${first} ${lastInitial}.` : first;
       return phone ? `${base} - ${phone}` : base;
+    }
     default:
       return phone ? `${first} - ${maskPhone(phone)}` : first;
   }

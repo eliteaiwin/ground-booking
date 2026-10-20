@@ -200,7 +200,7 @@ export default function EditCompletedGameDialog({
                 onCheckedChange={() => togglePlayed(player.user_id)}
               />
               <Label htmlFor={`edit-player-${player.user_id}`} className="flex-1 text-sm font-normal cursor-pointer">
-                {formatPlayerDisplay(player.name, player.phone)}
+                {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}
                 {player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
               </Label>
             </div>
@@ -218,7 +218,7 @@ export default function EditCompletedGameDialog({
         <div className="space-y-2">
           {playedPlayers.map(player => (
             <div key={player.user_id} className="flex items-center justify-between bg-white rounded p-2">
-              <span className="text-sm">{formatPlayerDisplay(player.name, player.phone)}</span>
+              <span className="text-sm">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
               <Select
                 value={teamAssignments[player.user_id] === null || teamAssignments[player.user_id] === undefined ? 'none' : String(teamAssignments[player.user_id])}
                 onValueChange={(val) => setTeam(player.user_id, val)}
@@ -280,7 +280,7 @@ export default function EditCompletedGameDialog({
             const own = scorerGoals[player.user_id]?.own_goals || 0;
             return (
               <div key={player.user_id} className="flex items-center justify-between bg-white rounded p-2">
-                <span className="text-sm">{formatPlayerDisplay(player.name, player.phone)}</span>
+                <span className="text-sm">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-gray-500">Goals</span>
