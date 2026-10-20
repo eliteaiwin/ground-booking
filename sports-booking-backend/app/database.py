@@ -493,6 +493,7 @@ async def init_db():
         "ALTER TABLE games ADD COLUMN payment_collection TEXT NOT NULL DEFAULT 'offline'",
         "ALTER TABLE game_players ADD COLUMN must_prepay INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN date_of_birth TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN always_prepay INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN payout_upi TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN payout_name TEXT NOT NULL DEFAULT ''",

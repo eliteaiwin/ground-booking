@@ -545,7 +545,46 @@ async def get_ground_players(
             ]
         })
 
-    return {"ground": display_name, "games": games_info}
+    from .games_router import _build_rankings
+    from .auth_router import age_from_dob
+
+    stats: dict[int, dict] = {}
+    for gname in {display_name, ground["name"]}:
+        for r in await _build_rankings(db, ground_name=gname, sport_type=sport_type or None):
+            st = stats.setdefault(r["user_id"], {"potd_wins": 0, "games_played": 0, "goals": 0})
+            st["potd_wins"] += r.get("potd_wins", 0) or 0
+            st["games_played"] += r.get("games_played", 0) or 0
+            st["goals"] += r.get("total_goals", 0) or 0
+
+    order: list[int] = []
+    for g in games_info:
+        for p in g["players"]:
+            if p["user_id"] not in order:
+                order.append(p["user_id"])
+    players = []
+    if order:
+        marks = ",".join("?" * len(order))
+        cursor = await db.execute(
+            f"SELECT id, name, display_name, sports, date_of_birth, profile_pic FROM users WHERE id IN ({marks})",
+            order,
+        )
+        users = {r["id"]: r for r in await cursor.fetchall()}
+        for uid in order:
+            u = users.get(uid)
+            if not u:
+                continue
+            st = stats.get(uid, {"potd_wins": 0, "games_played": 0, "goals": 0})
+            players.append({
+                "user_id": uid,
+                "name": u["name"],
+                "display_name": u["display_name"] or "",
+                "sports": [s for s in (u["sports"] or "").split(",") if s],
+                "age": age_from_dob(u["date_of_birth"]),
+                "profile_pic": u["profile_pic"] or "",
+                **st,
+            })
+
+    return {"ground": display_name, "games": games_info, "players": players}
 
 
 # --- Moderator-Location Assignments ---

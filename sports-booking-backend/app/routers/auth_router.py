@@ -113,6 +113,23 @@ class UpdateProfileRequest(BaseModel):
     sport_positions: Optional[dict] = None
     currency: Optional[str] = None
     display_name: Optional[str] = None
+    date_of_birth: Optional[str] = None
+
+
+def age_from_dob(dob: str) -> Optional[int]:
+    try:
+        born = datetime.strptime(dob, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    today = datetime.now(timezone.utc).date()
+    return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+
+
+def mask_phone(phone: str) -> str:
+    phone = phone or ""
+    if len(phone) <= 3:
+        return phone
+    return phone[0] + "x" * (len(phone) - 3) + phone[-2:]
 
 
 async def _assign_roles(db: aiosqlite.Connection, user_id: int):
@@ -566,7 +583,7 @@ async def get_profile(
 ):
     import json as json_lib
     cursor = await db.execute(
-        """SELECT id, user_code, first_name, last_name, name, display_name, phone, email,
+        """SELECT id, user_code, first_name, last_name, name, display_name, date_of_birth, phone, email,
            notification_preference, sports, locations, sport_positions, profile_pic, created_at
            FROM users WHERE id = ?""",
         (user_id,)
@@ -621,6 +638,7 @@ async def get_profile(
         "last_name": last_name,
         "name": display_name,
         "display_name": user["display_name"] or "",
+        "date_of_birth": user["date_of_birth"] or "",
         "phone": user["phone"],
         "email": user["email"],
         "notification_preference": user["notification_preference"],
@@ -663,6 +681,14 @@ async def update_profile(
             raise HTTPException(status_code=400, detail="Display name must be 30 characters or fewer")
         updates.append("display_name = ?")
         params.append(dn)
+    if req.date_of_birth is not None:
+        dob = req.date_of_birth.strip()
+        if dob:
+            age = age_from_dob(dob)
+            if age is None or age < 3 or age > 100:
+                raise HTTPException(status_code=400, detail="Enter a valid date of birth")
+        updates.append("date_of_birth = ?")
+        params.append(dob)
     if req.email is not None:
         # Check email uniqueness
         cursor = await db.execute("SELECT id FROM users WHERE email = ? AND id != ?", (req.email, user_id))
@@ -963,6 +989,98 @@ async def get_user_photos(
             photos.append({"id": 0, "filename": legacy_pic, "purpose": "profile", "created_at": ""})
 
     return {"photos": photos}
+
+
+@router.get("/user/{target_user_id}/summary")
+async def get_user_summary(
+    target_user_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Everything the shared player popup shows. Contact details are visible to the
+    player themself and to admins, moderators and ground managers; others see a masked phone."""
+    import json as json_lib
+    from .games_router import _build_rankings
+
+    cursor = await db.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
+    u = await cursor.fetchone()
+    if not u:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    cursor = await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator', 'ground_management')",
+        (user_id,),
+    )
+    full = user_id == target_user_id or (await cursor.fetchone()) is not None
+
+    cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ?", (target_user_id,))
+    roles = [r["role"] for r in await cursor.fetchall()]
+
+    positions = {}
+    if u["sport_positions"]:
+        try:
+            positions = json_lib.loads(u["sport_positions"])
+        except Exception:
+            pass
+
+    rankings = await _build_rankings(db)
+    me = next((r for r in rankings if r["user_id"] == target_user_id), {})
+
+    cursor = await db.execute(
+        "SELECT id, filename, purpose, created_at FROM user_photos WHERE user_id = ? ORDER BY created_at DESC",
+        (target_user_id,),
+    )
+    photos = [dict(r) for r in await cursor.fetchall()]
+    if not photos and u["profile_pic"]:
+        photos = [{"id": 0, "filename": u["profile_pic"], "purpose": "profile", "created_at": ""}]
+
+    cursor = await db.execute(
+        """SELECT dm.id, dm.file_path, dm.caption, dm.created_at, g.id AS game_id, g.ground_name, g.game_date
+           FROM discussion_media dm JOIN games g ON dm.game_id = g.id
+           WHERE dm.user_id = ? AND dm.media_type LIKE 'image%'
+           ORDER BY dm.created_at DESC LIMIT 30""",
+        (target_user_id,),
+    )
+    game_photos = [dict(r) for r in await cursor.fetchall()]
+
+    cursor = await db.execute(
+        """SELECT g.ground_name, COUNT(*) AS games FROM game_players gp JOIN games g ON gp.game_id = g.id
+           WHERE gp.user_id = ? AND g.status = 'completed' AND gp.status != 'waiting'
+           GROUP BY g.ground_name ORDER BY games DESC""",
+        (target_user_id,),
+    )
+    grounds = [dict(r) for r in await cursor.fetchall()]
+
+    first_name = u["first_name"] or ""
+    last_name = u["last_name"] or ""
+    return {
+        "id": u["id"],
+        "user_code": u["user_code"] or "",
+        "name": u["name"] or f"{first_name} {last_name}".strip(),
+        "first_name": first_name,
+        "last_name": last_name,
+        "display_name": u["display_name"] or "",
+        "phone": u["phone"] if full else mask_phone(u["phone"]),
+        "email": (u["email"] or "") if full else "",
+        "contact_visible": full,
+        "age": age_from_dob(u["date_of_birth"]),
+        "sports": [s for s in (u["sports"] or "").split(",") if s],
+        "sport_positions": positions,
+        "locations": [x for x in (u["locations"] or "").split(",") if x],
+        "roles": roles,
+        "member_since": u["created_at"] or "",
+        "profile_pic": u["profile_pic"] or (photos[0]["filename"] if photos else ""),
+        "stats": {
+            "rank": me.get("rank"),
+            "games_played": me.get("games_played", 0),
+            "potd_wins": me.get("potd_wins", 0),
+            "potd_points": me.get("potd_points", 0),
+            "goals": me.get("total_goals", 0),
+        },
+        "grounds": grounds,
+        "photos": photos,
+        "game_photos": game_photos,
+    }
 
 
 @router.get("/user/{target_user_id}/sport-photo/{sport}")
