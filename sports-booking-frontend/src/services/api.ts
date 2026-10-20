@@ -142,7 +142,7 @@ export const api = {
   updateProfile: (data: {
     first_name?: string; last_name?: string; email?: string; phone?: string;
     notification_preference?: string; sports?: string[]; locations?: string[];
-    sport_positions?: Record<string, string[]>; currency?: string;
+    sport_positions?: Record<string, string[]>; currency?: string; display_name?: string;
   }) =>
     request('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
 
@@ -212,7 +212,7 @@ export const api = {
     ground_cost: number; payment_timing: string; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; note_before_players?: string; note_after_players?: string;
-    pitch_format?: string; pitch_number?: number;
+    pitch_format?: string; pitch_number?: number; allotment_id?: number; payment_collection?: string;
   }) => request('/api/games', { method: 'POST', body: JSON.stringify(data) }),
 
   createSeries: (data: {
@@ -220,7 +220,7 @@ export const api = {
     max_players: number; ground_cost: number; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; recurrence_days: { day: string; time: string }[];
-    weeks?: number; start_date?: string; pitch_format?: string;
+    weeks?: number; start_date?: string; pitch_format?: string; payment_collection?: string;
   }) => request('/api/games/series', { method: 'POST', body: JSON.stringify(data) }),
 
   editGame: (gameId: number, data: {
@@ -228,7 +228,7 @@ export const api = {
     game_date?: string; game_time?: string; max_players?: number;
     ground_cost?: number; cost_per_person?: number; duration_minutes?: number;
     payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
-    note_before_players?: string; note_after_players?: string;
+    note_before_players?: string; note_after_players?: string; payment_collection?: string;
   }) => request(`/api/games/${gameId}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   listGames: (status?: string) =>
@@ -293,6 +293,9 @@ export const api = {
   broadcastStatus: (gameId: number) =>
     request(`/api/games/${gameId}/broadcast-status`, { method: 'POST' }),
 
+  setPlayerPrepay: (gameId: number, playerUserId: number, data: { must_prepay: boolean; always?: boolean }) =>
+    request(`/api/games/${gameId}/players/${playerUserId}/prepay`, { method: 'POST', body: JSON.stringify(data) }),
+
   markPaymentMade: (gameId: number, userId: number) =>
     request(`/api/games/${gameId}/mark-paid`, {
       method: 'POST',
@@ -341,6 +344,16 @@ export const api = {
 
   getSettlements: () => request('/api/payments/settlements'),
 
+  // Online payments (Cashfree Easy Split)
+  getGatewayInfo: () => request('/api/payments/gateway'),
+  getPayoutAccount: () => request('/api/payments/payout-account'),
+  savePayoutAccount: (data: { upi_id: string; account_holder: string; pan?: string }) =>
+    request('/api/payments/payout-account', { method: 'PUT', body: JSON.stringify(data) }),
+  createPaymentOrder: (gameId: number) =>
+    request('/api/payments/orders', { method: 'POST', body: JSON.stringify({ game_id: gameId }) }),
+  verifyPaymentOrder: (orderId: string) =>
+    request(`/api/payments/orders/${encodeURIComponent(orderId)}/verify`, { method: 'POST' }),
+
   // Notifications
   getNotifications: () => request('/api/notifications'),
 
@@ -353,7 +366,11 @@ export const api = {
   // Preferences & App Settings
   getPreferences: () => request('/api/preferences'),
   getAppSettings: () => request('/api/users/app-settings'),
-  updateAppSettings: (data: { payments_enabled?: boolean; payment_surcharge_percent?: number; enabled_sports?: string[]; player_name_display?: string }) =>
+  updateAppSettings: (data: {
+    payments_enabled?: boolean; payment_surcharge_percent?: number; payment_gst_percent?: number;
+    payment_dev_share_percent?: number; payment_app_fee_gst_percent?: number;
+    enabled_sports?: string[]; player_name_display?: string;
+  }) =>
     request('/api/users/app-settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   updatePreference: (sportType: string, defaultMaxPlayers: number) =>
@@ -803,6 +820,29 @@ export const api = {
 
   rejectGround: (groundId: number, reason: string) =>
     request(`/api/locations/grounds/${groundId}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  // Pitch allotments & moderator groups
+  listModeratorGroups: (groundId: number) => request(`/api/allotments/grounds/${groundId}/groups`),
+  createModeratorGroup: (groundId: number, name: string) =>
+    request(`/api/allotments/grounds/${groundId}/groups`, { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteModeratorGroup: (groupId: number) =>
+    request(`/api/allotments/groups/${groupId}`, { method: 'DELETE' }),
+  addModeratorGroupMember: (groupId: number, userId: number) =>
+    request(`/api/allotments/groups/${groupId}/members`, { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
+  removeModeratorGroupMember: (groupId: number, memberId: number) =>
+    request(`/api/allotments/groups/${groupId}/members/${memberId}`, { method: 'DELETE' }),
+  getGroundOccupancy: (groundId: number, date: string, sport: string) =>
+    request(`/api/allotments/grounds/${groundId}/occupancy?date=${date}&sport=${encodeURIComponent(sport)}`),
+  createAllotment: (groundId: number, data: {
+    sport_type: string; allot_date: string; start_time: string; duration_minutes: number;
+    pitch_format?: string; pitch_number?: number; moderator_user_id?: number; moderator_group_id?: number;
+    rent?: number; repeat_weeks?: number; notes?: string;
+  }) => request(`/api/allotments/grounds/${groundId}/allotments`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAllotment: (allotmentId: number, data: { rent?: number; rent_paid?: boolean; notes?: string }) =>
+    request(`/api/allotments/${allotmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  cancelAllotment: (allotmentId: number, series: boolean) =>
+    request(`/api/allotments/${allotmentId}?series=${series}`, { method: 'DELETE' }),
+  myAllotments: () => request('/api/allotments/mine'),
 
   // Role Theme Settings
   getRoleThemes: () =>
