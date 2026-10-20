@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Search, X, UserPlus, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Search, X, UserPlus, ChevronDown, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useSports } from '../lib/sports';
 import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
@@ -51,6 +51,26 @@ interface Props {
   onCreated: (gameId: number) => void;
 }
 
+interface MyAllotment {
+  id: number;
+  ground_name: string;
+  sport_type: string;
+  allot_date: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  pitch_format: string | null;
+  pitch_number: number | null;
+  pitch_label: string;
+  group_name: string | null;
+  rent?: number;
+}
+
+const toMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
 export default function CreateGame({ onBack, onCreated }: Props) {
   const { user } = useAuth();
   const sports = useSports();
@@ -77,6 +97,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [playerSearch, setPlayerSearch] = useState('');
   const [pitch, setPitch] = useState('');
+  const [allotments, setAllotments] = useState<MyAllotment[]>([]);
   const [searchResults, setSearchResults] = useState<UserItem[]>([]);
   const [selectedPlayers, setSelectedPlayers] = useState<UserItem[]>([]);
   const [searching, setSearching] = useState(false);
@@ -104,6 +125,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
       }).catch(() => {}),
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
       api.listUsers().then((u: UserItem[]) => setAllUsers(u)).catch(() => {}),
+      api.myAllotments().then((a: MyAllotment[]) => setAllotments(a)).catch(() => {}),
     ]);
     // Load previous POTD delay from last game created by this user
     api.listGames().then((games: { potd_congrats_delay_minutes?: number }[]) => {
@@ -144,6 +166,33 @@ export default function CreateGame({ onBack, onCreated }: Props) {
     grounds.find(g => g.display_name === ground)?.pitch_layouts?.[sport] || [];
   const pitchLayouts = layoutsFor(groundName, sportType);
 
+  const chosenGround = groundName === '__other__' ? customGround : groundName;
+  const startMinute = gameTime ? toMinutes(gameTime) : -1;
+  const endMinute = startMinute + (parseInt(durationMinutes) || 0);
+  const chosenPitch = pitchLayouts.length > 0 ? parsePitchValue(pitch) : { pitch_format: '', pitch_number: 0 };
+  const matchingAllotment = allotments.find(a =>
+    a.ground_name === chosenGround &&
+    a.sport_type === sportType &&
+    a.allot_date === gameDate &&
+    toMinutes(a.start_time) <= startMinute &&
+    endMinute <= toMinutes(a.start_time) + a.duration_minutes &&
+    (!chosenPitch.pitch_format || chosenPitch.pitch_format === a.pitch_format) &&
+    (!chosenPitch.pitch_number || chosenPitch.pitch_number === a.pitch_number));
+  const notAllotted = !!chosenGround && !!gameDate && !!gameTime && !matchingAllotment;
+
+  const applyAllotment = (a: MyAllotment) => {
+    const known = grounds.some(g => g.display_name === a.ground_name);
+    setSportType(a.sport_type);
+    setGroundName(known ? a.ground_name : '__other__');
+    if (!known) setCustomGround(a.ground_name);
+    setGameDate(a.allot_date);
+    setGameTime(a.start_time);
+    setDurationMinutes(String(a.duration_minutes));
+    setPitch(a.pitch_format ? `${a.pitch_format}|${a.pitch_number}` : '');
+    if (sportDefaults[a.sport_type]) setMaxPlayers(String(sportDefaults[a.sport_type]));
+    if (a.rent && !groundCost) setGroundCost(String(a.rent));
+  };
+
   const handleSportChange = (val: string) => {
     setSportType(val);
     setPitch(defaultPitchValue(layoutsFor(groundName, val)));
@@ -173,6 +222,10 @@ export default function CreateGame({ onBack, onCreated }: Props) {
       setLoading(false);
       return;
     }
+    if (notAllotted && !window.confirm('The Ground Manager has not allotted this ground to you for this time. Create the game anyway?')) {
+      setLoading(false);
+      return;
+    }
     try {
       const game = await api.createGame({
         title,
@@ -192,6 +245,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         note_before_players: noteBefore || undefined,
         note_after_players: noteAfter || undefined,
         ...(pitchLayouts.length > 0 ? parsePitchValue(pitch) : {}),
+        ...(matchingAllotment ? { allotment_id: matchingAllotment.id } : {}),
       });
 
       // Pre-add selected players while game is still in draft
@@ -229,6 +283,25 @@ export default function CreateGame({ onBack, onCreated }: Props) {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>}
+              {allotments.length > 0 && (
+                <div className="space-y-1">
+                  <Label>Your allotted slots</Label>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {allotments.slice(0, 12).map(a => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => applyAllotment(a)}
+                        className={`shrink-0 text-left rounded-lg border px-3 py-2 text-xs ${matchingAllotment?.id === a.id ? 'border-green-600 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                      >
+                        <div className="font-semibold">{a.allot_date} · {a.start_time}–{a.end_time}</div>
+                        <div>{a.pitch_label || 'Whole ground'} · {a.ground_name}</div>
+                        {a.group_name && <div className="text-gray-500">{a.group_name}</div>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Game Title</Label>
                 <Select value={titleType} onValueChange={(val) => { setTitleType(val); if (val === 'regular') setTitle(''); }}>
@@ -271,6 +344,22 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                 )}
               </div>
               <PitchSelect layouts={pitchLayouts} value={pitch} onChange={setPitch} />
+              {matchingAllotment && (
+                <div className="flex gap-2 items-start bg-green-50 text-green-800 p-3 rounded-md text-sm">
+                  <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                  <span>
+                    Ground Manager confirmed {matchingAllotment.pitch_label || 'the ground'} for you ({matchingAllotment.start_time}–{matchingAllotment.end_time}{matchingAllotment.group_name ? `, ${matchingAllotment.group_name}` : ''}).
+                  </span>
+                </div>
+              )}
+              {notAllotted && (
+                <div className="flex gap-2 items-start bg-amber-50 text-amber-800 p-3 rounded-md text-sm">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                  <span>
+                    No confirmation from the Ground Manager: this ground isn't allotted to you{chosenPitch.pitch_format ? ` (${chosenPitch.pitch_format})` : ''} at this time. Check with the Ground Manager before inviting players.
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="date">Date</Label>
