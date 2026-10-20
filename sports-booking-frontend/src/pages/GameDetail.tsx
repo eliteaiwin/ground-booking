@@ -76,6 +76,8 @@ interface Game {
   payment_app_fee_gst_percent?: number;
   payment_collection?: string;
   online_payment_ready?: boolean;
+  ground_confirmed?: boolean;
+  moderator_group_name?: string | null;
   payment_mode?: string;
   payment_timing: string;
   status: string;
@@ -190,6 +192,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
+  const [editPaymentCollection, setEditPaymentCollection] = useState('offline');
   const [editGroundCost, setEditGroundCost] = useState('');
   const [editNoteBefore, setEditNoteBefore] = useState('');
   const [editNoteAfter, setEditNoteAfter] = useState('');
@@ -711,6 +714,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{game.ground_name}{game.pitch_format && ` · ${pitchLabel(game.pitch_format, game.pitch_number)}`}</span></div>
+            {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
+              <div className={`text-xs rounded px-2 py-1 ${game.ground_confirmed ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-800'}`}>
+                {game.ground_confirmed
+                  ? `Ground confirmed by Ground Manager${game.moderator_group_name ? ` · ${game.moderator_group_name}` : ''}`
+                  : 'No confirmation from the Ground Manager for this ground and time yet'}
+              </div>
+            )}
             <div className="flex items-center gap-2 text-gray-600"><Clock size={16} /> <span>{formatGameDate(game.game_date)} at {formatTime12h(game.game_time)}</span></div>
             {game.duration_minutes > 0 && (
               <div className="flex items-center gap-2 text-gray-600"><Clock size={16} /> <span>Duration: {game.duration_minutes} minutes</span></div>
@@ -893,6 +903,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
                       setEditQuitPenalty(String(game.quit_penalty_hours || 0));
                       setEditPaymentMode(game.payment_timing === 'before' ? 'prepaid' : 'postpaid');
+                      setEditPaymentCollection(game.payment_collection || 'offline');
                       setEditGroundCost(String(game.ground_cost));
                       setEditNoteBefore(game.note_before_players || '');
                       setEditNoteAfter(game.note_after_players || '');
@@ -932,15 +943,25 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           onChange={e => setEditQuitPenalty(e.target.value)} />
                       </div>
                       <div>
-                        <Label className="text-xs text-gray-500">Payment Mode</Label>
+                        <Label className="text-xs text-gray-500">When to pay</Label>
                         <Select value={editPaymentMode} onValueChange={setEditPaymentMode}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="postpaid">PostPaid</SelectItem>
-                            <SelectItem value="prepaid">PrePaid</SelectItem>
+                            <SelectItem value="postpaid">After the game</SelectItem>
+                            <SelectItem value="prepaid">Before the game</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-500">How to pay</Label>
+                      <Select value={editPaymentCollection} onValueChange={setEditPaymentCollection}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="offline">Track offline (cash / UPI to receiver)</SelectItem>
+                          <SelectItem value="app">Pay through the app</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Note before player list</Label>
@@ -957,6 +978,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
                           quit_penalty_hours: parseInt(editQuitPenalty) || 0,
                           payment_mode: editPaymentMode,
+                          payment_collection: editPaymentCollection,
                           ground_cost: editGroundCost !== '' ? parseFloat(editGroundCost) : undefined,
                           note_before_players: editNoteBefore,
                           note_after_players: editNoteAfter,
