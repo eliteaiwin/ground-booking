@@ -363,6 +363,61 @@ async def update_user_roles(
     return {"message": "Roles updated", "roles": req.roles}
 
 
+@router.get("/app-settings")
+async def get_app_settings(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Get app-wide settings. Public keys are readable by any logged-in user."""
+    payments_enabled = (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true'
+    fees = await payment_fee_settings(db)
+    gateway = float(await get_app_setting(db, 'payment_gateway_percent', '2'))
+    enabled_sports_raw = await get_app_setting(db, 'enabled_sports', 'soccer')
+    enabled_sports = [s.strip() for s in enabled_sports_raw.split(',') if s.strip()]
+    player_name_display = await get_app_setting(db, 'player_name_display', 'first_phone_masked')
+    return {
+        "payments_enabled": payments_enabled,
+        "payment_surcharge_percent": fees["surcharge_percent"],
+        "payment_gateway_percent": gateway,
+        "payment_dev_share_percent": fees["commission_percent"],
+        "payment_gst_percent": fees["gst_percent"],
+        "payment_app_fee_gst_percent": fees["app_fee_gst_percent"],
+        "enabled_sports": enabled_sports,
+        "player_name_display": player_name_display,
+    }
+
+
+@router.put("/app-settings")
+async def update_app_settings(
+    req: AppSettingsRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin only: update app-wide settings."""
+    await require_admin(user_id, db)
+    if req.payments_enabled is not None:
+        await set_app_setting(db, 'payments_enabled', 'true' if req.payments_enabled else 'false')
+    if req.payment_surcharge_percent is not None:
+        await set_app_setting(db, 'payment_surcharge_percent', str(req.payment_surcharge_percent))
+    if req.payment_dev_share_percent is not None:
+        if not 0 <= req.payment_dev_share_percent < 100:
+            raise HTTPException(status_code=400, detail="Commission must be between 0 and 100")
+        await set_app_setting(db, 'payment_dev_share_percent', str(req.payment_dev_share_percent))
+    if req.payment_gst_percent is not None:
+        if not 0 <= req.payment_gst_percent <= 100:
+            raise HTTPException(status_code=400, detail="GST must be between 0 and 100")
+        await set_app_setting(db, 'payment_gst_percent', str(req.payment_gst_percent))
+    if req.payment_app_fee_gst_percent is not None:
+        if not 0 <= req.payment_app_fee_gst_percent <= 100:
+            raise HTTPException(status_code=400, detail="GST must be between 0 and 100")
+        await set_app_setting(db, 'payment_app_fee_gst_percent', str(req.payment_app_fee_gst_percent))
+    if req.enabled_sports is not None:
+        await set_app_setting(db, 'enabled_sports', ','.join(req.enabled_sports))
+    if req.player_name_display is not None:
+        await set_app_setting(db, 'player_name_display', req.player_name_display)
+    return await get_app_settings(user_id, db)
+
+
 @router.put("/{target_user_id}")
 async def admin_update_user(
     target_user_id: int,
@@ -579,61 +634,6 @@ async def enable_user(
     )
     await db.commit()
     return {"message": "User enabled", "user_id": target_user_id}
-
-
-@router.get("/app-settings")
-async def get_app_settings(
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Get app-wide settings. Public keys are readable by any logged-in user."""
-    payments_enabled = (await get_app_setting(db, 'payments_enabled', 'false')).lower() == 'true'
-    fees = await payment_fee_settings(db)
-    gateway = float(await get_app_setting(db, 'payment_gateway_percent', '2'))
-    enabled_sports_raw = await get_app_setting(db, 'enabled_sports', 'soccer')
-    enabled_sports = [s.strip() for s in enabled_sports_raw.split(',') if s.strip()]
-    player_name_display = await get_app_setting(db, 'player_name_display', 'first_phone_masked')
-    return {
-        "payments_enabled": payments_enabled,
-        "payment_surcharge_percent": fees["surcharge_percent"],
-        "payment_gateway_percent": gateway,
-        "payment_dev_share_percent": fees["commission_percent"],
-        "payment_gst_percent": fees["gst_percent"],
-        "payment_app_fee_gst_percent": fees["app_fee_gst_percent"],
-        "enabled_sports": enabled_sports,
-        "player_name_display": player_name_display,
-    }
-
-
-@router.put("/app-settings")
-async def update_app_settings(
-    req: AppSettingsRequest,
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Admin only: update app-wide settings."""
-    await require_admin(user_id, db)
-    if req.payments_enabled is not None:
-        await set_app_setting(db, 'payments_enabled', 'true' if req.payments_enabled else 'false')
-    if req.payment_surcharge_percent is not None:
-        await set_app_setting(db, 'payment_surcharge_percent', str(req.payment_surcharge_percent))
-    if req.payment_dev_share_percent is not None:
-        if not 0 <= req.payment_dev_share_percent < 100:
-            raise HTTPException(status_code=400, detail="Commission must be between 0 and 100")
-        await set_app_setting(db, 'payment_dev_share_percent', str(req.payment_dev_share_percent))
-    if req.payment_gst_percent is not None:
-        if not 0 <= req.payment_gst_percent <= 100:
-            raise HTTPException(status_code=400, detail="GST must be between 0 and 100")
-        await set_app_setting(db, 'payment_gst_percent', str(req.payment_gst_percent))
-    if req.payment_app_fee_gst_percent is not None:
-        if not 0 <= req.payment_app_fee_gst_percent <= 100:
-            raise HTTPException(status_code=400, detail="GST must be between 0 and 100")
-        await set_app_setting(db, 'payment_app_fee_gst_percent', str(req.payment_app_fee_gst_percent))
-    if req.enabled_sports is not None:
-        await set_app_setting(db, 'enabled_sports', ','.join(req.enabled_sports))
-    if req.player_name_display is not None:
-        await set_app_setting(db, 'player_name_display', req.player_name_display)
-    return await get_app_settings(user_id, db)
 
 
 @router.get("/admin/backup")
