@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ContactReveal } from '@/components/ContactReveal';
 import { formatPhone, setPhoneHomeCountry } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { FeeBreakdownTable } from '@/components/CostBreakdown';
@@ -1699,7 +1698,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           </span>
                         )}
                         <span className="flex-1">
-                          {formatPlayerDisplay(player.name, '', undefined, player.display_name)}{player.phone && <span className="text-gray-500"> - <ContactReveal value={player.phone} kind="phone" /></span>}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                          {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.must_prepay && player.payment_confirmed !== 1 && (
                             <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-orange-700 border-orange-300">Pay first</Badge>
                           )}
@@ -1837,7 +1836,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {idx + 1}
                     </span>
                     <span className="flex-1">
-                      {formatPlayerDisplay(player.name, '', undefined, player.display_name)}{player.phone && <span className="text-gray-500"> - <ContactReveal value={player.phone} kind="phone" /></span>}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
                     <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}

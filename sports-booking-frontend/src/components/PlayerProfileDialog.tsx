@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ContactReveal } from '@/components/ContactReveal';
+import { maskedPhoneText } from '@/lib/player';
 import { X, Sparkles, Trophy, Goal, Frown, Wallet, Flame, Users } from 'lucide-react';
 import { api } from '../services/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -128,8 +129,10 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
                 <div className="space-y-2 text-sm">
                   <Row label="Full Name">{s.name}</Row>
                   {s.display_name && <Row label="Display Name">{s.display_name}</Row>}
-                  {s.phone && <Row label="Phone"><ContactReveal value={s.phone} kind="phone" /></Row>}
-                  {s.email && <Row label="Email"><ContactReveal value={s.email} kind="email" /></Row>}
+                  {s.phone && (
+                    <Row label="Phone">{s.contact_visible ? <ContactReveal value={s.phone} kind="phone" /> : maskedPhoneText(s.phone)}</Row>
+                  )}
+                  {s.contact_visible && s.email && <Row label="Email"><ContactReveal value={s.email} kind="email" /></Row>}
                   <Row label="Age">{s.age ?? '—'}</Row>
                   {s.locations.length > 0 && <Row label="Locations">{s.locations.join(', ')}</Row>}
                   {s.sports.map(sp => (

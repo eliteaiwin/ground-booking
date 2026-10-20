@@ -129,7 +129,8 @@ def mask_phone(phone: str) -> str:
     phone = phone or ""
     if len(phone) <= 3:
         return phone
-    return phone[0] + "x" * (len(phone) - 3) + phone[-2:]
+    local = phone[-10:] if len(phone) >= 10 else phone
+    return phone[:len(phone) - len(local)] + local[0] + "x" * (len(local) - 3) + local[-2:]
 
 
 async def _assign_roles(db: aiosqlite.Connection, user_id: int):
@@ -1060,7 +1061,7 @@ async def get_user_summary(
         "first_name": first_name,
         "last_name": last_name,
         "display_name": u["display_name"] or "",
-        "phone": u["phone"] if full else "",
+        "phone": u["phone"] if full else mask_phone(u["phone"]),
         "email": (u["email"] or "") if full else "",
         "contact_visible": full,
         "age": age_from_dob(u["date_of_birth"]),

@@ -1167,7 +1167,7 @@ async def get_game(
     )).fetchone()) is not None
     if not sees_contacts:
         payee = result.get("payee")
-        _strip_phones(result)
+        _mask_phones(result)
         result["payee"] = payee
     return result
 
@@ -1184,17 +1184,26 @@ async def _ground_country_code(db: aiosqlite.Connection, ground_name: str) -> st
     return (row["country_code"] if row else "") or "91"
 
 
-def _strip_phones(obj):
-    """Only admins, moderators and ground management may see other players' phone numbers."""
+def _mask_local(phone: str) -> str:
+    """Mask the last 10 digits (keeping any country code) so players only see e.g. 9xxxxxxx01."""
+    p = phone.strip()
+    if len(p) < 4:
+        return p
+    local = p[-10:] if len(p) >= 10 else p
+    return p[:len(p) - len(local)] + local[0] + "x" * (len(local) - 3) + local[-2:]
+
+
+def _mask_phones(obj):
+    """Only admins, moderators and ground management may see other players' full phone numbers."""
     if isinstance(obj, dict):
         for k, v in obj.items():
             if k == "phone" and isinstance(v, str):
-                obj[k] = ""
+                obj[k] = _mask_local(v)
             else:
-                _strip_phones(v)
+                _mask_phones(v)
     elif isinstance(obj, list):
         for v in obj:
-            _strip_phones(v)
+            _mask_phones(v)
 
 
 async def _edit_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, req: "EditGameRequest"):
