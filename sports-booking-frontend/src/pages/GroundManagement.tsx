@@ -4,11 +4,13 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban, Info } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban, Info, LayoutGrid } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import GroundDetailsForm from '@/components/grounds/GroundDetailsForm';
+import AllotmentSheet from '@/components/grounds/AllotmentSheet';
+import ModeratorGroups, { type ModeratorGroup } from '@/components/grounds/ModeratorGroups';
 import { EMPTY_GROUND_DETAILS, type GroundDetails, type GroundDetailsInput } from '@/lib/grounds';
 
 interface Ground {
@@ -116,6 +118,12 @@ export default function GroundManagement({ onBack }: Props) {
   const isModeratorOnly = isModerator && !isAdmin && !isGroundManagement;
   const [grounds, setGrounds] = useState<Ground[]>([]);
   const [selectedGround, setSelectedGround] = useState<Ground | null>(null);
+  const [moderatorGroups, setModeratorGroups] = useState<ModeratorGroup[]>([]);
+  const loadModeratorGroups = (groundId: number) =>
+    api.listModeratorGroups(groundId).then(setModeratorGroups).catch(() => setModeratorGroups([]));
+  useEffect(() => {
+    if (selectedGround) loadModeratorGroups(selectedGround.id);
+  }, [selectedGround?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [scheduleData, setScheduleData] = useState<ScheduleData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -124,7 +132,7 @@ export default function GroundManagement({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [, setAllGrounds] = useState<{ id: number; name: string; location: string; display_name: string }[]>([]);
   const chartRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'schedule' | 'details' | 'requests' | 'moderators' | 'photos' | 'blocked'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'allot' | 'groups' | 'details' | 'requests' | 'moderators' | 'photos' | 'blocked'>('schedule');
   const [joinRequests, setJoinRequests] = useState<{ id: number; user_id: number; user_name: string; user_phone: string; sport_interests: string; message: string; status: string; created_at: string }[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [approveData, setApproveData] = useState<Record<number, { role: string; maxNominations: number }>>({});
@@ -1109,6 +1117,18 @@ export default function GroundManagement({ onBack }: Props) {
             <Calendar size={14} className="inline mr-1" /> Schedule
           </button>
           <button
+            onClick={() => setActiveTab('allot')}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'allot' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <LayoutGrid size={14} className="inline mr-1" /> Allot
+          </button>
+          <button
+            onClick={() => setActiveTab('groups')}
+            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'groups' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Users size={14} className="inline mr-1" /> Groups
+          </button>
+          <button
             onClick={() => setActiveTab('details')}
             className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'details' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
           >
@@ -1150,6 +1170,17 @@ export default function GroundManagement({ onBack }: Props) {
             )}
           </button>
         </div>
+
+        {activeTab === 'allot' && <AllotmentSheet groundId={selectedGround.id} groups={moderatorGroups} />}
+        {activeTab === 'groups' && (
+          <ModeratorGroups
+            groundId={selectedGround.id}
+            location={selectedGround.location}
+            groups={moderatorGroups}
+            canManage={isAdmin || isGroundManagement}
+            onChanged={() => loadModeratorGroups(selectedGround.id)}
+          />
+        )}
 
         {activeTab === 'details' && (
           <Card>
