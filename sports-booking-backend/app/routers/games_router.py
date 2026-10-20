@@ -268,8 +268,9 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
     if game is None:
         game = await _get_game(db, game_id)
 
+    counted = "played = 1" if game["status"] == "completed" else "status = 'selected'"
     cursor = await db.execute(
-        "SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'",
+        f"SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND {counted}",
         (game_id,)
     )
     selected_count = (await cursor.fetchone())["cnt"]
@@ -287,18 +288,22 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
     # App payments keep the exact share (fees are added at checkout); offline amounts are whole rupees.
     due = new_cost if (await _payment_settings(db, game))["enabled"] else _whole_rupees(new_cost)
     await db.execute(
-        "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id IN (SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected')",
+        f"UPDATE payments SET amount = ? WHERE game_id = ? AND user_id IN (SELECT user_id FROM game_players WHERE game_id = ? AND {counted})",
         (due, game_id, game_id)
     )
 
     # Adjust payment status based on paid_amount
     cursor = await db.execute(
-        "SELECT id, amount, paid_amount, status FROM payments WHERE game_id = ?",
+        "SELECT id, user_id, amount, paid_amount, status FROM payments WHERE game_id = ?",
         (game_id,)
     )
     rows = await cursor.fetchall()
     for row in rows:
-        new_status = "paid" if row["paid_amount"] >= row["amount"] else "pending"
+        new_status = "paid" if (row["paid_amount"] or 0) >= row["amount"] else "pending"
+        await db.execute(
+            "UPDATE game_players SET payment_confirmed = ? WHERE game_id = ? AND user_id = ?",
+            (1 if new_status == "paid" else 0, game_id, row["user_id"])
+        )
         if new_status != row["status"]:
             if new_status == "paid":
                 await db.execute(
@@ -801,6 +806,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "amount": pr["amount"],
             "paid_amount": pr["paid_amount"] or 0,
             "pending": max(0, pr["amount"] - (pr["paid_amount"] or 0)),
+            "excess": max(0, round((pr["paid_amount"] or 0) - pr["amount"], 2)),
             "paid_at": pr["paid_at"],
         }
         for pr in payment_rows
@@ -1151,6 +1157,39 @@ async def get_game(
     return result
 
 
+async def _edit_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, req: "EditGameRequest"):
+    """After a game is completed only the payment receiver and ground cost can change; shares are re-split
+    among the players who played, leaving any excess or deficit against what each player already paid."""
+    game_id = game["id"]
+    if req.payee_user_id is not None:
+        await db.execute("UPDATE games SET payee_user_id = ? WHERE id = ?", (req.payee_user_id, game_id))
+    if req.ground_cost is not None and req.ground_cost != game["ground_cost"]:
+        await db.execute("UPDATE games SET ground_cost = ? WHERE id = ?", (req.ground_cost, game_id))
+        await _recalc_game_cost(db, game_id)
+        rows = await (await db.execute(
+            "SELECT p.user_id, p.amount, COALESCE(p.paid_amount, 0) AS paid FROM payments p "
+            "JOIN game_players gp ON gp.game_id = p.game_id AND gp.user_id = p.user_id "
+            "WHERE p.game_id = ? AND gp.played = 1", (game_id,)
+        )).fetchall()
+        for r in rows:
+            if r["paid"] <= 0:
+                continue
+            diff = round(r["paid"] - r["amount"], 2)
+            if diff > 0:
+                note = f"You paid {r['paid']:.0f}; the excess {diff:.0f} will be adjusted by the moderator."
+            elif diff < 0:
+                note = f"You paid {r['paid']:.0f}; please pay the remaining {-diff:.0f}."
+            else:
+                continue
+            await db.execute(
+                "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
+                (r["user_id"], game_id,
+                 f"Ground cost for {game['title']} changed. Your share is now {r['amount']:.0f}. {note}")
+            )
+    await db.commit()
+    return await get_game_dict(db, game_id)
+
+
 @router.put("/{game_id}")
 async def edit_game(
     game_id: int,
@@ -1164,8 +1203,10 @@ async def edit_game(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] in ("completed", "cancelled"):
-        raise HTTPException(status_code=400, detail="Cannot edit a completed or cancelled game")
+    if game["status"] == "cancelled":
+        raise HTTPException(status_code=400, detail="Cannot edit a cancelled game")
+    if game["status"] == "completed":
+        return await _edit_completed_game(db, game, req)
 
     updates: list[str] = []
     params: list = []
@@ -2031,9 +2072,10 @@ async def edit_completed_game_result(
             (game_id, uid, per_person)
         )
     placeholders = ",".join("?" * len(played_user_ids))
+    due = per_person if (await _payment_settings(db, game))["enabled"] else _whole_rupees(per_person)
     await db.execute(
         f"UPDATE payments SET amount = ? WHERE game_id = ? AND user_id IN ({placeholders})",
-        (per_person, game_id, *played_user_ids)
+        (due, game_id, *played_user_ids)
     )
 
     # Re-evaluate payment status based on paid_amount
@@ -2569,6 +2611,37 @@ async def check_quit_penalty(
         }
     except Exception:
         return {"has_penalty": True, "quit_penalty_hours": quit_penalty_hours, "must_pay": False}
+
+
+class SettleExcessRequest(BaseModel):
+    user_id: int
+
+
+@router.post("/{game_id}/settle-excess")
+async def settle_excess(
+    game_id: int,
+    req: SettleExcessRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator returned a player's overpayment offline; the payment is reset to exactly the share."""
+    await require_game_moderator(user_id, game_id, db)
+    game = await _get_game(db, game_id)
+    row = await (await db.execute(
+        "SELECT amount, paid_amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, req.user_id)
+    )).fetchone()
+    if not row or (row["paid_amount"] or 0) <= row["amount"]:
+        raise HTTPException(status_code=400, detail="No excess payment to settle")
+    excess = row["paid_amount"] - row["amount"]
+    await db.execute(
+        "UPDATE payments SET paid_amount = amount WHERE game_id = ? AND user_id = ?", (game_id, req.user_id)
+    )
+    await db.execute(
+        "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
+        (req.user_id, game_id, f"Moderator settled your excess payment of {excess:.0f} for {game['title']}.")
+    )
+    await db.commit()
+    return await get_game_dict(db, game_id)
 
 
 @router.post("/{game_id}/mark-paid")

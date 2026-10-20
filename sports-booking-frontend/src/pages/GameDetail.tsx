@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { FeeBreakdownTable } from '@/components/CostBreakdown';
@@ -45,6 +45,51 @@ interface Team {
   team_order: number;
 }
 
+// Opens the player popup; blue when the player was nominated for this game, with the nomination
+// shown on hover (desktop) or press-and-hold (phone).
+function PlayerInfoButton({ info, onOpen }: { info?: string | null; onOpen: () => void }) {
+  const [tip, setTip] = useState(false);
+  const timer = useRef<number | null>(null);
+  const held = useRef(false);
+  const start = () => {
+    if (!info) return;
+    held.current = false;
+    timer.current = window.setTimeout(() => {
+      held.current = true;
+      setTip(true);
+      window.setTimeout(() => setTip(false), 3000);
+    }, 500);
+  };
+  const stop = () => { if (timer.current) window.clearTimeout(timer.current); };
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => info && setTip(true)} onMouseLeave={() => setTip(false)}>
+      <button
+        type="button"
+        data-profile-trigger
+        data-testid="player-info"
+        className={`transition-colors ${info ? 'text-blue-600' : 'text-gray-400 hover:text-blue-500'}`}
+        onPointerDown={start}
+        onPointerUp={stop}
+        onPointerLeave={stop}
+        onContextMenu={e => { if (info) e.preventDefault(); }}
+        onClick={() => {
+          if (held.current) { held.current = false; return; }
+          setTip(false);
+          onOpen();
+        }}
+        title={info ? undefined : 'View profile'}
+      >
+        <Info size={14} />
+      </button>
+      {tip && info && (
+        <span role="tooltip" className="absolute right-0 bottom-full mb-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
+          {info}
+        </span>
+      )}
+    </span>
+  );
+}
+
 interface PaymentDetail {
   user_id: number;
   name: string;
@@ -52,6 +97,7 @@ interface PaymentDetail {
   amount: number;
   paid_amount: number;
   pending: number;
+  excess?: number;
   paid_at: string | null;
 }
 
@@ -505,6 +551,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
     app_fee_gst_percent: game.payment_app_fee_gst_percent ?? 0,
   };
   const myFeeBreakdown = computeFeeBreakdown(myPendingAmount, gameFees);
+  const myPayment = (game.payment_details || []).find(d => d.user_id === user?.id);
+  const myPaidSoFar = myPayment?.paid_amount || 0;
+  const myShare = myPayment?.amount ?? perPerson;
   const dueAmount = (n: number) => (game.payment_collection === 'app' ? computeFeeBreakdown(n, gameFees).total : Math.ceil(n - 0.001));
   const totalOutstanding = perPerson * game.selected_players.length;
   const pendingAmount = (game.payment_details || []).reduce((sum, p) => sum + (p.pending > 0 ? dueAmount(p.pending) : 0), 0);
@@ -842,7 +891,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {/* Edit Game - for Admin/Moderator on non-completed games */}
-          {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
+          {(isModerator || isAdmin) && game.status !== 'cancelled' && (
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -881,11 +930,21 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         onChange={e => setEditGroundCost(e.target.value)} />
                       {(() => {
                         const total = parseFloat(editGroundCost) || 0;
-                        const players = game.max_players || 1;
+                        const played = game.selected_players.filter(p => p.played).length;
+                        const players = (game.status === 'completed' && played) || game.max_players || 1;
                         if (total <= 0 || players <= 0) return null;
-                        return <p className="text-xs text-green-600 mt-1">Cost per person: {Math.ceil(total / players - 0.001)} {currency}</p>;
+                        return (
+                          <>
+                            <p className="text-xs text-green-600 mt-1">Cost per person: {Math.ceil(total / players - 0.001)} {currency}{game.status === 'completed' ? ` (${players} played)` : ''}</p>
+                            {game.status === 'completed' && (
+                              <p className="text-xs text-gray-500 mt-1">Players who already paid will see any excess or remaining amount next to their name.</p>
+                            )}
+                          </>
+                        );
                       })()}
                     </div>
+                    {game.status !== 'completed' && (
+                    <>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <Label className="text-xs text-gray-500">Quit Penalty (hours before game)</Label>
@@ -921,10 +980,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       <Label className="text-xs text-gray-500">Note after player list</Label>
                       <Textarea value={editNoteAfter} onChange={e => setEditNoteAfter(e.target.value)} rows={2} className="text-sm" />
                     </div>
+                    </>
+                    )}
                     <Button className="w-full bg-blue-600 hover:bg-blue-700"
                       disabled={actionLoading === 'edit-game'}
                       onClick={() => {
-                        handleAction('edit-game', () => api.editGame(game.id, {
+                        handleAction('edit-game', () => api.editGame(game.id, game.status === 'completed' ? {
+                          payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
+                          ground_cost: editGroundCost !== '' ? parseFloat(editGroundCost) : undefined,
+                        } : {
                           payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
                           quit_penalty_hours: parseInt(editQuitPenalty) || 0,
                           payment_mode: editPaymentMode,
@@ -1244,8 +1308,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
           {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payee && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && (game.status === 'in_progress' || game.status === 'completed') && (
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
-                <h4 className="font-semibold text-orange-800 mb-1">Payment Due</h4>
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{perPerson.toFixed(0)} {currency}</strong></p>
+                <h4 className="font-semibold text-orange-800 mb-1">{myPaidSoFar > 0 ? 'Pay Remaining Amount' : 'Payment Due'}</h4>
+                {myPaidSoFar > 0 && (
+                  <p className="text-xs text-orange-700 mb-1">Ground cost changed. You paid {myPaidSoFar.toFixed(0)} {currency}; your share is now {myShare.toFixed(0)} {currency}.</p>
+                )}
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0)} {currency}</strong></p>
                 <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                 </p>
@@ -1512,21 +1579,25 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           )}
                           {(() => {
                             const pd = paymentByUser.get(player.user_id);
+                            if (pd && (pd.excess || 0) > 0) return (
+                              <span className="ml-2 text-xs text-blue-600" data-testid="excess-label">(Excess {(pd.excess || 0).toFixed(0)} {currency})
+                                {(isModerator || isAdmin) && (
+                                  <button type="button" className="ml-1 underline font-medium"
+                                    onClick={() => {
+                                      if (window.confirm(`Returned ${(pd.excess || 0).toFixed(0)} ${currency} to this player offline? This marks the excess as settled.`)) {
+                                        handleAction('settle', () => api.settleExcess(game.id, player.user_id));
+                                      }
+                                    }}>Settle</button>
+                                )}
+                              </span>
+                            );
                             if (pd && pd.pending > 0) return <span className="ml-2 text-xs text-red-500">(Due {dueAmount(pd.pending)} {currency})</span>;
                             if (pd && pd.pending <= 0 && pd.paid_amount > 0) return <span className="ml-2 text-xs text-green-600">(Paid {pd.paid_amount.toFixed(0)} {currency})</span>;
                             return null;
                           })()}
                         </span>
                         {/* Profile info */}
-                        <button
-                          type="button"
-                          data-profile-trigger
-                          className="relative text-gray-400 hover:text-blue-500 transition-colors"
-                          onClick={() => openProfile(player.user_id)}
-                          title="View profile"
-                        >
-                          <Info size={14} />
-                        </button>
+                        <PlayerInfoButton info={player.nominated_by_info} onOpen={() => openProfile(player.user_id)} />
 
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
                         {!showPaymentDetails && (
@@ -1656,15 +1727,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
-                    <button
-                      type="button"
-                      data-profile-trigger
-                      className="relative text-gray-400 hover:text-blue-500 transition-colors"
-                      onClick={() => openProfile(player.user_id)}
-                      title="View profile"
-                    >
-                      <Info size={14} />
-                    </button>
+                    <PlayerInfoButton info={player.nominated_by_info} onOpen={() => openProfile(player.user_id)} />
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
                 ))}
@@ -1827,11 +1890,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
           const player = [...(game.selected_players || []), ...(game.waiting_list || [])].find(p => p.user_id === profileUserId);
           return (
             <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)}>
-              {player?.nominated_by_info && (
-                        <div className="pt-2 border-t text-xs text-gray-500">
-                          <span className="font-medium">Nomination:</span> {player.nominated_by_info}
-                        </div>
-                      )}
                       {player && (isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
                         <div className="pt-2 border-t space-y-2" data-testid="prepay-controls">
                           <label className="flex items-center gap-2 cursor-pointer">

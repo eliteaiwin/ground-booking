@@ -336,6 +336,8 @@ export const api = {
     return request(`/api/payments/summary${qs ? `?${qs}` : ''}`);
   },
 
+  settleExcess: (gameId: number, userId: number) =>
+    request(`/api/games/${gameId}/settle-excess`, { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
   markPaidWithComment: (gameId: number, userId: number, comment: string) =>
     request('/api/payments/mark-paid-with-comment', {
       method: 'POST',
