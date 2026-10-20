@@ -1371,6 +1371,51 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
+        {/* Payment Tracking */}
+        {game.status === 'completed' && (game.payment_summary.total > 0 || (game.payment_details && game.payment_details.length > 0)) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2"><DollarSign size={16} /> Payment Tracking</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              <div className="grid grid-cols-3 gap-4 text-center mb-4">
+                <div className="bg-gray-50 rounded-lg p-2">
+                  <p className="text-lg font-bold text-gray-800">{totalOutstanding.toFixed(0)} {currency}</p>
+                  <p className="text-xs text-gray-500">Total Outstanding</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-2">
+                  <p className="text-lg font-bold text-green-600">{totalReceived.toFixed(0)} {currency}</p>
+                  <p className="text-xs text-gray-500">Received</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-2">
+                  <p className="text-lg font-bold text-red-600">{pendingAmount.toFixed(0)} {currency}</p>
+                  <p className="text-xs text-gray-500">Pending</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-center mb-4">
+                <div><p className="text-2xl font-bold text-gray-800">{game.payment_summary.total}</p><p className="text-xs text-gray-500">Total Players</p></div>
+                <div><p className="text-2xl font-bold text-green-600">{game.payment_summary.paid}</p><p className="text-xs text-gray-500">Paid</p></div>
+                <div><p className="text-2xl font-bold text-red-600">{game.payment_summary.pending}</p><p className="text-xs text-gray-500">Pending</p></div>
+              </div>
+
+              {unpaidPlayers.length > 0 && (isModerator || isAdmin) && (
+                <div>
+                  <Button className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={() => {
+                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(0)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(0)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+                      handleAction('remind', () => api.remindUnpaid(game.id));
+                    }}
+                    disabled={actionLoading === 'remind'}>
+                    <MessageCircle size={16} className="mr-2" />
+                    {actionLoading === 'remind' ? 'Sending...' : 'Remind Unpaid via WhatsApp'}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -1629,64 +1674,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-        {/* Payment Tracking */}
-        {(game.payment_summary.total > 0 || (game.payment_details && game.payment_details.length > 0)) && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2"><DollarSign size={16} /> Payment Tracking</CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              <div className="grid grid-cols-3 gap-4 text-center mb-4">
-                <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{totalOutstanding.toFixed(0)} {currency}</p>
-                  <p className="text-xs text-gray-500">Total Outstanding</p>
-                </div>
-                <div className="bg-green-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-green-600">{totalReceived.toFixed(0)} {currency}</p>
-                  <p className="text-xs text-gray-500">Received</p>
-                </div>
-                <div className="bg-red-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-red-600">{pendingAmount.toFixed(0)} {currency}</p>
-                  <p className="text-xs text-gray-500">Pending</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-center mb-4">
-                <div><p className="text-2xl font-bold text-gray-800">{game.payment_summary.total}</p><p className="text-xs text-gray-500">Total Players</p></div>
-                <div><p className="text-2xl font-bold text-green-600">{game.payment_summary.paid}</p><p className="text-xs text-gray-500">Paid</p></div>
-                <div><p className="text-2xl font-bold text-red-600">{game.payment_summary.pending}</p><p className="text-xs text-gray-500">Pending</p></div>
-              </div>
-
-              {unpaidPlayers.length > 0 && (isModerator || isAdmin) && (
-                <div className="mt-3">
-                  <p className="text-sm font-medium text-red-600 mb-2">Pending Payments:</p>
-                  <div className="space-y-1">
-                    {unpaidPlayers.map(p => (
-                      <div key={p.user_id} className="flex flex-col text-sm bg-red-50 p-2 rounded">
-                        <div className="flex items-center gap-2">
-                          <span className="flex-1">{p.name}</span>
-                          <span className="text-red-600 font-medium">Due: {dueAmount(p.pending)} {currency}</span>
-                        </div>
-                        {(p.paid_amount || 0) > 0 && (
-                          <p className="text-xs text-gray-500">Paid {p.paid_amount.toFixed(2)} {currency} of {p.amount.toFixed(2)} {currency}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <Button className="w-full mt-3 bg-green-600 hover:bg-green-700"
-                    onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(0)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(0)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
-                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-                      handleAction('remind', () => api.remindUnpaid(game.id));
-                    }}
-                    disabled={actionLoading === 'remind'}>
-                    <MessageCircle size={16} className="mr-2" />
-                    {actionLoading === 'remind' ? 'Sending...' : 'Remind Unpaid via WhatsApp'}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
 
         {game.status === 'completed' && isSelectedPlayer && !isReadOnly && potdVotingOpen && (
           <Card className="border-yellow-200 bg-yellow-50">
