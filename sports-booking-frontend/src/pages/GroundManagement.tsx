@@ -349,7 +349,7 @@ export default function GroundManagement({ onBack }: Props) {
       .then((d: GroundDetails) => setDetailsInitial({
         ...EMPTY_GROUND_DETAILS,
         address: d.address, latitude: d.latitude, longitude: d.longitude, maps_url: d.maps_url,
-        owner_name: d.owner_name, owner_phone: d.owner_phone, owner_email: d.owner_email, contact_public: d.contact_public,
+        owner_name: d.owner_name, owner_phone: d.owner_phone, owner_email: d.owner_email, country_code: d.country_code || '91', contact_public: d.contact_public,
         opening_hours: d.opening_hours, price_info: d.price_info, description: d.description,
         sports: d.sports, amenities: d.amenities, amenities_other: d.amenities_other,
         sport_details: d.sport_details || {},

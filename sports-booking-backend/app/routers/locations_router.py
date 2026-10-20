@@ -1678,6 +1678,7 @@ class GroundDetailsFields(BaseModel):
     owner_name: Optional[str] = None
     owner_phone: Optional[str] = None
     owner_email: Optional[str] = None
+    country_code: Optional[str] = None
     contact_public: Optional[bool] = None
     opening_hours: Optional[str] = None
     price_info: Optional[str] = None
@@ -1815,6 +1816,11 @@ async def _apply_ground_details(db: aiosqlite.Connection, ground_id: int, req: G
         if value is not None:
             updates.append(f"{field} = ?")
             params.append(value.strip()[:limit])
+    if req.country_code is not None:
+        code = "".join(ch for ch in req.country_code if ch.isdigit())[:4]
+        if code:
+            updates.append("country_code = ?")
+            params.append(code)
     if req.contact_public is not None:
         updates.append("contact_public = ?")
         params.append(1 if req.contact_public else 0)
@@ -1919,6 +1925,7 @@ def _ground_summary(g: aiosqlite.Row, sport_types: list[str], main_photo: str) -
         "sport_types": sport_types,
         "main_photo": main_photo,
         "is_approved": g["is_approved"],
+        "country_code": (g["country_code"] if "country_code" in g.keys() else "") or "91",
     }
 
 

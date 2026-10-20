@@ -1060,7 +1060,7 @@ async def get_user_summary(
         "first_name": first_name,
         "last_name": last_name,
         "display_name": u["display_name"] or "",
-        "phone": u["phone"] if full else mask_phone(u["phone"]),
+        "phone": u["phone"] if full else "",
         "email": (u["email"] or "") if full else "",
         "contact_visible": full,
         "age": age_from_dob(u["date_of_birth"]),

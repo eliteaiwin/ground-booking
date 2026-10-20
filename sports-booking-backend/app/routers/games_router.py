@@ -685,7 +685,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
                 nom_info = f"Self Nominated" + (f" on {joined_display}" if joined_display else "")
             elif nom_by in nominator_map:
                 n = nominator_map[nom_by]
-                nom_info = f"Nominated by {n['name']} {n['phone']}" + (f" on {joined_display}" if joined_display else "")
+                nom_info = f"Nominated by {n['name']}" + (f" on {joined_display}" if joined_display else "")
             else:
                 nom_info = f"Nominated by user #{nom_by}" + (f" on {joined_display}" if joined_display else "")
         else:
@@ -1160,7 +1160,41 @@ async def get_game(
 ):
     result = await get_game_dict(db, game_id)
     result["can_moderate"] = await can_moderate_game(user_id, game_id, db)
+    result["ground_country_code"] = await _ground_country_code(db, result.get("ground_name") or "")
+    sees_contacts = (await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator', 'ground_management')",
+        (user_id,)
+    )).fetchone()) is not None
+    if not sees_contacts:
+        payee = result.get("payee")
+        _strip_phones(result)
+        result["payee"] = payee
     return result
+
+
+async def _ground_country_code(db: aiosqlite.Connection, ground_name: str) -> str:
+    parts = ground_name.split(" - ")
+    if len(parts) == 2:
+        cursor = await db.execute(
+            "SELECT country_code FROM grounds WHERE location = ? AND name = ?", (parts[0].strip(), parts[1].strip())
+        )
+    else:
+        cursor = await db.execute("SELECT country_code FROM grounds WHERE name = ?", (ground_name,))
+    row = await cursor.fetchone()
+    return (row["country_code"] if row else "") or "91"
+
+
+def _strip_phones(obj):
+    """Only admins, moderators and ground management may see other players' phone numbers."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == "phone" and isinstance(v, str):
+                obj[k] = ""
+            else:
+                _strip_phones(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            _strip_phones(v)
 
 
 async def _edit_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, req: "EditGameRequest"):

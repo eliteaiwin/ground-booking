@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { COUNTRY_CODES } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -211,6 +212,11 @@ export default function GroundDetailsForm({ initial, submitLabel, saving, onSubm
           <Input placeholder="https://maps.app.goo.gl/..." value={values.maps_url} onChange={e => handleMapsUrl(e.target.value)} />
         </div>
         <div className="space-y-1">
+          <Label className="text-xs">Country (phone numbers from here show without a country code)</Label>
+          <select className="w-full border rounded-md h-9 px-2 text-sm bg-white mb-2" data-testid="ground-country"
+            value={values.country_code || '91'} onChange={e => set('country_code', e.target.value)}>
+            {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.name} (+{c.code})</option>)}
+          </select>
           <Label className="text-xs">Address</Label>
           <Textarea rows={2} placeholder="Street, area, city" value={values.address} onChange={e => set('address', e.target.value)} />
         </div>

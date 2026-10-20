@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { formatPhone } from '@/lib/phone';
-import { X, Sparkles, Trophy, Goal, Frown, Wallet, Flame, Users, Phone, Mail } from 'lucide-react';
+import { ContactReveal } from '@/components/ContactReveal';
+import { X, Sparkles, Trophy, Goal, Frown, Wallet, Flame, Users } from 'lucide-react';
 import { api } from '../services/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { sportIconChar, sportLabel } from '../lib/sportIcon';
@@ -128,16 +128,8 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
                 <div className="space-y-2 text-sm">
                   <Row label="Full Name">{s.name}</Row>
                   {s.display_name && <Row label="Display Name">{s.display_name}</Row>}
-                  <Row label="Phone">
-                    {s.contact_visible && s.phone ? (
-                      <a href={`tel:${s.phone}`} className="inline-flex items-center gap-1 text-blue-600"><Phone size={12} />{formatPhone(s.phone)}</a>
-                    ) : formatPhone(s.phone)}
-                  </Row>
-                  {s.email && (
-                    <Row label="Email">
-                      <a href={`mailto:${s.email}`} className="inline-flex items-center gap-1 text-blue-600"><Mail size={12} />{s.email}</a>
-                    </Row>
-                  )}
+                  {s.phone && <Row label="Phone"><ContactReveal value={s.phone} kind="phone" /></Row>}
+                  {s.email && <Row label="Email"><ContactReveal value={s.email} kind="email" /></Row>}
                   <Row label="Age">{s.age ?? '—'}</Row>
                   {s.locations.length > 0 && <Row label="Locations">{s.locations.join(', ')}</Row>}
                   {s.sports.map(sp => (

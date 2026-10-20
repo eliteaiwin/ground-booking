@@ -208,6 +208,7 @@ export interface GroundDetails {
   owner_name: string;
   owner_phone: string;
   owner_email: string;
+  country_code: string;
   photos: { id: number; filename: string; caption: string; is_main: boolean }[];
   moderators: { user_id: number; name: string; phone: string; sport_type: string }[];
   upcoming_games: {
@@ -229,6 +230,7 @@ export interface GroundDetailsInput {
   owner_name: string;
   owner_phone: string;
   owner_email: string;
+  country_code: string;
   contact_public: boolean;
   opening_hours: string;
   price_info: string;
@@ -240,7 +242,7 @@ export interface GroundDetailsInput {
 }
 
 export const EMPTY_GROUND_DETAILS: GroundDetailsInput = {
-  address: '', latitude: null, longitude: null, maps_url: '', owner_name: '', owner_phone: '', owner_email: '',
+  address: '', latitude: null, longitude: null, maps_url: '', owner_name: '', owner_phone: '', owner_email: '', country_code: '91',
   contact_public: true, opening_hours: '', price_info: '', description: '', sports: [], amenities: {}, amenities_other: '',
   sport_details: {},
 };

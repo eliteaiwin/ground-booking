@@ -479,6 +479,7 @@ async def init_db():
         "ALTER TABLE grounds ADD COLUMN owner_email TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE grounds ADD COLUMN contact_public INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE grounds ADD COLUMN opening_hours TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE grounds ADD COLUMN country_code TEXT NOT NULL DEFAULT '91'",
         "ALTER TABLE grounds ADD COLUMN price_info TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE grounds ADD COLUMN description TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE grounds ADD COLUMN sports TEXT NOT NULL DEFAULT ''",
