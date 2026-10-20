@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import PayoutAccountCard from '@/components/PayoutAccountCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X, Trash2, ImageIcon } from 'lucide-react';
 
@@ -496,6 +497,7 @@ export default function ProfilePage({ onBack }: Props) {
             </Button>
           </CardContent>
         </Card>
+        {user?.roles.some(r => r === 'moderator' || r === 'admin') && <PayoutAccountCard />}
         {/* My Photos - Sport-Specific */}
         <Card>
           <CardHeader>

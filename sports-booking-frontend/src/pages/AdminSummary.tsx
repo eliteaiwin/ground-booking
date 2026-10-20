@@ -62,6 +62,15 @@ interface Props {
   onBack: () => void;
 }
 
+const FEE_FIELDS = [
+  { key: 'payment_surcharge_percent', label: 'Payment gateway fee (%)' },
+  { key: 'payment_gst_percent', label: 'GST on gateway fee (%)' },
+  { key: 'payment_dev_share_percent', label: 'App management fee for Elizoph (%)' },
+  { key: 'payment_app_fee_gst_percent', label: 'GST on app management fee (%) — set 18 once Elizoph is GST-registered' },
+] as const;
+type FeeKey = typeof FEE_FIELDS[number]['key'];
+type AppFeeSettings = { payments_enabled: boolean } & Record<FeeKey, number>;
+
 export default function AdminSummary({ onBack }: Props) {
   const [perGame, setPerGame] = useState<GameSummary[]>([]);
   const [usersWithPayments, setUsersWithPayments] = useState<UserPayment[]>([]);
@@ -77,7 +86,7 @@ export default function AdminSummary({ onBack }: Props) {
   const [markPaidComment, setMarkPaidComment] = useState('');
   const [markingPaid, setMarkingPaid] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
-  const [appSettings, setAppSettings] = useState<{ payments_enabled: boolean; payment_surcharge_percent: number } | null>(null);
+  const [appSettings, setAppSettings] = useState<AppFeeSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -102,7 +111,13 @@ export default function AdminSummary({ onBack }: Props) {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
-    api.getAppSettings().then(setAppSettings).catch(() => setAppSettings({ payments_enabled: false, payment_surcharge_percent: 7 }));
+    api.getAppSettings().then(setAppSettings).catch(() => setAppSettings({
+      payments_enabled: false,
+      payment_surcharge_percent: 2,
+      payment_dev_share_percent: 3,
+      payment_gst_percent: 18,
+      payment_app_fee_gst_percent: 0,
+    }));
   }, []);
 
   const handleTogglePayments = async (enabled: boolean) => {
@@ -118,12 +133,12 @@ export default function AdminSummary({ onBack }: Props) {
     }
   };
 
-  const handleSurchargeChange = async (value: string) => {
+  const handleFeeChange = async (key: FeeKey, value: string) => {
     const pct = parseFloat(value);
     if (!appSettings || isNaN(pct)) return;
     setSettingsLoading(true);
     try {
-      const updated = await api.updateAppSettings({ payments_enabled: appSettings.payments_enabled, payment_surcharge_percent: pct });
+      const updated = await api.updateAppSettings({ [key]: pct });
       setAppSettings(updated);
     } catch {
       alert('Failed to update settings');
@@ -228,20 +243,22 @@ export default function AdminSummary({ onBack }: Props) {
                 />
                 In-App Payments Enabled
               </label>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Payment Surcharge (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  value={appSettings.payment_surcharge_percent}
-                  onChange={e => handleSurchargeChange(e.target.value)}
-                  disabled={settingsLoading}
-                  className="w-full border rounded-md p-2 text-sm"
-                />
-              </div>
+              {FEE_FIELDS.map(f => (
+                <div key={f.key}>
+                  <label className="text-xs text-gray-500 block mb-1">{f.label}</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={appSettings[f.key]}
+                    onChange={e => handleFeeChange(f.key, e.target.value)}
+                    disabled={settingsLoading}
+                    className="w-full border rounded-md p-2 text-sm"
+                  />
+                </div>
+              ))}
               <p className="text-xs text-gray-500">
-                When disabled, players cannot pay through the app and moderators mark payments offline. When enabled, costs include the surcharge (default 7% = ~2% gateway + 5% dev share).
+                When disabled, players cannot pay through the app and moderators mark payments offline. For games set to "Pay through the app", each player pays their ground fee share plus the app management fee (and its GST, if set) plus the gateway fee and its GST. The payment receiver gets the full ground fee; Elizoph keeps the app management fee.
               </p>
             </CardContent>
           </Card>
