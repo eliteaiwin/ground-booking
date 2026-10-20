@@ -14,6 +14,7 @@ export interface Player {
   played: boolean;
   nominated_by: number | null;
   nominated_by_info: string | null;
+  nominated_by_name?: string;
   joined_at: string;
   photo: string;
 }

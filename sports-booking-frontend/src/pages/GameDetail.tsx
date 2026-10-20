@@ -45,9 +45,30 @@ interface Team {
   team_order: number;
 }
 
-// Opens the player popup. Hover (desktop) or press-and-hold (phone) shows how the player joined this game;
-// the icon is blue when someone else nominated them.
-function PlayerInfoButton({ info, highlight, onOpen }: { info?: string | null; highlight: boolean; onOpen: () => void }) {
+const NOMINATION_COLOR = { self: 'text-green-600', moderator: 'text-blue-600' } as const;
+
+const longDateTime = (ts?: string | null): string => {
+  if (!ts) return '';
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : `${ts.replace(' ', 'T')}Z`);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getDate()}-${d.toLocaleString('en-US', { month: 'short' })} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+function nomination(player: Player): { tone: keyof typeof NOMINATION_COLOR; text: string } {
+  const who = player.display_name || player.name.split(' ')[0];
+  const when = longDateTime(player.joined_at);
+  const on = when ? ` on ${when}` : '';
+  if (player.nominated_by != null && player.nominated_by !== player.user_id) {
+    return { tone: 'moderator', text: `Moderator ${player.nominated_by_name || 'someone'} nominated ${who}${on}` };
+  }
+  return { tone: 'self', text: `${who} nominated self${on}` };
+}
+
+// Opens the player popup. Hover (desktop) or press-and-hold (phone) shows who nominated the player and when;
+// green = self-nominated, blue = nominated by a moderator.
+function PlayerInfoButton({ player, onOpen }: { player: Player; onOpen: () => void }) {
+  const { tone, text: info } = nomination(player);
   const [tip, setTip] = useState(false);
   const timer = useRef<number | null>(null);
   const held = useRef(false);
@@ -67,7 +88,7 @@ function PlayerInfoButton({ info, highlight, onOpen }: { info?: string | null; h
         type="button"
         data-profile-trigger
         data-testid="player-info"
-        className={`transition-colors ${highlight ? 'text-blue-600' : 'text-gray-400 hover:text-blue-500'}`}
+        className={`transition-colors ${NOMINATION_COLOR[tone]}`}
         onPointerDown={start}
         onPointerUp={stop}
         onPointerLeave={stop}
@@ -1641,7 +1662,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           )}
                         </span>
                         {/* Profile info */}
-                        <PlayerInfoButton info={player.nominated_by_info} highlight={player.nominated_by != null && player.nominated_by !== player.user_id} onOpen={() => openProfile(player.user_id)} />
+                        <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
 
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
                         {!showPaymentDetails && (
@@ -1777,7 +1798,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
-                    <PlayerInfoButton info={player.nominated_by_info} highlight={player.nominated_by != null && player.nominated_by !== player.user_id} onOpen={() => openProfile(player.user_id)} />
+                    <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
                 ))}

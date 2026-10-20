@@ -705,6 +705,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "played": bool(p["played"]),
             "nominated_by": p["nominated_by"],
             "nominated_by_info": nom_info,
+            "nominated_by_name": nominator_map[nom_by]["name"] if nom_by and nom_by != p["user_id"] and nom_by in nominator_map else "",
             "joined_at": p["joined_at"],
             "photo": player_photo_map.get(p["user_id"], ""),
         }
