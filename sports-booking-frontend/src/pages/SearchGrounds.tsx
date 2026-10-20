@@ -9,6 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import PlayerGrid, { type GridPlayer } from '../components/PlayerGrid';
+import PlayerProfileDialog from '../components/PlayerProfileDialog';
+import { sportIconChar } from '../lib/sportIcon';
 import { ArrowLeft, Search, MapPin, Building, Phone, Shield, Users, ChevronDown, ChevronUp, UserPlus, ChevronLeft, ChevronRight, LocateFixed, Navigation, Plus, Calendar } from 'lucide-react';
 import GroundPage from './GroundPage';
 import RegisterGround from './RegisterGround';
@@ -80,16 +83,6 @@ interface Props {
 const GROUNDS_PER_PAGE = 12;
 const PLAYERS_PER_PAGE = 10;
 
-const sportIconChar = (type: string) => {
-  if (type === 'soccer' || type === 'football') return '\u26BD';
-  if (type === 'cricket') return '\uD83C\uDFCF';
-  if (type === 'badminton') return '\uD83C\uDFF8';
-  if (type === 'basketball') return '\uD83C\uDFC0';
-  if (type === 'hockey') return '\uD83C\uDFD2';
-  return '\uD83C\uDFC5';
-};
-
-const formatPlayerName = (name: string) => (name || '').split(' ')[0];
 
 export default function SearchGrounds({ onBack, onViewGame }: Props) {
   const { user } = useAuth();
@@ -103,6 +96,8 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
   const [expandedGround, setExpandedGround] = useState<number | null>(null);
   const [groundGames, setGroundGames] = useState<GameInfo[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [groundPlayers, setGroundPlayers] = useState<GridPlayer[]>([]);
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
   const [selectedSport, setSelectedSport] = useState('');
   const [joinGroundId, setJoinGroundId] = useState<number | null>(null);
   const [joinSports, setJoinSports] = useState('');
@@ -111,7 +106,6 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
   const [joinSuccess, setJoinSuccess] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [playerSearch, setPlayerSearch] = useState('');
-  const [playerPage, setPlayerPage] = useState(1);
   const [viewGroundId, setViewGroundId] = useState<number | null>(null);
   const [showRegister, setShowRegister] = useState(false);
   const [nearby, setNearby] = useState<NearbyGround[] | null>(null);
@@ -177,19 +171,19 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
       setExpandedGround(null);
       setGroundGames([]);
       setPlayerSearch('');
-      setPlayerPage(1);
       return;
     }
     setExpandedGround(groundId);
     setLoadingPlayers(true);
     setPlayerSearch('');
-    setPlayerPage(1);
     try {
       const data = await api.getGroundPlayers(groundId, sportType || selectedSport || undefined);
       setGroundGames(data.games || []);
+      setGroundPlayers(data.players || []);
     } catch (err) {
       console.error(err);
       setGroundGames([]);
+      setGroundPlayers([]);
     } finally {
       setLoadingPlayers(false);
     }
@@ -201,27 +195,11 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
     currentPage * GROUNDS_PER_PAGE
   );
 
-  const allPlayers = useMemo(() => {
-    const players: Array<GamePlayer & { game_title: string; sport_type: string; game_date: string }> = [];
-    for (const game of groundGames) {
-      for (const p of game.players) {
-        players.push({ ...p, game_title: game.title, sport_type: game.sport_type, game_date: game.game_date });
-      }
-    }
-    return players;
-  }, [groundGames]);
-
   const filteredPlayers = useMemo(() => {
-    if (!playerSearch.trim()) return allPlayers;
-    const q = playerSearch.toLowerCase();
-    return allPlayers.filter(p => p.name.toLowerCase().includes(q));
-  }, [allPlayers, playerSearch]);
-
-  const playerTotalPages = Math.ceil(filteredPlayers.length / PLAYERS_PER_PAGE);
-  const paginatedPlayers = filteredPlayers.slice(
-    (playerPage - 1) * PLAYERS_PER_PAGE,
-    playerPage * PLAYERS_PER_PAGE
-  );
+    const q = playerSearch.trim().toLowerCase();
+    if (!q) return groundPlayers;
+    return groundPlayers.filter(p => p.name.toLowerCase().includes(q) || p.display_name.toLowerCase().includes(q));
+  }, [groundPlayers, playerSearch]);
 
   const PaginationControls = ({ page, total, onPageChange }: { page: number; total: number; onPageChange: (p: number) => void }) => {
     if (total <= 1) return null;
@@ -463,10 +441,10 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
                             <p className="text-xs text-gray-400">No games found{selectedSport ? ' for ' + selectedSport : ''}</p>
                           ) : (
                             <>
-                              {allPlayers.length > 0 && (
+                              {groundPlayers.length > 0 && (
                                 <div className="relative">
                                   <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-                                  <Input className="h-7 text-xs pl-7" placeholder="Search players..." value={playerSearch} onChange={e => { setPlayerSearch(e.target.value); setPlayerPage(1); }} />
+                                  <Input className="h-7 text-xs pl-7" placeholder="Search players..." value={playerSearch} onChange={e => { setPlayerSearch(e.target.value); }} />
                                 </div>
                               )}
                               {filteredPlayers.length === 0 ? (
@@ -474,16 +452,7 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
                               ) : (
                                 <>
                                   <div className="text-xs text-gray-400">{filteredPlayers.length} player{filteredPlayers.length !== 1 ? 's' : ''}</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {paginatedPlayers.map((p, idx) => (
-                                      <Badge key={p.user_id + '-' + idx} variant="outline" className="text-xs">
-                                        {formatPlayerName(p.name)}{p.position && p.position !== 'Anywhere' ? ' (' + p.position + ')' : ''}
-                                        {p.status === 'waiting' && <span className="text-orange-500 ml-1">WL</span>}
-                                        <span className="ml-1 text-gray-400">{sportIconChar(p.sport_type)}</span>
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                  <PaginationControls page={playerPage} total={playerTotalPages} onPageChange={setPlayerPage} />
+                                  <PlayerGrid players={filteredPlayers} onSelect={setProfileUserId} pageSize={PLAYERS_PER_PAGE} />
                                 </>
                               )}
                             </>
@@ -500,6 +469,7 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
         )}
         </>)}
       </div>
+      {profileUserId && <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)} />}
     </div>
   );
 }

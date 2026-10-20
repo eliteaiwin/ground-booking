@@ -142,7 +142,7 @@ export const api = {
   updateProfile: (data: {
     first_name?: string; last_name?: string; email?: string; phone?: string;
     notification_preference?: string; sports?: string[]; locations?: string[];
-    sport_positions?: Record<string, string[]>; currency?: string; display_name?: string;
+    sport_positions?: Record<string, string[]>; currency?: string; display_name?: string; date_of_birth?: string;
   }) =>
     request('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
 
@@ -640,6 +640,9 @@ export const api = {
 
   getUserPhotos: (userId: number) =>
     request(`/api/auth/user/${userId}/photos`),
+
+  getUserSummary: (userId: number) =>
+    request(`/api/auth/user/${userId}/summary`),
 
   getUserSportPhoto: (userId: number, sport: string) =>
     request(`/api/auth/user/${userId}/sport-photo/${encodeURIComponent(sport)}`),

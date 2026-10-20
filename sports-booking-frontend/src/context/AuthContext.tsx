@@ -8,6 +8,7 @@ interface User {
   last_name: string;
   name: string;
   display_name?: string | null;
+  date_of_birth?: string | null;
   phone: string;
   email: string | null;
   notification_preference: string;
