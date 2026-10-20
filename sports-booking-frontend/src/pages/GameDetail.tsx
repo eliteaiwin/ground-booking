@@ -45,9 +45,9 @@ interface Team {
   team_order: number;
 }
 
-// Opens the player popup; blue when the player was nominated for this game, with the nomination
-// shown on hover (desktop) or press-and-hold (phone).
-function PlayerInfoButton({ info, onOpen }: { info?: string | null; onOpen: () => void }) {
+// Opens the player popup. Hover (desktop) or press-and-hold (phone) shows how the player joined this game;
+// the icon is blue when someone else nominated them.
+function PlayerInfoButton({ info, highlight, onOpen }: { info?: string | null; highlight: boolean; onOpen: () => void }) {
   const [tip, setTip] = useState(false);
   const timer = useRef<number | null>(null);
   const held = useRef(false);
@@ -67,7 +67,7 @@ function PlayerInfoButton({ info, onOpen }: { info?: string | null; onOpen: () =
         type="button"
         data-profile-trigger
         data-testid="player-info"
-        className={`transition-colors ${info ? 'text-blue-600' : 'text-gray-400 hover:text-blue-500'}`}
+        className={`transition-colors ${highlight ? 'text-blue-600' : 'text-gray-400 hover:text-blue-500'}`}
         onPointerDown={start}
         onPointerUp={stop}
         onPointerLeave={stop}
@@ -1597,7 +1597,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           })()}
                         </span>
                         {/* Profile info */}
-                        <PlayerInfoButton info={player.nominated_by_info} onOpen={() => openProfile(player.user_id)} />
+                        <PlayerInfoButton info={player.nominated_by_info} highlight={player.nominated_by != null && player.nominated_by !== player.user_id} onOpen={() => openProfile(player.user_id)} />
 
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
                         {!showPaymentDetails && (
@@ -1727,7 +1727,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
-                    <PlayerInfoButton info={player.nominated_by_info} onOpen={() => openProfile(player.user_id)} />
+                    <PlayerInfoButton info={player.nominated_by_info} highlight={player.nominated_by != null && player.nominated_by !== player.user_id} onOpen={() => openProfile(player.user_id)} />
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                   </div>
                 ))}
