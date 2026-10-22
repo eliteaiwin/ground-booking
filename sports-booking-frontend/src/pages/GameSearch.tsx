@@ -121,7 +121,7 @@ const statusColor = (status: string) => {
 const statusLabel = (status: string) => {
   switch (status) {
     case 'draft': return 'Draft';
-    case 'voting_open': return 'Open for Voting';
+    case 'voting_open': return 'Open for Nomination';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
     case 'cancelled': return 'Cancelled';
@@ -309,7 +309,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="voting_open">Open for Voting</SelectItem>
+                    <SelectItem value="voting_open">Open for Nomination</SelectItem>
                     <SelectItem value="in_progress">In Progress</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>

@@ -1000,6 +1000,32 @@ async def get_user_photos(
     return {"photos": photos}
 
 
+class PayFirstRequest(BaseModel):
+    pay_first: bool
+
+
+@router.put("/user/{target_user_id}/pay-first")
+async def set_pay_first(
+    target_user_id: int,
+    req: PayFirstRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderators/Admins: a pay-first player is added to a game's list only after paying."""
+    allowed = await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator')", (user_id,)
+    )).fetchone()
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Only moderators and admins can change this")
+    cursor = await db.execute(
+        "UPDATE users SET always_prepay = ? WHERE id = ?", (1 if req.pay_first else 0, target_user_id)
+    )
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.commit()
+    return {"pay_first": req.pay_first}
+
+
 @router.get("/user/{target_user_id}/summary")
 async def get_user_summary(
     target_user_id: int,
@@ -1021,6 +1047,9 @@ async def get_user_summary(
         (user_id,),
     )
     full = user_id == target_user_id or (await cursor.fetchone()) is not None
+    can_set_pay_first = await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator')", (user_id,)
+    )).fetchone() is not None
 
     cursor = await db.execute("SELECT role FROM user_roles WHERE user_id = ?", (target_user_id,))
     roles = [r["role"] for r in await cursor.fetchall()]
@@ -1054,7 +1083,7 @@ async def get_user_summary(
 
     cursor = await db.execute(
         """SELECT g.ground_name, COUNT(*) AS games FROM game_players gp JOIN games g ON gp.game_id = g.id
-           WHERE gp.user_id = ? AND g.status = 'completed' AND gp.status != 'waiting'
+           WHERE gp.user_id = ? AND g.status = 'completed' AND gp.status NOT IN ('waiting', 'awaiting_payment')
            GROUP BY g.ground_name ORDER BY games DESC""",
         (target_user_id,),
     )
@@ -1073,6 +1102,8 @@ async def get_user_summary(
         "phone": u["phone"] if full else mask_phone(u["phone"]),
         "email": (u["email"] or "") if full else "",
         "contact_visible": full,
+        "pay_first": bool(u["always_prepay"]) if can_set_pay_first else False,
+        "can_set_pay_first": can_set_pay_first,
         "age": age_from_dob(u["date_of_birth"]),
         "sports": [s for s in (u["sports"] or "").split(",") if s],
         "sport_positions": positions,

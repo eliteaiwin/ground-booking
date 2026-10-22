@@ -21,7 +21,7 @@ interface Props {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Open for booking', open: 'Open', voting_open: 'Voting open', in_progress: 'Booked',
+  draft: 'Open for booking', open: 'Open', voting_open: 'Open for nomination', in_progress: 'Booked',
 };
 
 function formatGameDate(date: string, time: string) {

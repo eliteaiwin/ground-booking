@@ -416,7 +416,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                     <Label htmlFor="potdDelay">POTD Congratulation Delay (minutes)</Label>
                     <Input id="potdDelay" type="number" min="1" max="10080" value={potdDelayMinutes}
                       onChange={(e) => setPotdDelayMinutes(e.target.value)} />
-                    <p className="text-xs text-gray-400">Default: 1440 minutes (24 hours). Time after game completion to announce POTD winner.</p>
+                    <p className="text-xs text-gray-400">Default: 1440 minutes (24 hours). Player of the Day nominations stay open this long after the game, then the winner is announced.</p>
                   </div>
                 )}
               </div>
@@ -518,7 +518,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                           <SelectItem value="app">Pay through the app</SelectItem>
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-gray-500">You can still mark selected players "Must pay before game" from their profile.</p>
+                      <p className="text-xs text-gray-500">Players set to "Pay first" in their profile must pay before their name is added.</p>
                     </div>
                   </div>
                 )}

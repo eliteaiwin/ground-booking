@@ -52,7 +52,7 @@ type ViewMode = 'day' | 'week' | 'month';
 
 const statusColors: Record<string, { bg: string; border: string; text: string; label: string }> = {
   draft: { bg: 'bg-gray-200', border: 'border-gray-400', text: 'text-gray-700', label: 'Open for Booking' },
-  voting_open: { bg: 'bg-yellow-200', border: 'border-yellow-500', text: 'text-yellow-800', label: 'Voting Open' },
+  voting_open: { bg: 'bg-yellow-200', border: 'border-yellow-500', text: 'text-yellow-800', label: 'Open for Nomination' },
   in_progress: { bg: 'bg-blue-200', border: 'border-blue-500', text: 'text-blue-800', label: 'Booked' },
   completed: { bg: 'bg-green-200', border: 'border-green-500', text: 'text-green-800', label: 'Completed' },
   cancelled: { bg: 'bg-red-200', border: 'border-red-400', text: 'text-red-700', label: 'Cancelled' },

@@ -3,6 +3,7 @@ import { ContactReveal } from '@/components/ContactReveal';
 import { maskedPhoneText } from '@/lib/player';
 import { X, Sparkles, Trophy, Goal, Frown, Wallet, Flame, Users } from 'lucide-react';
 import { api } from '../services/api';
+import { Checkbox } from '@/components/ui/checkbox';
 import { PlayerAvatar } from './PlayerAvatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { sportIconChar, sportLabel } from '../lib/sportIcon';
@@ -14,6 +15,8 @@ export interface PlayerSummary {
   phone: string;
   email: string;
   contact_visible: boolean;
+  pay_first?: boolean;
+  can_set_pay_first?: boolean;
   age: number | null;
   sports: string[];
   sport_positions: Record<string, string[]>;
@@ -31,7 +34,7 @@ export interface PlayerSummary {
 interface Props {
   userId: number;
   onClose: () => void;
-  /** Extra context-specific content shown at the bottom of the Info tab (e.g. nomination, prepay controls). */
+  /** Extra context-specific content shown at the bottom of the Info tab . */
   children?: ReactNode;
 }
 
@@ -62,6 +65,21 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
   const [insights, setInsights] = useState<{ category: string; text: string }[] | null>(null);
   const [insightsError, setInsightsError] = useState('');
   const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [savingPayFirst, setSavingPayFirst] = useState(false);
+  const [payFirstError, setPayFirstError] = useState('');
+
+  const togglePayFirst = async (payFirst: boolean) => {
+    setSavingPayFirst(true);
+    setPayFirstError('');
+    try {
+      await api.setPayFirst(userId, payFirst);
+      setSummary(prev => (prev ? { ...prev, pay_first: payFirst } : prev));
+    } catch (e) {
+      setPayFirstError(e instanceof Error ? e.message : 'Could not update Pay first');
+    } finally {
+      setSavingPayFirst(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -157,6 +175,19 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+                  {s.can_set_pay_first && (
+                    <div className="pt-2 border-t" data-testid="pay-first-setting">
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <Checkbox className="mt-0.5" checked={!!s.pay_first} disabled={savingPayFirst}
+                          onCheckedChange={(v) => togglePayFirst(!!v)} />
+                        <span>
+                          <span className="font-medium">Pay first</span>
+                          <span className="block text-xs text-gray-500">Name is added to a game only after paying, whether self-joined or nominated.</span>
+                        </span>
+                      </label>
+                      {payFirstError && <p className="text-xs text-red-600 mt-1">{payFirstError}</p>}
                     </div>
                   )}
                   {s.member_since && <p className="text-xs text-gray-400 pt-1">Member since {s.member_since.slice(0, 10)}</p>}

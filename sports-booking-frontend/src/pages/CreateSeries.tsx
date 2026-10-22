@@ -276,7 +276,7 @@ export default function CreateSeries({ onBack }: Props) {
                       <SelectItem value="app">Pay through the app</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500">You can still mark selected players "Must pay before game" from their profile.</p>
+                  <p className="text-xs text-gray-500">Players set to "Pay first" in their profile must pay before their name is added.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>POTD Congratulation Delay (minutes)</Label>

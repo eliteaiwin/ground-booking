@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from .. import cashfree
 from ..auth import get_current_user_id
 from ..database import get_db, get_app_setting
-from .games_router import online_breakdown, payment_fee_settings
+from .games_router import online_breakdown, payment_fee_settings, _admit_paid_pay_first_player, PAY_FIRST_STATUS
 
 router = APIRouter(prefix="/api/payments", tags=["payment-gateway"])
 
@@ -174,8 +174,8 @@ async def create_payment_order(
     if (await get_app_setting(db, 'payments_enabled', 'false')).lower() != 'true':
         raise HTTPException(status_code=400, detail="In-app payments are turned off")
     player = await (await db.execute(
-        "SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",
-        (req.game_id, user_id),
+        "SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ? AND status IN ('selected', ?)",
+        (req.game_id, user_id, PAY_FIRST_STATUS),
     )).fetchone()
     if not player:
         raise HTTPException(status_code=403, detail="You are not a selected player in this game")
@@ -282,6 +282,7 @@ async def _confirm_order(db: aiosqlite.Connection, row: aiosqlite.Row, cf_paymen
                 "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
                 (row["game_id"], row["user_id"]),
             )
+            await _admit_paid_pay_first_player(db, row["game_id"], row["user_id"])
             game = await (await db.execute(
                 "SELECT title, payee_user_id, created_by FROM games WHERE id = ?", (row["game_id"],)
             )).fetchone()

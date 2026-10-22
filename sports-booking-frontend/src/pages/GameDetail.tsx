@@ -256,6 +256,8 @@ interface Game {
   quit_penalty_hours: number;
   duration_minutes: number;
   is_archived: boolean;
+  is_past?: boolean;
+  awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
   created_by: number;
   created_by_name: string;
@@ -329,7 +331,7 @@ const statusColor = (status: string) => {
 const statusLabel = (status: string) => {
   switch (status) {
     case 'draft': return 'Draft';
-    case 'voting_open': return 'Open for Voting';
+    case 'voting_open': return 'Open for Nomination';
     case 'in_progress': return 'In Progress';
     case 'completed': return 'Completed';
     case 'cancelled': return 'Cancelled';
@@ -437,8 +439,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
     }
   };
 
+  const myAwaiting = game?.awaiting_payment?.find(p => p.user_id === user?.id);
   const isPlayerInGame = game?.selected_players.some(p => p.user_id === user?.id) ||
-    game?.waiting_list.some(p => p.user_id === user?.id);
+    game?.waiting_list.some(p => p.user_id === user?.id) || !!myAwaiting;
   const isSelectedPlayer = game?.selected_players.some(p => p.user_id === user?.id);
   const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id);
 
@@ -668,6 +671,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.pending > 0);
   const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
+  // Game times are in the ground's local time; check on the device too, since the server clock may be UTC.
+  const gameIsOver = !!game.is_past ||
+    Date.now() >= new Date(`${game.game_date}T${game.game_time}`).getTime() + (game.duration_minutes || 90) * 60000;
   const payOnlineAvailable = game.payment_collection === 'app' && !!game.online_payment_ready;
   const myPendingAmount = (game.payment_details || []).find(d => d.user_id === user?.id)?.pending ?? game.cost_per_person;
   const gameFees: FeeSettings = {
@@ -677,6 +683,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     app_fee_gst_percent: game.payment_app_fee_gst_percent ?? 0,
   };
   const myFeeBreakdown = computeFeeBreakdown(myPendingAmount, gameFees);
+  const myAwaitingFees = computeFeeBreakdown(myAwaiting?.due ?? perPerson, gameFees);
   const myPayment = (game.payment_details || []).find(d => d.user_id === user?.id);
   const myPaidSoFar = myPayment?.paid_amount || 0;
   const myShare = myPayment?.amount ?? perPerson;
@@ -887,11 +894,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
         </Card>
 
         <div className="space-y-2">
-          {isAdmin && game.status === 'draft' && (
+          {isAdmin && game.status === 'draft' && !gameIsOver && !game.is_archived && (
             <Button className="w-full bg-green-600 hover:bg-green-700"
               onClick={() => handleAction('open-voting', () => api.openVoting(game.id))}
               disabled={actionLoading === 'open-voting'}>
-              {actionLoading === 'open-voting' ? 'Opening...' : 'Open for Voting'}
+              {actionLoading === 'open-voting' ? 'Opening...' : 'Open for Nomination'}
             </Button>
           )}
 
@@ -987,7 +994,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 )}
 
                 {nominateMode === 'self' && isPlayerInGame && (
-                  <p className="text-sm text-green-700 font-medium">You are already in this game.</p>
+                  myAwaiting
+                    ? <p className="text-sm text-orange-700 font-medium">Your name is added once your payment is received.</p>
+                    : <p className="text-sm text-green-700 font-medium">You are already in this game.</p>
                 )}
 
                 {nominateMode === 'others' && (isModerator || isAdmin) && (
@@ -1142,8 +1151,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Button>
           )}
 
-          {/* Cancel Game - for Moderator/Admin on active games */}
-          {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'draft') && (
+          {/* Cancel Game - for Moderator/Admin on active games that aren't over yet */}
+          {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'draft') && !gameIsOver && !game.is_archived && (
             <>
               <Button variant="outline" className="w-full border-red-400 text-red-600 hover:bg-red-50"
                 disabled={actionLoading === 'cancel-preview' || actionLoading === 'cancel'}
@@ -1209,8 +1218,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </>
           )}
 
-          {/* Delete Game - for Admin/Moderator/Ground Management on draft or cancelled games */}
-          {(isAdmin || isModerator || isGroundManagement) && (game.status === 'draft' || game.status === 'cancelled') && (
+          {/* Delete Game - archived games: Admin only; otherwise Admin/Moderator/Ground Management on upcoming draft or cancelled games */}
+          {(game.is_archived ? isAdmin : (isAdmin || isModerator || isGroundManagement) && !gameIsOver && (game.status === 'draft' || game.status === 'cancelled')) && (
             <>
               <Button variant="outline" className="w-full border-red-700 text-red-700 hover:bg-red-50"
                 disabled={actionLoading === 'delete'}
@@ -1392,6 +1401,37 @@ export default function GameDetail({ gameId, onBack }: Props) {
             currency={currency}
             loading={actionLoading === 'edit-result'}
           />
+
+          {/* Pay-first player: added to the list only once paid */}
+          {myAwaiting && (
+            <Card className="border-orange-200 bg-orange-50" data-testid="pay-first-card">
+              <CardContent className="p-4">
+                <h4 className="font-semibold text-orange-800 mb-1 flex items-center gap-2">
+                  <CreditCard size={16} /> Pay to Confirm Your Spot
+                </h4>
+                <p className="text-xs text-orange-700 mb-1">Your name is added to the list once your payment is received.</p>
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{myAwaiting.due ?? perPerson} {currency}</strong></p>
+                {game.payee && (
+                  <p className="text-sm text-orange-700 mb-3">
+                    Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
+                  </p>
+                )}
+                {payOnlineAvailable ? (
+                  <>
+                    <div className="mb-2"><FeeBreakdownTable breakdown={myAwaitingFees} fees={gameFees} currency={currency} /></div>
+                    <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-first-online"
+                      onClick={() => payOnline(game.id)}
+                      disabled={actionLoading === 'pay'}>
+                      <Wallet size={16} className="mr-1" />
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myAwaitingFees.total.toFixed(0)} ${currency} online`}
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-xs text-orange-700">After paying, ask the moderator to mark your payment as received.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Payment for current user - PrePaid */}
           {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && (game.payment_timing === 'before' || myPlayerRecord.must_prepay) && (game.status === 'voting_open' || game.status === 'in_progress') && (
@@ -1804,6 +1844,34 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </CardContent>
           </Card>
 
+        {(isModerator || isAdmin) && (game.awaiting_payment?.length ?? 0) > 0 && (
+          <Card data-testid="awaiting-payment-list">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-amber-600 flex items-center gap-2">
+                <Wallet size={16} /> Awaiting Payment ({game.awaiting_payment!.length})
+              </CardTitle>
+              <p className="text-xs text-gray-500">Pay-first players. Their name is added to the list once they pay.</p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {game.awaiting_payment!.map(p => (
+                <div key={p.user_id} className="flex items-center justify-between gap-2 text-sm">
+                  <button type="button" className="text-left hover:underline truncate" onClick={() => setProfileUserId(p.user_id)}>
+                    {p.display_name || p.name}
+                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-gray-500">{p.due} {currency} due</span>
+                    <Button size="sm" variant="outline" className="h-7 text-xs"
+                      onClick={() => handleAction(`mark-paid-${p.user_id}`, () => api.markPaymentMade(game.id, p.user_id))}
+                      disabled={actionLoading === `mark-paid-${p.user_id}`}>
+                      Mark Paid
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {game.waiting_list.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
@@ -1852,10 +1920,10 @@ export default function GameDetail({ gameId, onBack }: Props) {
           <Card className="border-yellow-200 bg-yellow-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2 text-yellow-700">
-                <Star size={16} /> Vote Player of the Day
+                <Star size={16} /> Nominate Player of the Day
               </CardTitle>
               {potdDeadline && (
-                <p className="text-xs text-yellow-600">Voting closes: {potdDeadline}</p>
+                <p className="text-xs text-yellow-600">Nominations close: {potdDeadline}</p>
               )}
               {potdMyVotes.length > 0 && (
                 <p className="text-xs text-green-600 font-medium">You have already voted. You can update your votes below.</p>
@@ -1928,7 +1996,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
         {game.status === 'completed' && !potdVotingOpen && isSelectedPlayer && !isReadOnly && (
           <Card className="border-gray-200 bg-gray-50">
             <CardContent className="p-4 text-center text-sm text-gray-500">
-              <Clock size={16} className="inline mr-1" /> Voting window has closed
+              <Clock size={16} className="inline mr-1" /> Player of the Day nominations have closed
             </CardContent>
           </Card>
         )}
@@ -1996,33 +2064,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
         <p className="text-xs text-gray-400 text-center pb-4">Game ID: {game.id}</p>
 
         {/* Player Profile Modal */}
-        {profileUserId && (() => {
-          const player = [...(game.selected_players || []), ...(game.waiting_list || [])].find(p => p.user_id === profileUserId);
-          return (
-            <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)}>
-                      {player && (isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && (
-                        <div className="pt-2 border-t space-y-2" data-testid="prepay-controls">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <Checkbox
-                              checked={!!player.must_prepay}
-                              disabled={!!player.always_prepay || actionLoading === 'prepay'}
-                              onCheckedChange={(v) => handleAction('prepay', () => api.setPlayerPrepay(game.id, player.user_id, { must_prepay: !!v }))}
-                            />
-                            <span>Must pay before this game</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <Checkbox
-                              checked={!!player.always_prepay}
-                              disabled={actionLoading === 'prepay'}
-                              onCheckedChange={(v) => handleAction('prepay', () => api.setPlayerPrepay(game.id, player.user_id, { must_prepay: !!v || !!player.must_prepay, always: !!v }))}
-                            />
-                            <span>Always pay before games</span>
-                          </label>
-                        </div>
-                      )}
-            </PlayerProfileDialog>
-          );
-        })()}
+        {profileUserId && (
+          <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)} />
+        )}
       </div>
     </div>
   );

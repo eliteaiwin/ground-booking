@@ -169,7 +169,7 @@ export default function AdminSummary({ onBack }: Props) {
   };
 
   const gameStatusLabel = (s: string) => {
-    if (s === 'voting_open') return 'Open for Voting';
+    if (s === 'voting_open') return 'Open for Nomination';
     if (s === 'in_progress') return 'In Progress';
     if (s === 'completed') return 'Completed';
     if (s === 'draft') return 'Draft';
@@ -205,7 +205,7 @@ export default function AdminSummary({ onBack }: Props) {
               <label className="text-xs text-gray-500 block mb-1">Game Status</label>
               <select value={gameStatus} onChange={e => { setGameStatus(e.target.value); setSelectedGameId(null); }} className="w-full border rounded-md p-2 text-sm">
                 <option value="all">All</option>
-                <option value="voting_open">Open for Voting</option>
+                <option value="voting_open">Open for Nomination</option>
                 <option value="completed">Closed</option>
                 <option value="abandoned">Abandon</option>
               </select>

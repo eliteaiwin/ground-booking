@@ -604,6 +604,88 @@ async def create_notification(db: aiosqlite.Connection, user_id: int, game_id: i
     )
 
 
+PAY_FIRST_STATUS = "awaiting_payment"
+
+
+def _game_end(game) -> Optional[datetime]:
+    try:
+        duration = game["duration_minutes"] or 90
+    except (KeyError, IndexError):
+        duration = 90
+    try:
+        return datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M") + timedelta(minutes=duration)
+    except (TypeError, ValueError):
+        return None
+
+
+def _game_has_ended(game) -> bool:
+    end = _game_end(game)
+    return end is not None and datetime.now() >= end
+
+
+def _game_is_archived(game) -> bool:
+    """Completed/cancelled games archive as soon as their end time passes, any other game 24 hours after it ends."""
+    end = _game_end(game)
+    if end is None:
+        return game["status"] in ("completed", "cancelled")
+    grace = timedelta(0) if game["status"] in ("completed", "cancelled") else timedelta(hours=24)
+    return datetime.now() >= end + grace
+
+
+async def _is_pay_first(db: aiosqlite.Connection, uid: int) -> bool:
+    row = await (await db.execute("SELECT always_prepay FROM users WHERE id = ?", (uid,))).fetchone()
+    return bool(row and row["always_prepay"])
+
+
+async def _add_pay_first_player(db: aiosqlite.Connection, game, uid: int, nominated_by: Optional[int], position: str) -> dict:
+    """Pay-first players are held outside the lists until their share is paid."""
+    ground_cost = game["ground_cost"] if game["ground_cost"] is not None else game["cost_per_person"] * game["max_players"]
+    share = _per_person_amount(ground_cost, game["max_players"], game["max_players"])
+    due = share if (await _payment_settings(db, game))["enabled"] else _whole_rupees(share)
+    await db.execute(
+        "INSERT INTO game_players (game_id, user_id, status, nominated_by, position) VALUES (?, ?, ?, ?, ?)",
+        (game["id"], uid, PAY_FIRST_STATUS, nominated_by, position or ""),
+    )
+    await db.execute(
+        "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)", (game["id"], uid, due)
+    )
+    await db.execute(
+        "UPDATE payments SET amount = ? WHERE game_id = ? AND user_id = ? AND COALESCE(paid_amount, 0) = 0",
+        (due, game["id"], uid),
+    )
+    await create_notification(
+        db, uid, game["id"], "payment_due",
+        f"Pay {due:.0f} for {game['title']} to confirm your spot. Your name is added to the list once payment is received."
+    )
+    return {"status": PAY_FIRST_STATUS, "amount": due,
+            "message": f"Payment of {due:.0f} is needed first. The name is added to the list once paid."}
+
+
+async def _admit_paid_pay_first_player(db: aiosqlite.Connection, game_id: int, uid: int):
+    """Move a pay-first player into the game once their payment covers the share."""
+    gp = await (await db.execute(
+        "SELECT id, status FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, uid)
+    )).fetchone()
+    if not gp or gp["status"] != PAY_FIRST_STATUS:
+        return
+    pay = await (await db.execute(
+        "SELECT amount, paid_amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, uid)
+    )).fetchone()
+    if not pay or (pay["paid_amount"] or 0) < pay["amount"]:
+        return
+    game = await _get_game(db, game_id)
+    count = (await (await db.execute(
+        "SELECT COUNT(*) AS cnt FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,)
+    )).fetchone())["cnt"]
+    status = "selected" if count < game["max_players"] else "waiting"
+    await db.execute("UPDATE game_players SET status = ?, payment_confirmed = 1 WHERE id = ?", (status, gp["id"]))
+    await create_notification(
+        db, uid, game_id, "payment_confirmed",
+        f"Payment received. You're {'confirmed' if status == 'selected' else 'on the waiting list'} for {game['title']}."
+    )
+    await _recalc_game_cost(db, game_id)
+
+
 async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
@@ -667,6 +749,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     selected = []
     waiting = []
+    awaiting = []
     for p in players_rows:
         nom_by = p["nominated_by"]
         nom_info = None
@@ -700,7 +783,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "position": p["position"] or "",
             "team_id": p["team_id"],
             "payment_confirmed": p["payment_confirmed"],
-            "must_prepay": bool(p["must_prepay"] or p["always_prepay"]),
+            "must_prepay": bool(p["must_prepay"]),
             "always_prepay": bool(p["always_prepay"]),
             "played": bool(p["played"]),
             "nominated_by": p["nominated_by"],
@@ -712,8 +795,16 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         }
         if p["status"] == "selected":
             selected.append(player_data)
+        elif p["status"] == PAY_FIRST_STATUS:
+            awaiting.append(player_data)
         else:
             waiting.append(player_data)
+
+    for pd in awaiting:
+        pay = await (await db.execute(
+            "SELECT amount, paid_amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, pd["user_id"])
+        )).fetchone()
+        pd["due"] = max(0, round(pay["amount"] - (pay["paid_amount"] or 0), 2)) if pay else game["cost_per_person"]
 
     # Get payee info
     payee_info = None
@@ -780,15 +871,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     except Exception:
         pass
 
-    # Games archive automatically once over: completed/cancelled games as soon as
-    # their end time passes, any other game 24 hours after it ends.
-    is_archived = False
-    try:
-        game_end = datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M") + timedelta(minutes=duration_minutes)
-        grace = timedelta(0) if game["status"] in ("completed", "cancelled") else timedelta(hours=24)
-        is_archived = datetime.now() >= game_end + grace
-    except (TypeError, ValueError):
-        is_archived = game["status"] in ("completed", "cancelled")
+    is_archived = _game_is_archived(game)
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
@@ -876,11 +959,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "duration_minutes": duration_minutes,
         "potd_congrats_delay_minutes": potd_delay_minutes,
         "is_archived": is_archived,
+        "is_past": _game_has_ended(game),
         "created_by": game["created_by"],
         "created_by_name": creator["name"] if creator else None,
         "created_at": game["created_at"],
         "selected_players": selected,
         "waiting_list": waiting,
+        "awaiting_payment": awaiting,
         "teams": teams,
         "payment_summary": {
             "total": pay_summary["total"] or 0,
@@ -1390,6 +1475,8 @@ async def open_voting(
         raise HTTPException(status_code=404, detail="Game not found")
     if game["status"] != "draft":
         raise HTTPException(status_code=400, detail="Can only open voting for draft games")
+    if _game_has_ended(game):
+        raise HTTPException(status_code=400, detail="This game's time is over")
 
     await db.execute("UPDATE games SET status = 'voting_open' WHERE id = ?", (game_id,))
 
@@ -1399,7 +1486,7 @@ async def open_voting(
     for u in all_users:
         await create_notification(
             db, u["id"], game_id, "voting_opened",
-            f"Voting is open for {game['title']} at {game['ground_name']} on {game['game_date']} at {game['game_time']}. Join now!"
+            f"Nominations are open for {game['title']} at {game['ground_name']} on {game['game_date']} at {game['game_time']}. Join now!"
         )
 
     await db.commit()
@@ -1495,6 +1582,11 @@ async def vote_join_game(
         raise
     except Exception:
         pass  # If ground lookup fails, allow the nomination
+
+    if await _is_pay_first(db, user_id):
+        result = await _add_pay_first_player(db, game, user_id, None, position)
+        await db.commit()
+        return {**result, "is_prepaid": True, "is_first_time_on_ground": False}
 
     # Count selected players
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,))
@@ -1706,7 +1798,7 @@ async def nominate_player(
     if game["status"] == "completed":
         return await _add_to_completed_game(db, game, req.user_id, user_id)
     if game["status"] not in ("draft", "voting_open", "in_progress"):
-        raise HTTPException(status_code=400, detail="Players can only be added to games that are draft, open for voting, in progress or completed")
+        raise HTTPException(status_code=400, detail="Players can only be added to games that are draft, open for nomination, in progress or completed")
 
     # Check if user exists
     cursor = await db.execute("SELECT id FROM users WHERE id = ?", (req.user_id,))
@@ -1800,6 +1892,11 @@ async def nominate_player(
         raise
     except Exception:
         pass
+
+    if await _is_pay_first(db, req.user_id):
+        result = await _add_pay_first_player(db, game, req.user_id, user_id, req.position)
+        await db.commit()
+        return result
 
     # Count selected
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,))
@@ -1905,7 +2002,7 @@ async def start_game(
             "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
             (game_id, p["user_id"], game["cost_per_person"])
         )
-        pays_first = game["payment_timing"] == "before" or p["must_prepay"] or p["always_prepay"]
+        pays_first = game["payment_timing"] == "before" or p["must_prepay"]
         if pays_first and payee_info:
             await create_notification(
                 db, p["user_id"], game_id, "payment_due",
@@ -2054,7 +2151,7 @@ async def complete_game(
         for uid in played_user_ids:
             await create_notification(
                 db, uid, game_id, "game_completed",
-                f"Game '{game['title']}' has been completed! Vote for Player of the Day."
+                f"Game '{game['title']}' has been completed! Nominate the Player of the Day."
             )
 
     await db.commit()
@@ -2259,6 +2356,8 @@ async def cancel_game(
         raise HTTPException(status_code=400, detail="Cannot cancel a completed game")
     if game["status"] == "cancelled":
         raise HTTPException(status_code=400, detail="Game is already cancelled")
+    if _game_has_ended(game):
+        raise HTTPException(status_code=400, detail="Can't cancel a game that is already over")
 
     await db.execute("UPDATE games SET status = 'cancelled' WHERE id = ?", (game_id,))
 
@@ -2343,14 +2442,22 @@ async def delete_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    """Permanently delete a draft or cancelled game and all related records."""
+    """Permanently delete a draft or cancelled game (or, for Admins, an archived game) and all related records."""
     await require_admin_moderator_or_ground_management(user_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] not in ("draft", "cancelled"):
+    if _game_is_archived(game):
+        is_admin = await (await db.execute(
+            "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+        )).fetchone()
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only an Admin can delete an archived game")
+    elif _game_has_ended(game):
+        raise HTTPException(status_code=400, detail="A game that is over can't be deleted")
+    elif game["status"] not in ("draft", "cancelled"):
         raise HTTPException(status_code=400, detail="Only draft or cancelled games can be deleted")
 
     # Delete all related records
@@ -2413,12 +2520,12 @@ async def vote_player_of_the_day(
         game_end_dt = datetime.strptime(game_end_str, "%Y-%m-%d %H:%M")
         from datetime import timedelta
         game_end_dt = game_end_dt + timedelta(minutes=duration)
-        voting_deadline = game_end_dt + timedelta(hours=24)
+        voting_deadline = game_end_dt + timedelta(minutes=game["potd_congrats_delay_minutes"] or 1440)
         now = datetime.now()
         if now < game_end_dt:
             raise HTTPException(status_code=400, detail="Voting opens after the game ends")
         if now > voting_deadline:
-            raise HTTPException(status_code=400, detail="Voting window has closed (24 hours after game end)")
+            raise HTTPException(status_code=400, detail="Player of the Day nominations have closed")
     except HTTPException:
         raise
     except Exception:
@@ -2598,7 +2705,7 @@ async def get_potd_results(
                 pass
             from datetime import timedelta
             game_end_dt = datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M") + timedelta(minutes=duration)
-            voting_deadline = game_end_dt + timedelta(hours=24)
+            voting_deadline = game_end_dt + timedelta(minutes=game["potd_congrats_delay_minutes"] or 1440)
             voting_deadline_str = voting_deadline.strftime("%Y-%m-%d %H:%M")
             now = datetime.now()
             if now > voting_deadline:
@@ -2803,6 +2910,7 @@ async def mark_payment_made(
         db, req.user_id, game_id, "payment_confirmed",
         f"Your payment for {game['title']} has been confirmed by the moderator."
     )
+    await _admit_paid_pay_first_player(db, game_id, req.user_id)
 
     await db.commit()
     return await get_game_dict(db, game_id)

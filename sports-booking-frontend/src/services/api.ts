@@ -293,8 +293,8 @@ export const api = {
   broadcastStatus: (gameId: number) =>
     request(`/api/games/${gameId}/broadcast-status`, { method: 'POST' }),
 
-  setPlayerPrepay: (gameId: number, playerUserId: number, data: { must_prepay: boolean; always?: boolean }) =>
-    request(`/api/games/${gameId}/players/${playerUserId}/prepay`, { method: 'POST', body: JSON.stringify(data) }),
+  setPayFirst: (userId: number, payFirst: boolean) =>
+    request(`/api/auth/user/${userId}/pay-first`, { method: 'PUT', body: JSON.stringify({ pay_first: payFirst }) }),
 
   markPaymentMade: (gameId: number, userId: number) =>
     request(`/api/games/${gameId}/mark-paid`, {

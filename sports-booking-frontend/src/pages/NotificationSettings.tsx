@@ -235,9 +235,9 @@ export default function NotificationSettings({ onBack }: Props) {
             {settings && (
               <div className="space-y-2">
                 {[
-                  { key: 'voting_started', label: 'When Voting Starts', desc: 'Get notified when a game opens for voting' },
+                  { key: 'voting_started', label: 'When Nominations Open', desc: 'Get notified when a game opens for nomination' },
                   { key: 'game_cancelled', label: 'When Game is Cancelled', desc: 'Get notified when a game you joined is cancelled' },
-                  { key: 'game_completed_vote', label: 'Vote for Player of the Day', desc: 'Reminder to vote for POTD after game completes' },
+                  { key: 'game_completed_vote', label: 'Nominate Player of the Day', desc: 'Reminder to nominate POTD after game completes' },
                   { key: 'potd_announced', label: 'Player of the Day Announced', desc: 'Get notified when POTD winner is announced' },
                 ].map(item => (
                   <div key={item.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
