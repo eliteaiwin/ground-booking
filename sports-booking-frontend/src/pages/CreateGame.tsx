@@ -86,6 +86,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [paymentCollection, setPaymentCollection] = useState('offline');
   const [defaultPayee, setDefaultPayee] = useState<{ id: number; name: string; phone: string } | null>(null);
   const [showPayeeInfo, setShowPayeeInfo] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
   const [pitch, setPitch] = useState('');
   const [allotments, setAllotments] = useState<MyAllotment[]>([]);
@@ -459,15 +460,26 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                   <p className="text-xs text-gray-500">A moderator can change the receiver in <strong>Preferences → Game Defaults</strong>.</p>
                 )}
               </div>
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label className="text-sm">Note before player list (optional)</Label>
-                  <Textarea value={noteBefore} onChange={e => setNoteBefore(e.target.value)} rows={2} className="text-sm" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm">Note after player list (optional)</Label>
-                  <Textarea value={noteAfter} onChange={e => setNoteAfter(e.target.value)} rows={2} className="text-sm" />
-                </div>
+              <div className="border rounded-md overflow-hidden">
+                <button type="button" onClick={() => setShowOptions(v => !v)} data-testid="additional-options"
+                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700">
+                  <span>Additional options</span>
+                  <ChevronDown size={16} className={`transition-transform ${showOptions ? 'rotate-180' : ''}`} />
+                </button>
+                {showOptions && (
+                  <div className="p-3">
+                      <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-sm">Note before player list (optional)</Label>
+                      <Textarea value={noteBefore} onChange={e => setNoteBefore(e.target.value)} rows={2} className="text-sm" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Note after player list (optional)</Label>
+                      <Textarea value={noteAfter} onChange={e => setNoteAfter(e.target.value)} rows={2} className="text-sm" />
+                    </div>
+                  </div>
+                  </div>
+                )}
               </div>
               <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
                 {loading ? 'Creating...' : 'Create Game'}
