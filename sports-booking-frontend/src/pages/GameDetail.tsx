@@ -490,7 +490,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const openProfile = (userId: number) => setProfileUserId(userId);
+  const [profileNote, setProfileNote] = useState('');
+  const openProfile = (userId: number, note = '') => { setProfileUserId(userId); setProfileNote(note); };
 
   const payOnline = (gameId: number) =>
     handleAction('pay', async () => {
@@ -1801,7 +1802,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     return (
                     <div key={player.id}>
                       <div className="flex items-center gap-2 text-sm">
-                        <PlayerAvatar photo={player.photo} gender={player.gender} alt={player.name} />
+                        <button type="button" data-profile-trigger data-testid="player-avatar" aria-label={`View ${player.name}`} onClick={() => openProfile(player.user_id, nomination(player).text)}>
+                      <PlayerAvatar photo={player.photo} gender={player.gender} alt={player.name} />
+                    </button>
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.must_prepay && player.payment_confirmed !== 1 && (
@@ -1809,7 +1812,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           )}
                         </span>
                         {/* Profile info */}
-                        <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
+                        <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id, nomination(player).text)} />
 
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
                         {!showPaymentDetails && (
@@ -1926,7 +1929,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <CardContent className="space-y-2">
               {game.awaiting_payment!.map(p => (
                 <div key={p.user_id} className="flex items-center justify-between gap-2 text-sm">
-                  <button type="button" className="text-left hover:underline truncate" onClick={() => setProfileUserId(p.user_id)}>
+                  <button type="button" className="text-left hover:underline truncate" onClick={() => openProfile(p.user_id)}>
                     {p.display_name || p.name}
                   </button>
                   <div className="flex items-center gap-2 shrink-0">
@@ -1966,11 +1969,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
               <div className="space-y-2">
                 {game.waiting_list.map((player) => (
                   <div key={player.id} className="flex items-center gap-2 text-sm">
-                    <PlayerAvatar photo={player.photo} gender={player.gender} alt={player.name} />
+                    <button type="button" data-profile-trigger data-testid="player-avatar" aria-label={`View ${player.name}`} onClick={() => openProfile(player.user_id, nomination(player).text)}>
+                      <PlayerAvatar photo={player.photo} gender={player.gender} alt={player.name} />
+                    </button>
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                     </span>
-                    <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
+                    <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id, nomination(player).text)} />
                     {game.status === 'completed' && (isAdmin || isModerator || isGroundManagement) && (
                       <Button size="sm" variant="outline" className="h-6 px-2 text-xs" data-testid="mark-played"
                         onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, player.user_id))}>
@@ -2137,7 +2142,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
         {/* Player Profile Modal */}
         {profileUserId && (
-          <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)} />
+          <PlayerProfileDialog userId={profileUserId} note={profileNote} onClose={() => { setProfileUserId(null); setProfileNote(''); }} />
         )}
       </div>
     </div>

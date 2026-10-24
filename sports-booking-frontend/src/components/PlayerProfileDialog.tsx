@@ -34,6 +34,7 @@ export interface PlayerSummary {
 interface Props {
   userId: number;
   onClose: () => void;
+  note?: string;
   /** Extra context-specific content shown at the bottom of the Info tab . */
   children?: ReactNode;
 }
@@ -58,7 +59,7 @@ const Row = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-export default function PlayerProfileDialog({ userId, onClose, children }: Props) {
+export default function PlayerProfileDialog({ userId, onClose, children, note }: Props) {
   const [summary, setSummary] = useState<PlayerSummary | null>(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('info');
@@ -131,6 +132,7 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
               )}
               <h3 className="text-lg font-bold text-center">{s.display_name || s.name}</h3>
               {s.display_name && <p className="text-xs text-gray-500">{s.name}</p>}
+              {note && <p className="text-xs text-blue-700 bg-blue-50 rounded px-2 py-1 mt-2 text-center" data-testid="profile-nomination">{note}</p>}
               {s.sports.length > 0 && (
                 <p className="text-sm mt-1" title={s.sports.map(sportLabel).join(', ')}>{s.sports.map(sportIconChar).join(' ')}</p>
               )}
