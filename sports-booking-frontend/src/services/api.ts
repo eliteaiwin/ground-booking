@@ -388,9 +388,11 @@ export const api = {
     }),
 
   getGameDefaults: () => request('/api/preferences/game-defaults'),
+  getPayFirstPlayers: () => request('/api/preferences/pay-first-players'),
   updateGameDefaults: (data: {
     default_payee_user_id?: number; default_quit_penalty_hours?: number;
     default_potd_delay_minutes?: number; allow_position_selection?: boolean; show_quit_penalty?: boolean;
+    pay_first_enabled?: boolean;
   }) =>
     request('/api/preferences/game-defaults', { method: 'PUT', body: JSON.stringify(data) }),
 

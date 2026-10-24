@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from typing import Optional
 import time
 from datetime import datetime, timezone
 
@@ -22,8 +23,8 @@ PAN_RE = re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$")
 
 class PayoutAccountRequest(BaseModel):
     upi_id: str
-    account_holder: str
-    pan: str
+    account_holder: Optional[str] = None
+    pan: Optional[str] = None
 
 
 class CreateOrderRequest(BaseModel):
@@ -98,29 +99,27 @@ async def save_payout_account(
 ):
     _require_gateway()
     upi = req.upi_id.strip()
-    holder = req.account_holder.strip()
-    pan = req.pan.strip().upper()
+    pan = (req.pan or "").strip().upper()
     if not UPI_RE.match(upi):
         raise HTTPException(status_code=400, detail="Enter a valid UPI ID, e.g. 98xxxxxx45@okhdfcbank")
-    if len(holder) < 2:
-        raise HTTPException(status_code=400, detail="Enter the name on the bank account")
-    if not PAN_RE.match(pan):
+    if pan and not PAN_RE.match(pan):
         raise HTTPException(status_code=400, detail="Enter a valid PAN, e.g. ABCDE1234F")
     row = await (await db.execute(
-        "SELECT id, email, phone, cf_vendor_id FROM users WHERE id = ?", (user_id,)
+        "SELECT id, name, email, phone, cf_vendor_id FROM users WHERE id = ?", (user_id,)
     )).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
+    holder = (req.account_holder or "").strip() or (row["name"] or "").strip() or f"User {user_id}"
     phone = _phone10(row["phone"])
     if not phone:
         raise HTTPException(status_code=400, detail="Add your mobile number to your profile first")
     upi_details = {"vpa": upi, "account_holder": holder}
-    kyc_details = {"account_type": "INDIVIDUAL", "business_type": "Miscellaneous", "pan": pan}
+    kyc_details = {"account_type": "INDIVIDUAL", "business_type": "Miscellaneous", "pan": pan} if pan else None
     try:
         if row["cf_vendor_id"]:
             vendor_id = row["cf_vendor_id"]
             vendor = await cashfree.update_vendor(
-                vendor_id, {"name": holder, "upi": upi_details, "kyc_details": kyc_details}
+                vendor_id, {"name": holder, "upi": upi_details, **({"kyc_details": kyc_details} if kyc_details else {})}
             )
         else:
             vendor_id = f"etb_u{user_id}"
@@ -133,8 +132,9 @@ async def save_payout_account(
                 "dashboard_access": False,
                 "schedule_option": 1,
                 "upi": upi_details,
-                "kyc_details": kyc_details,
             }
+            if kyc_details:
+                body["kyc_details"] = kyc_details
             if row["email"]:
                 body["email"] = row["email"]
             vendor = await cashfree.create_vendor(body)

@@ -644,6 +644,8 @@ def _game_is_archived(game) -> bool:
 
 
 async def _is_pay_first(db: aiosqlite.Connection, uid: int) -> bool:
+    if (await get_app_setting(db, "pay_first_enabled", "false")) != "true":
+        return False
     row = await (await db.execute("SELECT always_prepay FROM users WHERE id = ?", (uid,))).fetchone()
     return bool(row and row["always_prepay"])
 
@@ -973,6 +975,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "potd_congrats_delay_minutes": potd_delay_minutes,
         "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
         "show_quit_penalty": (await get_app_setting(db, "show_quit_penalty", "false")) == "true",
+        "pay_first_enabled": (await get_app_setting(db, "pay_first_enabled", "false")) == "true",
         "is_archived": is_archived,
         "is_past": _game_has_ended(game),
         "created_by": game["created_by"],

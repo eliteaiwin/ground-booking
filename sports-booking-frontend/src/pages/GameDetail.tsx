@@ -291,6 +291,7 @@ interface Game {
   allow_position_selection?: boolean;
   ground_map_url?: string;
   show_quit_penalty?: boolean;
+  pay_first_enabled?: boolean;
   awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
   created_by: number;
@@ -1807,7 +1808,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
-                          {player.must_prepay && player.payment_confirmed !== 1 && (
+                          {game.pay_first_enabled && player.must_prepay && player.payment_confirmed !== 1 && (
                             <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-orange-700 border-orange-300">Pay first</Badge>
                           )}
                         </span>
@@ -1917,7 +1918,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </CardContent>
           </Card>
 
-        {(isModerator || isAdmin) && (game.awaiting_payment?.length ?? 0) > 0 && (
+        {game.pay_first_enabled && (isModerator || isAdmin) && (game.awaiting_payment?.length ?? 0) > 0 && (
           <Card data-testid="awaiting-payment-list">
             <CardHeader className="pb-2">
               <CardTitle className="text-base text-amber-600 flex items-center gap-2">

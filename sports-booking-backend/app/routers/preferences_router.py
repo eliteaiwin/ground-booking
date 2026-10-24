@@ -74,6 +74,7 @@ class GameDefaultsRequest(BaseModel):
     default_potd_delay_minutes: Optional[int] = None
     allow_position_selection: Optional[bool] = None
     show_quit_penalty: Optional[bool] = None
+    pay_first_enabled: Optional[bool] = None
 
 
 async def game_defaults(db: aiosqlite.Connection) -> dict:
@@ -98,6 +99,7 @@ async def game_defaults(db: aiosqlite.Connection) -> dict:
         "default_potd_delay_minutes": int(await get_app_setting(db, "default_potd_delay_minutes", "1440") or 1440),
         "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
         "show_quit_penalty": (await get_app_setting(db, "show_quit_penalty", "false")) == "true",
+        "pay_first_enabled": (await get_app_setting(db, "pay_first_enabled", "false")) == "true",
     }
 
 
@@ -130,7 +132,21 @@ async def update_game_defaults(
         await set_app_setting(db, "allow_position_selection", "true" if req.allow_position_selection else "false")
     if req.show_quit_penalty is not None:
         await set_app_setting(db, "show_quit_penalty", "true" if req.show_quit_penalty else "false")
+    if req.pay_first_enabled is not None:
+        await set_app_setting(db, "pay_first_enabled", "true" if req.pay_first_enabled else "false")
     return await game_defaults(db)
+
+
+@router.get("/pay-first-players")
+async def list_pay_first_players(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin_or_moderator(user_id, db)
+    rows = await (await db.execute(
+        "SELECT id, name, phone FROM users WHERE always_prepay = 1 AND deleted_at IS NULL ORDER BY name"
+    )).fetchall()
+    return [{"id": r["id"], "name": r["name"], "phone": r["phone"]} for r in rows]
 
 
 @router.get("/role-themes")

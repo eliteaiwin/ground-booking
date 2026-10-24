@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Settings, DollarSign, Trophy, Eye, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Settings, DollarSign, Trophy, Eye, SlidersHorizontal, X } from 'lucide-react';
 import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { ALL_SPORTS } from '../lib/sports';
@@ -20,6 +20,64 @@ interface GameDefaults {
   default_potd_delay_minutes: number;
   allow_position_selection: boolean;
   show_quit_penalty: boolean;
+  pay_first_enabled: boolean;
+}
+
+type UserLite = { id: number; name: string; phone: string };
+
+function PayFirstPlayers() {
+  const [players, setPlayers] = useState<UserLite[]>([]);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<UserLite[]>([]);
+  const [error, setError] = useState('');
+
+  const load = () => api.getPayFirstPlayers().then(setPlayers).catch(() => setPlayers([]));
+  useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (search.trim().length < 2) { setResults([]); return; }
+    const t = setTimeout(() => {
+      api.searchUsers({ search: search.trim() })
+        .then((u: UserLite[]) => setResults(u.slice(0, 8)))
+        .catch(() => setResults([]));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const setPayFirst = async (id: number, on: boolean) => {
+    setError('');
+    try {
+      await api.setPayFirst(id, on);
+      setSearch(''); setResults([]);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update');
+    }
+  };
+
+  return (
+    <div className="space-y-2 pl-6" data-testid="pay-first-players">
+      <p className="text-xs text-gray-500">These players are added to a game only after paying, whether self-joined or nominated.</p>
+      {players.length === 0 && <p className="text-xs text-gray-400">No players set to Pay first.</p>}
+      {players.map(p => (
+        <div key={p.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-1.5">
+          <span>{p.name} <span className="text-xs text-gray-400">{formatPhone(p.phone)}</span></span>
+          <button type="button" aria-label={`Remove ${p.name}`} className="text-red-500 hover:text-red-700" onClick={() => setPayFirst(p.id, false)}><X size={16} /></button>
+        </div>
+      ))}
+      <Input placeholder="Type a name or phone to add a player" value={search} onChange={e => setSearch(e.target.value)} data-testid="pay-first-search" />
+      {results.length > 0 && (
+        <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
+          {results.filter(u => !players.some(p => p.id === u.id)).map(u => (
+            <button key={u.id} type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex justify-between" onClick={() => setPayFirst(u.id, true)}>
+              <span>{u.name}</span><span className="text-xs text-gray-400">{formatPhone(u.phone)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 function GameDefaultsCard() {
@@ -109,6 +167,12 @@ function GameDefaultsCard() {
             onChange={e => save({ show_quit_penalty: e.target.checked })} data-testid="show-quit-penalty" />
           Show quit penalty (on Create Game and game pages)
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="rounded border-gray-300" checked={defaults.pay_first_enabled}
+            onChange={e => save({ pay_first_enabled: e.target.checked })} data-testid="pay-first-enabled" />
+          Use Pay first (chosen players must pay before they are added to a game)
+        </label>
+        {defaults.pay_first_enabled && <PayFirstPlayers />}
       </CardContent>
     </Card>
   );

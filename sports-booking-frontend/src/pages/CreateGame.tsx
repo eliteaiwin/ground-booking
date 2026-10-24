@@ -86,6 +86,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [paymentCollection, setPaymentCollection] = useState('offline');
   const [defaultPayee, setDefaultPayee] = useState<{ id: number; name: string; phone: string } | null>(null);
   const [showQuitPenalty, setShowQuitPenalty] = useState(false);
+  const [payFirstEnabled, setPayFirstEnabled] = useState(false);
   const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
   const [showPayeeInfo, setShowPayeeInfo] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -115,8 +116,9 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         }
       }).catch(() => {}),
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
-      api.getGameDefaults().then((d: { default_payee: { id: number; name: string; phone: string } | null; show_quit_penalty: boolean; default_quit_penalty_hours: number }) => {
+      api.getGameDefaults().then((d: { default_payee: { id: number; name: string; phone: string } | null; show_quit_penalty: boolean; default_quit_penalty_hours: number; pay_first_enabled?: boolean }) => {
         setDefaultPayee(d.default_payee);
+        setPayFirstEnabled(!!d.pay_first_enabled);
         setShowQuitPenalty(d.show_quit_penalty);
         setQuitPenaltyHours(String(d.default_quit_penalty_hours));
       }).catch(() => {}),
@@ -454,7 +456,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                     <SelectItem value="app">Pay through the app</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500">Players set to "Pay first" in their profile must pay before their name is added.</p>
+                {payFirstEnabled && <p className="text-xs text-gray-500">Players set to "Pay first" must pay before their name is added.</p>}
               </div>
               {showQuitPenalty && (
                 <div className="space-y-2" data-testid="quit-penalty-field">

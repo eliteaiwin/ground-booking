@@ -56,6 +56,10 @@ export default function CreateSeries({ onBack }: Props) {
   const { user } = useAuth();
   const sports = useSports();
   const [seriesName, setSeriesName] = useState('');
+  const [payFirstEnabled, setPayFirstEnabled] = useState(false);
+  useEffect(() => {
+    api.getGameDefaults().then((d: { pay_first_enabled?: boolean }) => setPayFirstEnabled(!!d.pay_first_enabled)).catch(() => {});
+  }, []);
   const [sportType, setSportType] = useState('soccer');
   const [groundName, setGroundName] = useState('');
   const [customGround, setCustomGround] = useState('');
@@ -276,7 +280,7 @@ export default function CreateSeries({ onBack }: Props) {
                       <SelectItem value="app">Pay through the app</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500">Players set to "Pay first" in their profile must pay before their name is added.</p>
+                  {payFirstEnabled && <p className="text-xs text-gray-500">Players set to "Pay first" must pay before their name is added.</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>POTD Congratulation Delay (minutes)</Label>
