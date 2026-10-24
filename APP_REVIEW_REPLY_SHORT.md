@@ -13,7 +13,7 @@ Guideline 2.1 – Information Needed
 The app requests no sensitive permissions (no location, camera, contacts or tracking). There are no purchases or subscriptions.
 
 2. Devices and operating systems tested
-- iPhone 13 Pro Max, iOS [VERSION from Settings > General > About > iOS Version]
+- iPhone 13 Pro Max, iOS 26.7.2
 
 3. App purpose and target audience
 Elite Turf Booking organizes amateur turf/sports games (soccer by default) for groups of players in India. Moderators schedule games at a ground, players confirm attendance, teams are split, ground costs are shared and tracked, and players vote Player of the Day. Rankings are recalculated after each game. Target audience: adult amateur players and their game organizers. The app is free with no in-app purchases or paid content.
