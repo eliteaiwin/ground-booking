@@ -757,6 +757,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <Badge className={`${statusColor(game.status)} mt-1`}>{statusLabel(game.status)}</Badge>
                 )}
                 {game.is_archived && <Badge className="bg-gray-200 text-gray-700 mt-1"><Archive size={10} className="mr-1" /> Archived</Badge>}
+                <a href={game.ground_map_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(game.ground_name)}`}
+                  target="_blank" rel="noreferrer" data-testid="maps-link" aria-label="Open ground location in Google Maps" title="Open in Google Maps"
+                  className="mt-1 inline-flex items-center justify-center w-7 h-7 rounded-md bg-white shadow-sm hover:scale-105 transition-transform">
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Z" fill="#EA4335" />
+                    <circle cx="12" cy="9" r="2.6" fill="#fff" />
+                  </svg>
+                </a>
               </div>
             </div>
           </div>
@@ -887,13 +895,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
         <Card>
           <CardContent className="p-4 space-y-1.5">
-            <div className="flex items-center gap-2 text-gray-600">
-              <a href={game.ground_map_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(game.ground_name)}`} target="_blank" rel="noreferrer"
-                className="flex items-center gap-2 text-blue-600 hover:underline" data-testid="maps-link">
-                <MapPin size={16} /> <span>Open in Google Maps</span>
-              </a>
-              {game.pitch_format && <span>· {pitchLabel(game.pitch_format, game.pitch_number)}</span>}
-            </div>
+            {game.pitch_format && (
+              <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{pitchLabel(game.pitch_format, game.pitch_number)}</span></div>
+            )}
             {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived && new Date(`${game.game_date}T${game.game_time || '23:59'}`) > new Date() && (
               <div className={`text-xs rounded px-2 py-1 ${game.ground_confirmed ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-800'}`}>
                 {game.ground_confirmed
