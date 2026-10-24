@@ -774,6 +774,21 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>}
+        {game.status !== 'cancelled' && !myAwaiting && (isSelectedPlayer || game.waiting_list.some(p => p.user_id === user?.id)) && (
+          <div className="flex items-center justify-between gap-2 text-sm font-medium" data-testid="my-status-line">
+            <span className={isSelectedPlayer ? 'text-green-700' : 'text-orange-700'}>
+              {game.status === 'completed'
+                ? (isSelectedPlayer ? '\u{1F389} You played it.' : 'You nominated but remained in WL')
+                : (isSelectedPlayer ? '\u{1F389} You are playing' : 'You have nominated, WL')}
+            </span>
+            {['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
+              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                onClick={handleQuitClick} disabled={actionLoading === 'quit'} data-testid="unjoin">
+                {actionLoading === 'quit' ? 'Leaving...' : 'Unjoin'}
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Player of the Day Honor Display - Prominent on completed games */}
         {game.status === 'completed' && game.player_of_the_day && (
@@ -959,7 +974,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Button>
           )}
 
-          {game.status === 'voting_open' && !isReadOnly && (
+          {game.status === 'voting_open' && !isReadOnly && (!isPlayerInGame || isModerator || isAdmin) && (
             <Card className="border-green-200 bg-green-50">
               <CardContent className="p-4">
                 {/* Radio buttons for Nominate Self / Nominate Others */}
@@ -1066,12 +1081,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </Button>
                 )}
 
-                {nominateMode === 'self' && isPlayerInGame && (
-                  myAwaiting
-                    ? <p className="text-sm text-orange-700 font-medium">Your name is added once your payment is received.</p>
-                    : <p className="text-sm text-green-700 font-medium">You are already in this game.</p>
-                )}
-
                 {nominateMode === 'others' && (isModerator || isAdmin) && (
                   <Button className="w-full bg-green-600 hover:bg-green-700"
                     disabled={!nominateUserId || actionLoading === 'nominate'}
@@ -1083,12 +1092,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Card>
           )}
 
-          {(game.status === 'voting_open' || game.status === 'in_progress') && isPlayerInGame && !isReadOnly && (
-            <Button variant="outline" className="w-full border-red-300 text-red-600 hover:bg-red-50"
-              onClick={handleQuitClick} disabled={actionLoading === 'quit'}>
-              {actionLoading === 'quit' ? 'Quitting...' : 'Quit Game'}
-            </Button>
-          )}
 
           {isReadOnly && game.status === 'voting_open' && (
             <Card className="border-gray-200 bg-gray-50">
