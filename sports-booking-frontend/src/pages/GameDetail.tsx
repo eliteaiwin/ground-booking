@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy, X } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -117,6 +117,28 @@ function PlayerInfoButton({ player, onOpen }: { player: Player; onOpen: () => vo
           {info}
         </span>
       )}
+    </span>
+  );
+}
+
+function timeToStart(date: string, time: string): string {
+  const mins = Math.round((new Date(`${date}T${time || '00:00'}`).getTime() - Date.now()) / 60000);
+  if (isNaN(mins)) return 'Are you sure you want to cancel this game?';
+  if (mins <= 0) return 'The game has already started. Are you sure you want to cancel?';
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  const parts = [d && `${d} day${d > 1 ? 's' : ''}`, h && `${h} hour${h > 1 ? 's' : ''}`, !d && m && `${m} minute${m > 1 ? 's' : ''}`].filter(Boolean);
+  return `${parts.join(' ')} to start the game. Are you sure you want to cancel?`;
+}
+
+// Red x removes the player; grey x means this user can't remove them.
+function RemovePlayerButton({ allowed, onRemove }: { allowed: boolean; onRemove: () => void }) {
+  return allowed ? (
+    <button type="button" aria-label="Remove player" data-testid="remove-player" onClick={onRemove} className="text-red-500 hover:text-red-700">
+      <X size={15} />
+    </button>
+  ) : (
+    <span title="You can't remove this player" data-testid="remove-player-disabled" className="text-gray-300 cursor-not-allowed">
+      <X size={15} />
     </span>
   );
 }
@@ -266,6 +288,7 @@ interface Game {
   duration_minutes: number;
   is_archived: boolean;
   is_past?: boolean;
+  allow_position_selection?: boolean;
   awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
   created_by: number;
@@ -342,7 +365,7 @@ const statusLabel = (status: string) => {
   switch (status) {
     case 'draft': return 'Draft';
     case 'voting_open': return 'Open for Nomination';
-    case 'in_progress': return 'In Progress';
+    case 'in_progress': return 'Game Started';
     case 'completed': return 'Completed';
     case 'cancelled': return 'Cancelled';
     default: return status;
@@ -361,6 +384,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [waitingOpen, setWaitingOpen] = useState(false);
   const [nominateUserId, setNominateUserId] = useState('');
+  const [nominateSearch, setNominateSearch] = useState('');
   const [nominateMode, setNominateMode] = useState<'self' | 'others'>('self');
   const [nominatePosition, setNominatePosition] = useState('Anywhere');
   const [potdFirstPref, setPotdFirstPref] = useState('');
@@ -522,7 +546,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
       } catch {
         setShowQuitConfirm(true);
       }
-    } else {
+    } else if (window.confirm('Are you sure you want to remove your name from this game?')) {
       handleAction('quit', () => api.quitGame(game!.id));
     }
   };
@@ -681,10 +705,19 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.pending > 0);
   const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
+
   // Game times are in the ground's local time; check on the device too, since the server clock may be UTC.
   const gameIsOver = !!game.is_past ||
     Date.now() >= new Date(`${game.game_date}T${game.game_time}`).getTime() + (game.duration_minutes || 90) * 60000;
-  const payOnlineAvailable = game.payment_collection === 'app' && !!game.online_payment_ready;
+  const removableStage = ['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly;
+  const canRemove = (p: Player) => isModerator || isAdmin || p.user_id === user?.id || p.nominated_by === user?.id;
+  const removePlayer = (p: Player) => {
+    if (p.user_id === user?.id) { handleQuitClick(); return; }
+    const name = p.display_name || p.name.split(' ')[0];
+    if (window.confirm(`Are you sure you want to remove ${name}'s name?`)) {
+      handleAction('remove', () => api.removePlayer(game.id, p.user_id));
+    }
+  };  const payOnlineAvailable = game.payment_collection === 'app' && !!game.online_payment_ready;
   const myPendingAmount = (game.payment_details || []).find(d => d.user_id === user?.id)?.pending ?? game.cost_per_person;
   const gameFees: FeeSettings = {
     fee_percent: game.payment_surcharge_percent,
@@ -839,7 +872,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </p>
                 </div>
               ) : (
-                <p className="text-sm text-gray-700 mb-3">Are you sure you want to quit this game?</p>
+                <p className="text-sm text-gray-700 mb-3">Are you sure you want to remove your name from this game?</p>
               )}
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setShowQuitConfirm(false)}>Cancel</Button>
@@ -853,7 +886,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
         <Card>
           <CardContent className="p-4 space-y-1.5">
-            <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{game.ground_name}{game.pitch_format && ` · ${pitchLabel(game.pitch_format, game.pitch_number)}`}</span></div>
+            <div className="flex items-center gap-2 text-gray-600">
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(game.ground_name)}`} target="_blank" rel="noreferrer"
+                className="flex items-center gap-2 text-blue-600 hover:underline" data-testid="maps-link">
+                <MapPin size={16} /> <span>Open in Google Maps</span>
+              </a>
+              {game.pitch_format && <span>· {pitchLabel(game.pitch_format, game.pitch_number)}</span>}
+            </div>
             {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived && new Date(`${game.game_date}T${game.game_time || '23:59'}`) > new Date() && (
               <div className={`text-xs rounded px-2 py-1 ${game.ground_confirmed ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-800'}`}>
                 {game.ground_confirmed
@@ -941,26 +980,42 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </p>
                 )}
 
-                {/* Nominate Others: user dropdown */}
-                {nominateMode === 'others' && (isModerator || isAdmin) && availableForNomination.length > 0 && (
-                  <div className="mb-3">
-                    <Label className="text-sm text-gray-600 mb-1 block">Select Player</Label>
-                    <Select value={nominateUserId} onValueChange={setNominateUserId}>
-                      <SelectTrigger className="w-full"><SelectValue placeholder="Select user" /></SelectTrigger>
-                      <SelectContent>
-                        {availableForNomination.map(u => {
-                          const firstName = u.name.split(' ')[0];
-                          const ph = u.phone;
-                          const maskedPhone = ph.length >= 4 ? ph[0] + 'x'.repeat(ph.length - 4) + ph.slice(-2) : ph;
-                          return <SelectItem key={u.id} value={String(u.id)}>{firstName} - {maskedPhone}</SelectItem>;
-                        })}
-                      </SelectContent>
-                    </Select>
+                {/* Nominate Others: type to search */}
+                {nominateMode === 'others' && (isModerator || isAdmin) && (
+                  <div className="mb-3 space-y-1">
+                    <Label className="text-sm text-gray-600 block">Player</Label>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
+                      <Input
+                        placeholder="Type a name or phone..."
+                        value={nominateSearch}
+                        onChange={(e) => { setNominateSearch(e.target.value); setNominateUserId(''); }}
+                        className="pl-8 text-sm bg-white"
+                        data-testid="nominate-search"
+                      />
+                    </div>
+                    {nominateSearch.trim() && !nominateUserId && (
+                      <div className="border rounded-md divide-y max-h-40 overflow-y-auto bg-white">
+                        {availableForNomination
+                          .filter(u => {
+                            const q = nominateSearch.trim().toLowerCase();
+                            return u.name.toLowerCase().includes(q) || u.phone.includes(q);
+                          })
+                          .slice(0, 6)
+                          .map(u => (
+                            <button key={u.id} type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-green-50"
+                              onClick={() => { setNominateUserId(String(u.id)); setNominateSearch(u.name); }}>
+                              {formatPlayerDisplay(u.name, u.phone)}
+                            </button>
+                          ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Shared position selector */}
-                {positions.length > 0 && (
+                {positions.length > 0 && game.allow_position_selection && (
                   <div className="mb-3">
                     <Label className="text-sm text-gray-600 mb-1 block">Select Position</Label>
                     <div className="flex flex-wrap gap-1.5">
@@ -1014,7 +1069,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 {nominateMode === 'others' && (isModerator || isAdmin) && (
                   <Button className="w-full bg-green-600 hover:bg-green-700"
                     disabled={!nominateUserId || actionLoading === 'nominate'}
-                    onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, Number(nominateUserId), nominatePosition))}>
+                    onClick={async () => { await handleAction('nominate', () => api.nominatePlayer(game.id, Number(nominateUserId), nominatePosition)); setNominateUserId(''); setNominateSearch(''); }}>
                     {actionLoading === 'nominate' ? 'Nominating...' : 'Nominate Player'}
                   </Button>
                 )}
@@ -1154,15 +1209,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Card>
           )}
 
-          {/* Start Game - simplified, payee/penalty/mode already set at create/edit time */}
-          {(isModerator || isAdmin) && game.status === 'voting_open' && (
-            <Button className="w-full bg-blue-600 hover:bg-blue-700"
-              disabled={actionLoading === 'start'}
-              onClick={() => handleAction('start', () => api.startGame(game.id))}>
-              {actionLoading === 'start' ? 'Starting...' : 'Start Game'}
-            </Button>
-          )}
-
           {/* Cancel Game - for Moderator/Admin on active games that aren't over yet */}
           {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'draft') && !gameIsOver && !game.is_archived && (
             <>
@@ -1190,6 +1236,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     <h4 className="font-semibold text-red-800 flex items-center gap-2">
                       <AlertTriangle size={16} /> Cancel Game Confirmation
                     </h4>
+                    <p className="text-sm font-semibold text-red-800" data-testid="cancel-time-left">{timeToStart(game.game_date, game.game_time)}</p>
                     <div className="text-sm text-red-700 space-y-1">
                       <p><strong>Game:</strong> {cancelPreview.title}</p>
                       <p><strong>Ground:</strong> {cancelPreview.ground_name}</p>
@@ -1797,6 +1844,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         {showPaymentDetails && player.payment_confirmed === 1 && (
                           <Badge className="bg-green-100 text-green-700 text-xs">Paid</Badge>
                         )}
+                        {removableStage && <RemovePlayerButton allowed={canRemove(player)} onRemove={() => removePlayer(player)} />}
 
                         {player.user_id === user?.id && <Badge className="bg-green-100 text-green-700 text-xs">You</Badge>}
 
@@ -1919,6 +1967,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       </Button>
                     )}
                     {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
+                    {removableStage && <RemovePlayerButton allowed={canRemove(player)} onRemove={() => removePlayer(player)} />}
                   </div>
                 ))}
               </div>

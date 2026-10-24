@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import PlayerProfileDialog from '@/components/PlayerProfileDialog';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MessageCircle, Send, Image, Video, Upload, Smile, Reply, Trash2, X, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -126,6 +126,7 @@ export default function Discussion({ gameId, gameStatus }: Props) {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null);
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'media'>('chat');
@@ -257,9 +258,6 @@ export default function Discussion({ gameId, gameStatus }: Props) {
         <CardTitle className="text-base flex items-center gap-2">
           <MessageCircle size={18} className="text-blue-600" />
           Discussion
-          {gameId && (
-            <Badge variant="outline" className="text-[10px] ml-1">Game #{gameId}</Badge>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 pt-0">
@@ -297,6 +295,7 @@ export default function Discussion({ gameId, gameStatus }: Props) {
                     onReact={handleReact}
                     onReply={(id, name) => setReplyTo({ id, name })}
                     onDelete={handleDelete}
+                    onOpenProfile={setProfileUserId}
                   />
                 ))
               )}
@@ -496,11 +495,13 @@ export default function Discussion({ gameId, gameStatus }: Props) {
           </div>
         )}
       </CardContent>
+      {profileUserId && <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)} />}
     </Card>
   );
 }
 
-function MessageBubble({ msg, userId, onReact, onReply, onDelete }: {
+function MessageBubble({ msg, userId, onReact, onReply, onDelete, onOpenProfile }: {
+  onOpenProfile: (userId: number) => void;
   msg: DiscussionMessage;
   userId: number;
   onReact: (tt: string, ti: number, e: string) => void;
@@ -514,9 +515,10 @@ function MessageBubble({ msg, userId, onReact, onReply, onDelete }: {
     <div className={`${isMine ? 'ml-6' : 'mr-6'}`}>
       <div className={`rounded-xl px-3 py-2 ${isMine ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50 border border-gray-100'}`}>
         <div className="flex items-center justify-between mb-0.5">
-          <span className={`text-[11px] font-semibold ${isMine ? 'text-blue-700' : 'text-gray-700'}`}>
+          <button type="button" onClick={() => onOpenProfile(msg.user_id)} data-testid="chat-user"
+            className={`text-[11px] font-semibold hover:underline ${isMine ? 'text-blue-700' : 'text-gray-700'}`}>
             {msg.user_name}
-          </span>
+          </button>
           <span className="text-[10px] text-gray-400">{timeAgo(msg.created_at)}</span>
         </div>
         <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.message}</p>
@@ -547,7 +549,7 @@ function MessageBubble({ msg, userId, onReact, onReply, onDelete }: {
           {showReplies && msg.replies.map(r => (
             <div key={r.id} className="mb-1 rounded-lg px-2.5 py-1.5 bg-white border border-gray-100">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[10px] font-semibold text-gray-600">{r.user_name}</span>
+                <button type="button" onClick={() => onOpenProfile(r.user_id)} className="text-[10px] font-semibold text-gray-600 hover:underline">{r.user_name}</button>
                 <span className="text-[9px] text-gray-400">{timeAgo(r.created_at)}</span>
               </div>
               <p className="text-xs text-gray-700">{r.message}</p>

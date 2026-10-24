@@ -122,7 +122,7 @@ const statusLabel = (status: string) => {
   switch (status) {
     case 'draft': return 'Draft';
     case 'voting_open': return 'Open for Nomination';
-    case 'in_progress': return 'In Progress';
+    case 'in_progress': return 'Game Started';
     case 'completed': return 'Completed';
     case 'cancelled': return 'Cancelled';
     default: return status;
@@ -310,7 +310,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="voting_open">Open for Nomination</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="in_progress">Game Started</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>
                     <SelectItem value="draft">Draft</SelectItem>

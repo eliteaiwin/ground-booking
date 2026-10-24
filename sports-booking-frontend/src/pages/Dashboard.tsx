@@ -83,7 +83,7 @@ const statusLabel = (status: string, isArchived?: boolean) => {
   switch (status) {
     case 'draft': return 'Draft';
     case 'voting_open': return 'Open for Nomination';
-    case 'in_progress': return 'In Progress';
+    case 'in_progress': return 'Game Started';
     case 'completed': return 'Completed';
     default: return status;
   }

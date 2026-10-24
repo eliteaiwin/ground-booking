@@ -170,7 +170,7 @@ export default function AdminSummary({ onBack }: Props) {
 
   const gameStatusLabel = (s: string) => {
     if (s === 'voting_open') return 'Open for Nomination';
-    if (s === 'in_progress') return 'In Progress';
+    if (s === 'in_progress') return 'Game Started';
     if (s === 'completed') return 'Completed';
     if (s === 'draft') return 'Draft';
     if (s === 'abandoned') return 'Abandoned';

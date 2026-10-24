@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 import aiosqlite
 
-from ..database import get_db
+from ..database import get_db, get_app_setting, set_app_setting
 from ..auth import get_current_user_id
 
 router = APIRouter(prefix="/api/preferences", tags=["preferences"])
@@ -66,6 +66,67 @@ async def update_preference(
     )
     await db.commit()
     return {"message": "Preference updated", "sport_type": req.sport_type, "default_max_players": req.default_max_players}
+
+
+class GameDefaultsRequest(BaseModel):
+    default_payee_user_id: Optional[int] = None  # 0 clears it
+    default_quit_penalty_hours: Optional[int] = None
+    default_potd_delay_minutes: Optional[int] = None
+    allow_position_selection: Optional[bool] = None
+
+
+async def game_defaults(db: aiosqlite.Connection) -> dict:
+    """Moderator preferences applied to every new game."""
+    payee_raw = await get_app_setting(db, "default_payee_user_id", "")
+    payee_id = int(payee_raw) if payee_raw.isdigit() else None
+    if payee_raw == "":
+        rows = await (await db.execute(
+            "SELECT id FROM users WHERE deleted_at IS NULL AND (name LIKE 'Sriram%' OR first_name LIKE 'Sriram%')"
+        )).fetchall()
+        if len(rows) == 1:
+            payee_id = rows[0]["id"]
+    payee = None
+    if payee_id:
+        row = await (await db.execute("SELECT id, name, phone FROM users WHERE id = ?", (payee_id,))).fetchone()
+        if row:
+            payee = {"id": row["id"], "name": row["name"], "phone": row["phone"]}
+    return {
+        "default_payee_user_id": payee["id"] if payee else None,
+        "default_payee": payee,
+        "default_quit_penalty_hours": int(await get_app_setting(db, "default_quit_penalty_hours", "0") or 0),
+        "default_potd_delay_minutes": int(await get_app_setting(db, "default_potd_delay_minutes", "1440") or 1440),
+        "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
+    }
+
+
+@router.get("/game-defaults")
+async def get_game_defaults(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    return await game_defaults(db)
+
+
+@router.put("/game-defaults")
+async def update_game_defaults(
+    req: GameDefaultsRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin_or_moderator(user_id, db)
+    if req.default_payee_user_id is not None:
+        await set_app_setting(db, "default_payee_user_id", str(req.default_payee_user_id) if req.default_payee_user_id > 0 else "none")
+    if req.default_quit_penalty_hours is not None:
+        if not 0 <= req.default_quit_penalty_hours <= 72:
+            raise HTTPException(status_code=400, detail="Quit penalty must be 0-72 hours")
+        await set_app_setting(db, "default_quit_penalty_hours", str(req.default_quit_penalty_hours))
+    if req.default_potd_delay_minutes is not None:
+        if not 1 <= req.default_potd_delay_minutes <= 10080:
+            raise HTTPException(status_code=400, detail="Player of the Day time must be 1-10080 minutes")
+        await set_app_setting(db, "default_potd_delay_minutes", str(req.default_potd_delay_minutes))
+    if req.allow_position_selection is not None:
+        await set_app_setting(db, "allow_position_selection", "true" if req.allow_position_selection else "false")
+    return await game_defaults(db)
 
 
 @router.get("/role-themes")

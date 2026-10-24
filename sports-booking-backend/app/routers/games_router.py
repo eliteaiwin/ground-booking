@@ -4,12 +4,15 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 import aiosqlite
 import hashlib
+import os
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from .. import cashfree
 from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 from ..pitches import resolve_game_slot, user_group_ids
+from .preferences_router import game_defaults
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -27,9 +30,9 @@ class CreateGameRequest(BaseModel):
     payment_timing: str  # before, after
     duration_minutes: int = 90
     payee_user_id: Optional[int] = None
-    quit_penalty_hours: int = 0
+    quit_penalty_hours: Optional[int] = None  # None = moderator preference
     payment_mode: str = "postpaid"  # prepaid, postpaid
-    potd_congrats_delay_minutes: int = 1440  # default 24 hours
+    potd_congrats_delay_minutes: Optional[int] = None  # None = moderator preference (24 hours by default)
     note_before_players: Optional[str] = None
     note_after_players: Optional[str] = None
     series_name: Optional[str] = None
@@ -76,9 +79,9 @@ class CreateSeriesRequest(BaseModel):
     ground_cost: float  # total ground cost; per-player cost derived
     duration_minutes: int = 90
     payee_user_id: Optional[int] = None
-    quit_penalty_hours: int = 0
+    quit_penalty_hours: Optional[int] = None
     payment_mode: str = "postpaid"
-    potd_congrats_delay_minutes: int = 1440
+    potd_congrats_delay_minutes: Optional[int] = None
     note_before_players: Optional[str] = None
     note_after_players: Optional[str] = None
     recurrence_days: List[SeriesDay]
@@ -277,7 +280,7 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
 
     ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     max_players = game["max_players"]
-    new_cost = _per_person_amount(ground_cost, selected_count, max_players)
+    new_cost = _per_person_amount(ground_cost, selected_count if game["status"] == "completed" else 0, max_players)
 
     await db.execute(
         "UPDATE games SET cost_per_person = ?, ground_cost = ? WHERE id = ?",
@@ -607,6 +610,14 @@ async def create_notification(db: aiosqlite.Connection, user_id: int, game_id: i
 PAY_FIRST_STATUS = "awaiting_payment"
 
 
+APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "Asia/Kolkata")
+
+
+def _local_now() -> datetime:
+    """Game dates/times are stored in the grounds' local time (India by default), not the server's clock."""
+    return datetime.now(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None)
+
+
 def _game_end(game) -> Optional[datetime]:
     try:
         duration = game["duration_minutes"] or 90
@@ -620,7 +631,7 @@ def _game_end(game) -> Optional[datetime]:
 
 def _game_has_ended(game) -> bool:
     end = _game_end(game)
-    return end is not None and datetime.now() >= end
+    return end is not None and _local_now() >= end
 
 
 def _game_is_archived(game) -> bool:
@@ -629,7 +640,7 @@ def _game_is_archived(game) -> bool:
     if end is None:
         return game["status"] in ("completed", "cancelled")
     grace = timedelta(0) if game["status"] in ("completed", "cancelled") else timedelta(hours=24)
-    return datetime.now() >= end + grace
+    return _local_now() >= end + grace
 
 
 async def _is_pay_first(db: aiosqlite.Connection, uid: int) -> bool:
@@ -913,7 +924,9 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     pay_settings = await _payment_settings(db, game)
     base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     selected_count = len(selected)
-    base_per_person_amount = _per_person_amount(base_ground_cost, selected_count, game["max_players"])
+    base_per_person_amount = _per_person_amount(
+        base_ground_cost, selected_count if game["status"] == "completed" else 0, game["max_players"]
+    )
     fee_breakdown = online_breakdown(base_per_person_amount, pay_settings) if pay_settings["enabled"] else None
     per_person_amount = fee_breakdown["total"] if fee_breakdown else _whole_rupees(base_per_person_amount)
     ground_cost = online_breakdown(base_ground_cost, pay_settings)["total"] if fee_breakdown else base_ground_cost
@@ -958,6 +971,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "quit_penalty_hours": quit_penalty_hours,
         "duration_minutes": duration_minutes,
         "potd_congrats_delay_minutes": potd_delay_minutes,
+        "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
         "is_archived": is_archived,
         "is_past": _game_has_ended(game),
         "created_by": game["created_by"],
@@ -1068,18 +1082,10 @@ async def create_game(
     ground_parts = req.ground_name.replace(' - ', '-').replace(' ', '')
     game_code_display = f"{game_code}-{ground_parts}"
 
-    # Check if moderator has a previous game with custom POTD delay
-    potd_delay = req.potd_congrats_delay_minutes
-    if potd_delay == 1440:  # default value, check if user has a previous override
-        prev_cursor = await db.execute(
-            """SELECT potd_congrats_delay_minutes FROM games 
-               WHERE created_by = ? AND potd_congrats_delay_minutes IS NOT NULL 
-               ORDER BY id DESC LIMIT 1""",
-            (user_id,)
-        )
-        prev_row = await prev_cursor.fetchone()
-        if prev_row and prev_row["potd_congrats_delay_minutes"]:
-            potd_delay = prev_row["potd_congrats_delay_minutes"]
+    defaults = await game_defaults(db)
+    potd_delay = req.potd_congrats_delay_minutes or defaults["default_potd_delay_minutes"]
+    quit_penalty = req.quit_penalty_hours if req.quit_penalty_hours is not None else defaults["default_quit_penalty_hours"]
+    payee_id = req.payee_user_id or defaults["default_payee_user_id"]
 
     series_name = (req.series_name or req.ground_name).strip()
     series_day = (req.series_day or "").strip()
@@ -1093,7 +1099,7 @@ async def create_game(
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (req.title, game_code_display, req.sport_type, req.ground_name, req.game_date, req.game_time,
          req.max_players, req.ground_cost, cost_per_person, payment_timing, user_id, req.duration_minutes,
-         req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day,
+         payee_id, quit_penalty, potd_delay, note_before, note_after, series_name, series_day,
          slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
     )
     game_id = cursor.lastrowid
@@ -1114,13 +1120,16 @@ async def create_game_series(
     `weeks` consecutive weekly game instances on the same ground.
     """
     await require_admin_or_moderator(user_id, db)
+    defaults = await game_defaults(db)
+    quit_penalty = req.quit_penalty_hours if req.quit_penalty_hours is not None else defaults["default_quit_penalty_hours"]
+    payee_id = req.payee_user_id or defaults["default_payee_user_id"]
 
     day_map = {
         "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
         "friday": 4, "saturday": 5, "sunday": 6,
     }
 
-    start = datetime.now()
+    start = _local_now()
     if req.start_date:
         try:
             start = datetime.strptime(req.start_date, "%Y-%m-%d")
@@ -1184,18 +1193,7 @@ async def create_game_series(
             series_name = req.series_name.strip()
             series_day = rd.day.strip()
 
-            # Use last created POTD delay for consistency
-            potd_delay = req.potd_congrats_delay_minutes
-            if potd_delay == 1440:
-                prev_cursor = await db.execute(
-                    """SELECT potd_congrats_delay_minutes FROM games
-                       WHERE created_by = ? AND potd_congrats_delay_minutes IS NOT NULL
-                       ORDER BY id DESC LIMIT 1""",
-                    (user_id,)
-                )
-                prev_row = await prev_cursor.fetchone()
-                if prev_row and prev_row["potd_congrats_delay_minutes"]:
-                    potd_delay = prev_row["potd_congrats_delay_minutes"]
+            potd_delay = req.potd_congrats_delay_minutes or defaults["default_potd_delay_minutes"]
 
             note_before = (req.note_before_players or "").strip()
             note_after = (req.note_after_players or "").strip()
@@ -1207,7 +1205,7 @@ async def create_game_series(
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (title, game_code_display, req.sport_type, req.ground_name, date_str, time_str,
                  req.max_players, req.ground_cost, series_cost_per_person, payment_timing, user_id, req.duration_minutes,
-                 req.payee_user_id, req.quit_penalty_hours, potd_delay, note_before, note_after, series_name, series_day,
+                 payee_id, quit_penalty, potd_delay, note_before, note_after, series_name, series_day,
                  slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
             )
             created_games.append(await get_game_dict(db, cursor.lastrowid))
@@ -1222,6 +1220,7 @@ async def list_games(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    await _auto_progress_games(db)
     if status:
         cursor = await db.execute("SELECT id FROM games WHERE status = ? ORDER BY game_date DESC, game_time DESC", (status,))
     else:
@@ -1244,6 +1243,7 @@ async def get_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    await _auto_progress_games(db)
     result = await get_game_dict(db, game_id)
     result["can_moderate"] = await can_moderate_game(user_id, game_id, db)
     result["ground_country_code"] = await _ground_country_code(db, result.get("ground_name") or "")
@@ -1667,7 +1667,7 @@ async def quit_game(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] not in ("voting_open", "in_progress"):
+    if game["status"] not in ("draft", "voting_open", "in_progress"):
         raise HTTPException(status_code=400, detail="Cannot quit at this stage")
 
     cursor = await db.execute("SELECT * FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, user_id))
@@ -1694,9 +1694,7 @@ async def quit_game(
         try:
             game_dt_str = f"{game['game_date']} {game['game_time']}"
             game_dt = datetime.strptime(game_dt_str, "%Y-%m-%d %H:%M")
-            game_dt = game_dt.replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
-            hours_until_game = (game_dt - now).total_seconds() / 3600
+            hours_until_game = (game_dt - _local_now()).total_seconds() / 3600
             if hours_until_game < quit_penalty_hours:
                 must_pay = True
         except Exception:
@@ -1780,6 +1778,36 @@ async def quit_game(
     if must_pay:
         return {"message": "You have quit the game but must still pay as it is within the penalty window.", "must_pay": True}
     return {"message": "You have quit the game", "must_pay": False}
+
+
+@router.delete("/{game_id}/players/{player_user_id}")
+async def remove_player(
+    game_id: int,
+    player_user_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Players can remove themselves or someone they nominated; moderators can remove anyone."""
+    game = await _get_game(db, game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    row = await (await db.execute(
+        "SELECT nominated_by FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, player_user_id)
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail="Player is not in this game")
+    if player_user_id != user_id and row["nominated_by"] != user_id:
+        await require_game_moderator(user_id, game_id, db)
+    result = await quit_game(game_id, user_id=player_user_id, db=db)
+    if player_user_id != user_id:
+        remover = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
+        await create_notification(
+            db, player_user_id, game_id, "removed",
+            f"{remover['name'] if remover else 'A moderator'} removed you from {game['title']}."
+        )
+        await db.commit()
+        result = {**result, "message": "Player removed from the game"}
+    return result
 
 
 @router.post("/{game_id}/nominate")
@@ -1962,24 +1990,11 @@ async def set_player_prepay(
     return {"message": "Saved"}
 
 
-@router.post("/{game_id}/start")
-async def start_game(
-    game_id: int,
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db)
-):
-    """Start a game. Payee, quit_penalty, and payment_mode are already set
-    at create/edit time — this endpoint just transitions the status."""
-    await require_game_moderator(user_id, game_id, db)
-
-    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
-    game = await cursor.fetchone()
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] != "voting_open":
-        raise HTTPException(status_code=400, detail="Can only start a game that has open voting")
-
-    await db.execute("UPDATE games SET status = 'in_progress' WHERE id = ?", (game_id,))
+async def _start_game(db: aiosqlite.Connection, game):
+    game_id = game["id"]
+    cur = await db.execute("UPDATE games SET status = 'in_progress' WHERE id = ? AND status = 'voting_open'", (game_id,))
+    if cur.rowcount == 0:
+        return await get_game_dict(db, game_id)
 
     # Recompute cost per player before creating payment records
     await _recalc_game_cost(db, game_id)
@@ -2013,22 +2028,28 @@ async def start_game(
     return await get_game_dict(db, game_id)
 
 
-@router.post("/{game_id}/complete")
-async def complete_game(
+@router.post("/{game_id}/start")
+async def start_game(
     game_id: int,
-    req: CompleteGameRequest = CompleteGameRequest(),
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    """Start a game. Payee, quit_penalty, and payment_mode are already set
+    at create/edit time — this endpoint just transitions the status."""
     await require_game_moderator(user_id, game_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if game["status"] != "in_progress":
-        raise HTTPException(status_code=400, detail="Can only complete an in-progress game")
+    if game["status"] != "voting_open":
+        raise HTTPException(status_code=400, detail="Can only start a game that has open voting")
 
+    return await _start_game(db, game)
+
+
+async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameRequest):
+    game_id = game["id"]
     # For soccer games, validate and store scores
     if game["sport_type"] == "soccer" and req.team_a_score is not None and req.team_b_score is not None:
         total_goals = req.team_a_score + req.team_b_score
@@ -2067,7 +2088,9 @@ async def complete_game(
                         (game_id, gs["user_id"], gs["goals"])
                     )
 
-    await db.execute("UPDATE games SET status = 'completed' WHERE id = ?", (game_id,))
+    cur = await db.execute("UPDATE games SET status = 'completed' WHERE id = ? AND status = 'in_progress'", (game_id,))
+    if cur.rowcount == 0:
+        return await get_game_dict(db, game_id)
 
     # Determine who actually played. Defaults to currently selected players for backward compatibility.
     cursor = await db.execute("SELECT user_id, status FROM game_players WHERE game_id = ?", (game_id,))
@@ -2156,6 +2179,48 @@ async def complete_game(
 
     await db.commit()
     return await get_game_dict(db, game_id)
+
+
+async def _auto_progress_games(db: aiosqlite.Connection):
+    """Games move to Game Started at their start time and to Completed at their end time."""
+    now = _local_now()
+    rows = await (await db.execute(
+        "SELECT * FROM games WHERE status IN ('voting_open', 'in_progress')"
+    )).fetchall()
+    for g in rows:
+        try:
+            start = datetime.strptime(f"{g['game_date']} {g['game_time']}", "%Y-%m-%d %H:%M")
+        except (TypeError, ValueError):
+            continue
+        end = _game_end(g)
+        try:
+            if g["status"] == "voting_open" and now >= start:
+                await _start_game(db, g)
+                g = await _get_game(db, g["id"])
+            if g["status"] == "in_progress" and end is not None and now >= end:
+                await _complete_game(db, g, CompleteGameRequest())
+        except HTTPException:
+            # e.g. nobody joined the game; leave it for the moderator.
+            await db.rollback()
+
+
+@router.post("/{game_id}/complete")
+async def complete_game(
+    game_id: int,
+    req: CompleteGameRequest = CompleteGameRequest(),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_game_moderator(user_id, game_id, db)
+
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
+    game = await cursor.fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] != "in_progress":
+        raise HTTPException(status_code=400, detail="Can only complete an in-progress game")
+
+    return await _complete_game(db, game, req)
 
 
 @router.post("/{game_id}/edit-result")
@@ -2521,7 +2586,7 @@ async def vote_player_of_the_day(
         from datetime import timedelta
         game_end_dt = game_end_dt + timedelta(minutes=duration)
         voting_deadline = game_end_dt + timedelta(minutes=game["potd_congrats_delay_minutes"] or 1440)
-        now = datetime.now()
+        now = _local_now()
         if now < game_end_dt:
             raise HTTPException(status_code=400, detail="Voting opens after the game ends")
         if now > voting_deadline:
@@ -2707,7 +2772,7 @@ async def get_potd_results(
             game_end_dt = datetime.strptime(f"{game_date} {game_time}", "%Y-%m-%d %H:%M") + timedelta(minutes=duration)
             voting_deadline = game_end_dt + timedelta(minutes=game["potd_congrats_delay_minutes"] or 1440)
             voting_deadline_str = voting_deadline.strftime("%Y-%m-%d %H:%M")
-            now = datetime.now()
+            now = _local_now()
             if now > voting_deadline:
                 voting_open = False
     except Exception:
@@ -2815,9 +2880,7 @@ async def check_quit_penalty(
     try:
         game_dt_str = f"{game['game_date']} {game['game_time']}"
         game_dt = datetime.strptime(game_dt_str, "%Y-%m-%d %H:%M")
-        game_dt = game_dt.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        hours_until_game = (game_dt - now).total_seconds() / 3600
+        hours_until_game = (game_dt - _local_now()).total_seconds() / 3600
         must_pay = hours_until_game < quit_penalty_hours
         return {
             "has_penalty": True,

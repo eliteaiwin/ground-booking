@@ -254,6 +254,9 @@ export const api = {
   startGame: (gameId: number) =>
     request(`/api/games/${gameId}/start`, { method: 'POST' }),
 
+  removePlayer: (gameId: number, userId: number) =>
+    request(`/api/games/${gameId}/players/${userId}`, { method: 'DELETE' }),
+
   completeGame: (id: number, payload?: {
     played_user_ids?: number[];
     team_a_score?: number; team_b_score?: number;
@@ -380,6 +383,13 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ sport_type: sportType, default_max_players: defaultMaxPlayers }),
     }),
+
+  getGameDefaults: () => request('/api/preferences/game-defaults'),
+  updateGameDefaults: (data: {
+    default_payee_user_id?: number; default_quit_penalty_hours?: number;
+    default_potd_delay_minutes?: number; allow_position_selection?: boolean;
+  }) =>
+    request('/api/preferences/game-defaults', { method: 'PUT', body: JSON.stringify(data) }),
 
   getPreferenceForSport: (sportType: string) =>
     request(`/api/preferences/${sportType}`),

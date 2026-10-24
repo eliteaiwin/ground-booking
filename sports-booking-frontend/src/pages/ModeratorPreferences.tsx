@@ -5,12 +5,107 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Settings, DollarSign, Trophy, Eye } from 'lucide-react';
+import { ArrowLeft, Settings, DollarSign, Trophy, Eye, SlidersHorizontal } from 'lucide-react';
+import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { ALL_SPORTS } from '../lib/sports';
 
 interface Props {
   onBack: () => void;
+}
+
+interface GameDefaults {
+  default_payee: { id: number; name: string; phone: string } | null;
+  default_quit_penalty_hours: number;
+  default_potd_delay_minutes: number;
+  allow_position_selection: boolean;
+}
+
+function GameDefaultsCard() {
+  const [defaults, setDefaults] = useState<GameDefaults | null>(null);
+  const [potd, setPotd] = useState('1440');
+  const [quit, setQuit] = useState('0');
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<{ id: number; name: string; phone: string }[]>([]);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    api.getGameDefaults().then((d: GameDefaults) => {
+      setDefaults(d);
+      setPotd(String(d.default_potd_delay_minutes));
+      setQuit(String(d.default_quit_penalty_hours));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (search.trim().length < 2) { setResults([]); return; }
+    const t = setTimeout(() => {
+      api.searchUsers({ search: search.trim() })
+        .then((u: { id: number; name: string; phone: string }[]) => setResults(u.slice(0, 8)))
+        .catch(() => setResults([]));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const save = async (data: Parameters<typeof api.updateGameDefaults>[0]) => {
+    try {
+      setDefaults(await api.updateGameDefaults(data));
+      setMessage('Saved');
+      setTimeout(() => setMessage(''), 2000);
+    } catch (err: unknown) {
+      setMessage(err instanceof Error ? err.message : 'Save failed');
+    }
+  };
+
+  if (!defaults) return null;
+  return (
+    <Card data-testid="game-defaults">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2"><SlidersHorizontal size={18} /> Game Defaults</CardTitle>
+        <p className="text-sm text-gray-500">Used for every new game.</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {message && <div className={`p-2 rounded-md text-sm ${message === 'Saved' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{message}</div>}
+        <div className="space-y-2">
+          <Label>Payment Receiver</Label>
+          <p className="text-sm">
+            {defaults.default_payee
+              ? <><strong>{defaults.default_payee.name}</strong> <span className="text-gray-500">({formatPhone(defaults.default_payee.phone)})</span></>
+              : <span className="text-gray-500">Not set</span>}
+          </p>
+          <Input placeholder="Type a name or phone to change" value={search} onChange={e => setSearch(e.target.value)} />
+          {results.length > 0 && (
+            <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
+              {results.map(u => (
+                <button key={u.id} type="button" className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex justify-between"
+                  onClick={() => { save({ default_payee_user_id: u.id }); setSearch(''); setResults([]); }}>
+                  <span>{u.name}</span><span className="text-xs text-gray-400">{formatPhone(u.phone)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Quit penalty (hours before game)</Label>
+            <Input type="number" min="0" max="72" value={quit} onChange={e => setQuit(e.target.value)}
+              onBlur={() => save({ default_quit_penalty_hours: parseInt(quit) || 0 })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Player of the Day nominations open for (minutes)</Label>
+            <Input type="number" min="1" max="10080" value={potd} onChange={e => setPotd(e.target.value)}
+              onBlur={() => save({ default_potd_delay_minutes: parseInt(potd) || 1440 })} />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 -mt-2">Default 1440 minutes (24 hours) after the game ends, then the winner is announced.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="rounded border-gray-300" checked={defaults.allow_position_selection}
+            onChange={e => save({ allow_position_selection: e.target.checked })} data-testid="allow-positions" />
+          Let players choose a position when joining a game
+        </label>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function ModeratorPreferences({ onBack }: Props) {
@@ -194,6 +289,8 @@ export default function ModeratorPreferences({ onBack }: Props) {
             </Button>
           </CardContent>
         </Card>
+
+        <GameDefaultsCard />
 
         {isAdmin && appSettings && (
           <Card>
