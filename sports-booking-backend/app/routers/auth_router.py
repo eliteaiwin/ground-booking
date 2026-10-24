@@ -14,6 +14,7 @@ from pathlib import Path
 from ..database import get_db
 from ..auth import hash_password, verify_password, create_access_token, get_current_user_id
 from ..otp_service import send_otp, check_otp, is_email, normalize_identifier
+from ..phone_utils import split_phone, e164
 
 # Profile pictures upload directory
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads"))
@@ -56,11 +57,13 @@ class LoginRequest(BaseModel):
 
 class OTPRequestModel(BaseModel):
     phone: str
+    country_code: Optional[str] = None
 
 
 class OTPVerifyRequest(BaseModel):
     phone: str
     otp: str
+    country_code: Optional[str] = None
 
 
 class GoogleAuthRequest(BaseModel):
@@ -115,6 +118,7 @@ class UpdateProfileRequest(BaseModel):
     display_name: Optional[str] = None
     date_of_birth: Optional[str] = None
     gender: Optional[str] = None
+    country_code: Optional[str] = None
 
 
 def age_from_dob(dob: str) -> Optional[int]:
@@ -264,30 +268,57 @@ async def verify_registration_otp(req: OTPVerifyRequest):
     return {"message": "Phone number verified successfully"}
 
 
+async def _resolve_login(db: aiosqlite.Connection, raw: str, country_code: Optional[str]):
+    """Returns (user_row, otp_identifier, country_code, national). Phones are matched without the country code;
+    only when the same number exists in two countries must the user pick one."""
+    identifier = normalize_identifier(raw)
+    if is_email(identifier):
+        row = await (await db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (identifier,))).fetchone()
+        return row, identifier, None, None
+    explicit = bool(country_code) or identifier.startswith("+") or identifier.startswith("00")
+    cc, national = split_phone(identifier, country_code)
+    if explicit:
+        rows = await (await db.execute(
+            "SELECT id, country_code FROM users WHERE phone = ? AND country_code = ?", (national, cc)
+        )).fetchall()
+    else:
+        rows = await (await db.execute("SELECT id, country_code FROM users WHERE phone = ?", (national,))).fetchall()
+        if len({r["country_code"] for r in rows}) > 1:
+            codes = ",".join(sorted({r["country_code"] for r in rows}))
+            raise HTTPException(status_code=409, detail=f"CHOOSE_COUNTRY:{codes}")
+    row = rows[0] if rows else None
+    if row:
+        cc = row["country_code"]
+    return row, e164(cc, national), cc, national
+
+
 @router.post("/otp/request")
 async def request_otp(req: OTPRequestModel, db: aiosqlite.Connection = Depends(get_db)):
     """Send a login OTP to a phone number or email; the account is created on verification if new."""
-    identifier = normalize_identifier(req.phone)
-    user = await _find_user_by_identifier(db, identifier)
-    result = await send_otp(identifier)
+    user, otp_id, cc, _ = await _resolve_login(db, req.phone, req.country_code)
+    result = await send_otp(otp_id)
     result["new_user"] = user is None
+    result["country_code"] = cc
     return result
 
 
 async def _find_user_by_identifier(db: aiosqlite.Connection, identifier: str):
-    column = "LOWER(email)" if is_email(identifier) else "phone"
-    cursor = await db.execute(f"SELECT id FROM users WHERE {column} = ?", (identifier,))
+    if is_email(identifier):
+        cursor = await db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (identifier,))
+    else:
+        cc, national = split_phone(identifier)
+        cursor = await db.execute("SELECT id FROM users WHERE phone = ? AND country_code = ?", (national, cc))
     return await cursor.fetchone()
 
 
 @router.post("/otp/verify")
 async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(get_db)):
     """Verify OTP and return auth token, creating the account for a new phone number or email."""
-    identifier = normalize_identifier(req.phone)
-    if not await check_otp(identifier, req.otp):
+    user, otp_id, login_cc, national = await _resolve_login(db, req.phone, req.country_code)
+    if not await check_otp(otp_id, req.otp):
         raise HTTPException(status_code=401, detail="Invalid OTP")
+    identifier = normalize_identifier(req.phone) if login_cc is None else national
 
-    user = await _find_user_by_identifier(db, identifier)
     if not user:
         user_code = await generate_user_code(db)
         if is_email(identifier):
@@ -303,6 +334,8 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
             (user_code, display_name, phone, email, phone_verified)
         )
         user_id = cursor.lastrowid
+        if login_cc:
+            await db.execute("UPDATE users SET country_code = ? WHERE id = ?", (login_cc, user_id))
         await _assign_roles(db, user_id)
         await db.commit()
         token = create_access_token(user_id)
@@ -643,6 +676,7 @@ async def get_profile(
         "gender": (user["gender"] if "gender" in user.keys() else "") or "",
         "date_of_birth": user["date_of_birth"] or "",
         "phone": user["phone"],
+        "country_code": user["country_code"] if "country_code" in user.keys() else "91",
         "email": user["email"],
         "notification_preference": user["notification_preference"],
         "sports": sports,
@@ -721,13 +755,19 @@ async def update_profile(
     if req.currency is not None:
         updates.append("currency = ?")
         params.append(req.currency)
-    if req.phone is not None:
-        # Check phone uniqueness
-        cursor = await db.execute("SELECT id FROM users WHERE phone = ? AND id != ?", (req.phone, user_id))
+    if req.phone is not None or req.country_code is not None:
+        current = await (await db.execute("SELECT phone, country_code FROM users WHERE id = ?", (user_id,))).fetchone()
+        cc, national = split_phone(req.phone if req.phone is not None else current["phone"],
+                                   req.country_code or current["country_code"])
+        cursor = await db.execute(
+            "SELECT id FROM users WHERE phone = ? AND country_code = ? AND id != ?", (national, cc, user_id)
+        )
         if await cursor.fetchone():
             raise HTTPException(status_code=400, detail="Phone number already in use")
         updates.append("phone = ?")
-        params.append(req.phone)
+        params.append(national)
+        updates.append("country_code = ?")
+        params.append(cc)
         updates.append("phone_verified = ?")
         params.append(0)
 
@@ -1328,6 +1368,7 @@ async def get_user_persona(
         "last_name": last_name,
         "name": display_name,
         "phone": user["phone"],
+        "country_code": user["country_code"] if "country_code" in user.keys() else "91",
         "sports": sports,
         "sport_positions": sport_positions,
         "profile_pic": profile_pic,

@@ -41,6 +41,42 @@ async def set_app_setting(db: aiosqlite.Connection, key: str, value: str) -> Non
     await db.commit()
 
 
+async def _migrate_user_country_codes(db: aiosqlite.Connection):
+    """Phone numbers are stored without the country code; the code lives in users.country_code (India by default)."""
+    import re
+    import sqlite3
+    from .phone_utils import split_phone
+    cols = [r[1] for r in await (await db.execute("PRAGMA table_info(users)")).fetchall()]
+    if "country_code" not in cols:
+        await db.execute("ALTER TABLE users ADD COLUMN country_code TEXT NOT NULL DEFAULT '91'")
+    row = await (await db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")).fetchone()
+    if row and "phone TEXT NOT NULL UNIQUE" in row[0]:
+        # The same number may exist in two countries, so uniqueness moves to (country_code, phone).
+        cols = [r[1] for r in await (await db.execute("PRAGMA table_info(users)")).fetchall()]
+        new_sql = row[0].replace("phone TEXT NOT NULL UNIQUE", "phone TEXT NOT NULL", 1)
+        new_sql = re.sub(r'CREATE TABLE\s+"?users"?', "CREATE TABLE users_new", new_sql, count=1)
+        col_list = ", ".join(f'"{c}"' for c in cols)
+        await db.commit()
+        await db.execute("PRAGMA foreign_keys=OFF")
+        await db.execute(new_sql)
+        await db.execute(f"INSERT INTO users_new ({col_list}) SELECT {col_list} FROM users")
+        await db.execute("DROP TABLE users")
+        await db.execute("ALTER TABLE users_new RENAME TO users")
+        await db.commit()
+        await db.execute("PRAGMA foreign_keys=ON")
+    await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_cc_phone ON users(country_code, phone)")
+    rows = await (await db.execute("SELECT id, phone, country_code FROM users")).fetchall()
+    for r in rows:
+        p = r["phone"] or ""
+        if not (re.fullmatch(r"91\d{10}", p) or p.startswith("+")):
+            continue
+        cc, national = split_phone(p if p.startswith("+") else "+" + p, r["country_code"])
+        try:
+            await db.execute("UPDATE users SET phone = ?, country_code = ? WHERE id = ?", (national, cc, r["id"]))
+        except sqlite3.IntegrityError:
+            pass  # a duplicate account already holds this number
+
+
 async def init_db():
     db = await aiosqlite.connect(DATABASE_PATH)
     db.row_factory = aiosqlite.Row
@@ -696,6 +732,7 @@ async def init_db():
         except Exception:
             pass
 
+    await _migrate_user_country_codes(db)
     await db.commit()
 
     # Migrations for existing databases

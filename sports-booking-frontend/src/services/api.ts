@@ -118,10 +118,10 @@ export const api = {
   login: (data: { identifier: string; password: string }) =>
     request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
-  requestOTP: (data: { phone: string }) =>
+  requestOTP: (data: { phone: string; country_code?: string }) =>
     request('/api/auth/otp/request', { method: 'POST', body: JSON.stringify(data) }),
 
-  verifyOTP: (data: { phone: string; otp: string }) =>
+  verifyOTP: (data: { phone: string; otp: string; country_code?: string }) =>
     request('/api/auth/otp/verify', { method: 'POST', body: JSON.stringify(data) }),
 
   // Registration OTP (phone verification before account exists)

@@ -1,3 +1,4 @@
+import { COUNTRY_CODES } from '@/lib/phone';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
@@ -62,6 +63,8 @@ export default function LoginPage({ isAddUserMode }: Props) {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpDemo, setOtpDemo] = useState('');
+  const [countryChoices, setCountryChoices] = useState<string[]>([]);
+  const [countryCode, setCountryCode] = useState('');
   const [isNewUser, setIsNewUser] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -143,7 +146,7 @@ export default function LoginPage({ isAddUserMode }: Props) {
     }
     setLoading(true);
     try {
-      const res = await requestOTP(identifier);
+      const res = await requestOTP(identifier, countryChoices.length ? countryCode : undefined);
       setOtpSent(true);
       localStorage.setItem('last_login_identifier', identifier);
       setIsNewUser(Boolean(res.new_user));
@@ -151,7 +154,15 @@ export default function LoginPage({ isAddUserMode }: Props) {
         setOtpDemo(res.otp_demo);
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send OTP');
+      const msg = err instanceof Error ? err.message : 'Failed to send OTP';
+      if (msg.startsWith('CHOOSE_COUNTRY:')) {
+        const codes = msg.slice('CHOOSE_COUNTRY:'.length).split(',').filter(Boolean);
+        setCountryChoices(codes);
+        setCountryCode(codes[0] || '91');
+        setError('This number is registered in more than one country. Please choose your country code and send the code again.');
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -162,7 +173,7 @@ export default function LoginPage({ isAddUserMode }: Props) {
     setError('');
     setLoading(true);
     try {
-      await loginWithOTP(identifier, otp);
+      await loginWithOTP(identifier, otp, countryChoices.length ? countryCode : undefined);
       localStorage.setItem('last_login_identifier', identifier);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'OTP verification failed');
@@ -234,6 +245,14 @@ export default function LoginPage({ isAddUserMode }: Props) {
         <form onSubmit={handleOTPLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="otp-identifier">{isEmailMode ? 'Email' : 'Phone Number'}</Label>
+            {!isEmailMode && countryChoices.length > 0 && (
+              <select data-testid="login-country" value={countryCode} onChange={e => setCountryCode(e.target.value)}
+                className="w-full border rounded-md px-3 py-2 text-sm bg-white">
+                {countryChoices.map(c => (
+                  <option key={c} value={c}>+{c} {COUNTRY_CODES.find(x => x.code === c)?.name || ''}</option>
+                ))}
+              </select>
+            )}
             <div className="relative">
               {isEmailMode
                 ? <Mail size={16} className="absolute left-3 top-3 text-gray-400" />

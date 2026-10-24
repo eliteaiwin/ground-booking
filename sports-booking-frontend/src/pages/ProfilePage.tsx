@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { formatPhone } from '@/lib/phone';
+import { formatPhone, COUNTRY_CODES } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { ImageCropDialog } from '../components/ImageCropDialog';
@@ -72,6 +72,7 @@ export default function ProfilePage({ onBack }: Props) {
   const [dateOfBirth, setDateOfBirth] = useState(user?.date_of_birth || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
+  const [countryCode, setCountryCode] = useState(user?.country_code || '91');
   const initNotifPrefs = (user?.notification_preference || 'whatsapp').split(',').filter(Boolean);
   const [notifPrefs, setNotifPrefs] = useState<string[]>(initNotifPrefs);
   const [sports, setSports] = useState<string[]>(user?.sports || []);
@@ -245,6 +246,7 @@ export default function ProfilePage({ onBack }: Props) {
       if (dateOfBirth !== (user?.date_of_birth || '')) data.date_of_birth = dateOfBirth;
       if (email !== user?.email) data.email = email;
       if (phone !== user?.phone) data.phone = phone;
+      if (countryCode !== (user?.country_code || '91')) data.country_code = countryCode;
       const notifPrefStr = notifPrefs.join(',');
       if (notifPrefStr !== user?.notification_preference) data.notification_preference = notifPrefStr;
       if (currency !== user?.currency) data.currency = currency;
@@ -414,7 +416,11 @@ export default function ProfilePage({ onBack }: Props) {
             <div className="space-y-2">
               <Label htmlFor="prof-phone">Mobile Number</Label>
               <div className="flex gap-2">
-                <Input id="prof-phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1" />
+                <select aria-label="Country code" data-testid="profile-country" value={countryCode} onChange={e => setCountryCode(e.target.value)}
+                  className="border rounded-md px-2 text-sm bg-white w-24 shrink-0">
+                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>+{c.code} {c.name}</option>)}
+                </select>
+                <Input id="prof-phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 min-w-0" />
                 <Button type="button" size="sm" variant="outline" onClick={handleVerifyPhone}
                   className="text-green-600 border-green-300 hover:bg-green-50 shrink-0">
                   <ShieldCheck size={14} className="mr-1" /> Verify

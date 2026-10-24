@@ -3,6 +3,7 @@ import { api } from '../services/api';
 
 interface User {
   id: number;
+  country_code?: string;
   user_code: string;
   first_name: string;
   last_name: string;
@@ -56,8 +57,8 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (identifier: string, password: string) => Promise<void>;
-  loginWithOTP: (phone: string, otp: string) => Promise<void>;
-  requestOTP: (phone: string) => Promise<{ otp_demo?: string; new_user?: boolean }>;
+  loginWithOTP: (phone: string, otp: string, countryCode?: string) => Promise<void>;
+  requestOTP: (phone: string, countryCode?: string) => Promise<{ otp_demo?: string; new_user?: boolean }>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   loginWithApple: (identityToken: string, givenName?: string | null, familyName?: string | null) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
@@ -206,13 +207,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAddingAccount(false);
   };
 
-  const requestOTP = async (phone: string) => {
-    const res = await api.requestOTP({ phone });
+  const requestOTP = async (phone: string, countryCode?: string) => {
+    const res = await api.requestOTP({ phone, country_code: countryCode });
     return res;
   };
 
-  const loginWithOTP = async (phone: string, otp: string) => {
-    const res = await api.verifyOTP({ phone, otp });
+  const loginWithOTP = async (phone: string, otp: string, countryCode?: string) => {
+    const res = await api.verifyOTP({ phone, otp, country_code: countryCode });
     localStorage.setItem('token', res.token);
     await refreshUser();
     setIsAddingAccount(false);

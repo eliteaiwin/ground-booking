@@ -60,7 +60,16 @@ def normalize_identifier(identifier: str) -> str:
 
 
 def _is_demo_identifier(identifier: str) -> bool:
-    return bool(DEMO_OTP_CODE) and normalize_identifier(identifier).lower() in DEMO_OTP_IDENTIFIERS
+    if not DEMO_OTP_CODE:
+        return False
+    ident = normalize_identifier(identifier).lower()
+    if ident in DEMO_OTP_IDENTIFIERS:
+        return True
+    digits = re.sub(r"\D", "", ident)
+    return not is_email(ident) and any(
+        not is_email(d) and re.sub(r"\D", "", d) and digits.endswith(re.sub(r"\D", "", d)[-10:])
+        for d in DEMO_OTP_IDENTIFIERS
+    )
 
 
 def to_e164(phone: str) -> str:
