@@ -849,12 +849,20 @@ export const api = {
   listModeratorGroups: (groundId: number) => request(`/api/allotments/grounds/${groundId}/groups`),
   createModeratorGroup: (groundId: number, name: string) =>
     request(`/api/allotments/grounds/${groundId}/groups`, { method: 'POST', body: JSON.stringify({ name }) }),
+  renameModeratorGroup: (groupId: number, name: string) =>
+    request(`/api/allotments/groups/${groupId}`, { method: 'PUT', body: JSON.stringify({ name }) }),
   deleteModeratorGroup: (groupId: number) =>
     request(`/api/allotments/groups/${groupId}`, { method: 'DELETE' }),
   addModeratorGroupMember: (groupId: number, userId: number) =>
     request(`/api/allotments/groups/${groupId}/members`, { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
   removeModeratorGroupMember: (groupId: number, memberId: number) =>
     request(`/api/allotments/groups/${groupId}/members/${memberId}`, { method: 'DELETE' }),
+  allotGame: (gameId: number) =>
+    request(`/api/allotments/games/${gameId}/allot`, { method: 'POST' }),
+
+  resolveMapsUrl: (url: string) =>
+    request(`/api/locations/maps/resolve`, { method: 'POST', body: JSON.stringify({ url }) }),
+
   getGroundOccupancy: (groundId: number, date: string, sport: string) =>
     request(`/api/allotments/grounds/${groundId}/occupancy?date=${date}&sport=${encodeURIComponent(sport)}`),
   createAllotment: (groundId: number, data: {

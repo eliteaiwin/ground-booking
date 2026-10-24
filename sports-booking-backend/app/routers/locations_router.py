@@ -873,6 +873,10 @@ async def get_ground_schedule(
             "cost_per_person": g["cost_per_person"],
             "created_by": g["creator_name"],
             "creator_phone": g["creator_phone"],
+            "created_by_id": g["created_by"],
+            "allotment_id": g["allotment_id"],
+            "pitch_format": g["pitch_format"] or "",
+            "pitch_number": g["pitch_number"] or 0,
             "moderators": moderators,
         })
 
@@ -1225,6 +1229,24 @@ async def list_ground_moderators(
     if not ground:
         raise HTTPException(status_code=404, detail="Ground not found")
 
+    missing = await (await db.execute(
+        """SELECT DISTINCT m.user_id FROM moderator_group_members m
+           JOIN moderator_groups mg ON mg.id = m.group_id
+           JOIN users u ON u.id = m.user_id AND u.deleted_at IS NULL
+           WHERE mg.ground_id = ? AND NOT EXISTS (
+               SELECT 1 FROM moderator_locations ml
+               WHERE ml.user_id = m.user_id AND ml.location = ? AND (ml.ground_name = ? OR ml.ground_name = ''))""",
+        (ground_id, ground["location"], ground["name"])
+    )).fetchall()
+    for m in missing:
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')", (m["user_id"],))
+        await db.execute(
+            "INSERT OR IGNORE INTO moderator_locations (user_id, location, ground_name, sport_type) VALUES (?, ?, ?, '')",
+            (m["user_id"], ground["location"], ground["name"])
+        )
+    if missing:
+        await db.commit()
+
     mod_cursor = await db.execute(
         """SELECT ml.id, ml.user_id, ml.sport_type, u.name as user_name, u.phone as user_phone, u.email as user_email
            FROM moderator_locations ml JOIN users u ON ml.user_id = u.id
@@ -1233,17 +1255,40 @@ async def list_ground_moderators(
         (ground["location"], ground["name"])
     )
     rows = await mod_cursor.fetchall()
-    return [
-        {
+    today = datetime.now().strftime("%Y-%m-%d")
+    weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    async def _days(where: str, params: tuple) -> list[str]:
+        cur = await db.execute(
+            f"""SELECT DISTINCT allot_date FROM ground_allotments
+                WHERE ground_id = ? AND status = 'confirmed' AND allot_date >= ? AND ({where})""",
+            (ground_id, today, *params)
+        )
+        found = {datetime.strptime(r["allot_date"], "%Y-%m-%d").weekday() for r in await cur.fetchall()}
+        return [weekday_names[d] for d in sorted(found)]
+
+    result = []
+    for r in rows:
+        group_rows = await (await db.execute(
+            """SELECT mg.id, mg.name FROM moderator_group_members m JOIN moderator_groups mg ON mg.id = m.group_id
+               WHERE m.user_id = ? AND mg.ground_id = ? ORDER BY mg.name COLLATE NOCASE""",
+            (r["user_id"], ground_id)
+        )).fetchall()
+        groups = [{"id": g["id"], "name": g["name"], "days": await _days("moderator_group_id = ?", (g["id"],))} for g in group_rows]
+        group_ids = [g["id"] for g in group_rows]
+        marks = ",".join("?" * len(group_ids))
+        where = f"moderator_user_id = ? OR moderator_group_id IN ({marks})" if group_ids else "moderator_user_id = ?"
+        result.append({
             "id": r["id"],
             "user_id": r["user_id"],
             "user_name": r["user_name"],
             "user_phone": r["user_phone"],
             "user_email": r["user_email"] or "",
             "sport_type": r["sport_type"] or "All Sports",
-        }
-        for r in rows
-    ]
+            "groups": groups,
+            "days": await _days(where, (r["user_id"], *group_ids)),
+        })
+    return result
 
 
 class GroundModeratorRequest(BaseModel):
@@ -1727,6 +1772,17 @@ async def _coords_from_maps_url(url: str) -> Optional[tuple[float, float]]:
         return _coords_from_text(str(res.url)) or _coords_from_text(res.text[:200000])
     except httpx.HTTPError:
         return None
+
+
+class MapsResolveRequest(BaseModel):
+    url: str
+
+
+@router.post("/maps/resolve")
+async def resolve_maps_url(req: MapsResolveRequest, user_id: int = Depends(get_current_user_id)):
+    """Read the pin from a pasted Google Maps link so the form can show it before saving."""
+    coords = await _coords_from_maps_url(req.url.strip()[:500])
+    return {"latitude": coords[0] if coords else None, "longitude": coords[1] if coords else None}
 
 
 def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:

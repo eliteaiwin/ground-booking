@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { formatPhone } from '@/lib/phone';
-import { Plus, Search, Trash2, Users, X } from 'lucide-react';
+import { Pencil, Plus, Search, Trash2, Users, X } from 'lucide-react';
 import { api } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -71,6 +71,18 @@ export default function ModeratorGroups({ groundId, location, groups, canManage,
                 <Users size={14} />{g.name} <span className="text-xs text-gray-500 font-normal">({g.members.length})</span>
               </h4>
               {canManage && (
+                <span className="flex items-center gap-3">
+                <button
+                  type="button"
+                  aria-label={`Rename ${g.name}`}
+                  className="text-gray-400 hover:text-blue-600"
+                  onClick={() => {
+                    const name = window.prompt('New group name', g.name)?.trim();
+                    if (name && name !== g.name) run(() => api.renameModeratorGroup(g.id, name));
+                  }}
+                >
+                  <Pencil size={14} />
+                </button>
                 <button
                   type="button"
                   aria-label={`Delete ${g.name}`}
@@ -79,6 +91,7 @@ export default function ModeratorGroups({ groundId, location, groups, canManage,
                 >
                   <Trash2 size={14} />
                 </button>
+                </span>
               )}
             </div>
             <div className="flex flex-wrap gap-1">

@@ -132,6 +132,21 @@ async def create_group(ground_id: int, req: GroupRequest, user_id: int = Depends
     return {"id": cursor.lastrowid, "name": name, "members": []}
 
 
+@router.put("/groups/{group_id}")
+async def rename_group(group_id: int, req: GroupRequest, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    group = await _group(db, group_id)
+    await _require_manager(db, user_id, group["ground_id"])
+    name = req.name.strip()[:60]
+    if not name:
+        raise HTTPException(status_code=400, detail="Group name is required")
+    try:
+        await db.execute("UPDATE moderator_groups SET name = ? WHERE id = ?", (name, group_id))
+    except aiosqlite.IntegrityError:
+        raise HTTPException(status_code=409, detail=f"A group named '{name}' already exists at this ground")
+    await db.commit()
+    return {"id": group_id, "name": name}
+
+
 @router.delete("/groups/{group_id}")
 async def delete_group(group_id: int, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
     group = await _group(db, group_id)
@@ -162,6 +177,17 @@ async def add_group_member(group_id: int, req: GroupMemberRequest, user_id: int 
         "INSERT OR IGNORE INTO moderator_group_members (group_id, user_id, added_by) VALUES (?, ?, ?)",
         (group_id, req.user_id, user_id)
     )
+    ground = await _ground(db, group["ground_id"])
+    await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'moderator')", (req.user_id,))
+    already = await (await db.execute(
+        "SELECT 1 FROM moderator_locations WHERE user_id = ? AND location = ? AND (ground_name = ? OR ground_name = '')",
+        (req.user_id, ground["location"], ground["name"])
+    )).fetchone()
+    if not already:
+        await db.execute(
+            "INSERT OR IGNORE INTO moderator_locations (user_id, location, ground_name, sport_type) VALUES (?, ?, ?, '')",
+            (req.user_id, ground["location"], ground["name"])
+        )
     await db.commit()
     return {"message": "Member added"}
 
@@ -321,6 +347,41 @@ async def create_allotment(
         created.append({"id": cursor.lastrowid, "date": date_str, "linked_games": adopt})
     await db.commit()
     return {"created": created, "skipped": skipped, "pitch_label": label}
+
+
+@router.post("/games/{game_id}/allot")
+async def allot_game(game_id: int, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    """One-tap allotment of a planned game's slot to the moderator who created it."""
+    game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["allotment_id"]:
+        raise HTTPException(status_code=400, detail="This game already has a ground allotment")
+    if game["status"] in ("cancelled", "completed", "archived"):
+        raise HTTPException(status_code=400, detail="Only upcoming games can be allotted")
+    full = game["ground_name"] or ""
+    loc, _, name = full.partition(" - ")
+    ground = await (await db.execute(
+        "SELECT * FROM grounds WHERE (location = ? AND name = ?) OR name = ? ORDER BY (location = ?) DESC LIMIT 1",
+        (loc.strip(), name.strip(), full, loc.strip())
+    )).fetchone()
+    if not ground:
+        raise HTTPException(status_code=404, detail="Ground not found")
+    res = await create_allotment(ground["id"], AllotmentRequest(
+        sport_type=game["sport_type"] or "",
+        pitch_format=game["pitch_format"] or "",
+        pitch_number=game["pitch_number"] or 0,
+        allot_date=game["game_date"],
+        start_time=(game["game_time"] or "")[:5],
+        duration_minutes=game["duration_minutes"] or 60,
+        moderator_user_id=game["created_by"],
+    ), user_id, db)
+    if not res["created"]:
+        raise HTTPException(status_code=409, detail=res["skipped"][0]["reason"] if res["skipped"] else "Could not allot this slot")
+    allotment_id = res["created"][0]["id"]
+    await db.execute("UPDATE games SET allotment_id = ? WHERE id = ? AND allotment_id IS NULL", (allotment_id, game_id))
+    await db.commit()
+    return {"allotment_id": allotment_id, "pitch_label": res["pitch_label"]}
 
 
 async def _allotment(db: aiosqlite.Connection, allotment_id: int) -> aiosqlite.Row:

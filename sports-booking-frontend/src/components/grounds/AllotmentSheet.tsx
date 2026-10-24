@@ -60,6 +60,7 @@ function overlaps(item: OccupancyItem, units: number[], start: number, end: numb
 
 export default function AllotmentSheet({ groundId, groups }: { groundId: number; groups: ModeratorGroupRef[] }) {
   const [sports, setSports] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [sport, setSport] = useState('');
   const [date, setDate] = useState(todayIso());
   const [format, setFormat] = useState('');
@@ -74,8 +75,12 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
 
   useEffect(() => {
     api.getGroundDetails(groundId)
-      .then((d: { sports: string[] }) => { setSports(d.sports); setSport(d.sports[0] || ''); })
-      .catch(() => setSports([]));
+      .then((d: { sports: string[]; sport_types?: string[] }) => {
+        const list = d.sports.length ? d.sports : (d.sport_types || []);
+        setSports(list); setSport(list[0] || '');
+      })
+      .catch(() => setSports([]))
+      .finally(() => setLoaded(true));
     api.listGroundModerators(groundId)
       .then((mods: { user_id: number; user_name: string }[]) => {
         const seen = new Set<number>();
@@ -163,6 +168,14 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
 
   if (!sports.length) {
     return <p className="text-sm text-gray-500 p-4">Add the sports this ground offers in the Details tab first.</p>;
+  }
+
+  if (loaded && sports.length === 0) {
+    return (
+      <p className="text-sm text-gray-600 bg-amber-50 border border-amber-200 rounded-md p-3" data-testid="allot-no-sports">
+        No sports set up for this ground yet. Open <b>Details</b>, tick the sports played here (and their pitch formats), tap Save details, then come back to Allot.
+      </p>
+    );
   }
 
   return (

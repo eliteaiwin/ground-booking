@@ -37,7 +37,18 @@ interface ScheduleItem {
   created_by: string;
   creator_phone: string;
   moderators: { name: string; phone: string }[];
+  allotment_id?: number | null;
+  pitch_format?: string;
 }
+
+const toDetailsInput = (d: GroundDetails): GroundDetailsInput => ({
+        ...EMPTY_GROUND_DETAILS,
+        address: d.address, latitude: d.latitude, longitude: d.longitude, maps_url: d.maps_url,
+        owner_name: d.owner_name, owner_phone: d.owner_phone, owner_email: d.owner_email, country_code: d.country_code || '91', contact_public: d.contact_public,
+        opening_hours: d.opening_hours, price_info: d.price_info, description: d.description,
+        sports: d.sports, amenities: d.amenities, amenities_other: d.amenities_other,
+        sport_details: d.sport_details || {},
+});
 
 interface ScheduleData {
   ground_id: number;
@@ -159,6 +170,8 @@ export default function GroundManagement({ onBack }: Props) {
     user_phone: string;
     user_email: string;
     sport_type: string;
+    groups?: { id: number; name: string; days: string[] }[];
+    days?: string[];
   }
   const [groundModerators, setGroundModerators] = useState<GroundModerator[]>([]);
   const [moderatorsLoading, setModeratorsLoading] = useState(false);
@@ -204,6 +217,9 @@ export default function GroundManagement({ onBack }: Props) {
   const [detailsInitial, setDetailsInitial] = useState<GroundDetailsInput | null>(null);
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsMessage, setDetailsMessage] = useState('');
+  const [detailsVersion, setDetailsVersion] = useState(0);
+  const [allotting, setAllotting] = useState<number | null>(null);
+  const [allotErrors, setAllotErrors] = useState<Record<number, string>>({});
   const [pendingGrounds, setPendingGrounds] = useState<{ id: number; display_name: string; address: string; owner_name: string; owner_phone: string; submitter_id: number | null; submitter_name: string; submitter_phone: string; sport_types: string[] }[]>([]);
   const [approvalUsers, setApprovalUsers] = useState<{ id: number; name: string; phone: string }[]>([]);
   const [managerPicks, setManagerPicks] = useState<Record<number, number[]>>({});
@@ -333,6 +349,10 @@ export default function GroundManagement({ onBack }: Props) {
   };
 
   useEffect(() => {
+    if (selectedGround && activeTab === 'moderators') loadGroundModerators(selectedGround.id);
+  }, [activeTab]);
+
+  useEffect(() => {
     if (selectedGround) {
       loadSchedule(selectedGround.id);
       loadJoinRequests(selectedGround.id);
@@ -347,14 +367,7 @@ export default function GroundManagement({ onBack }: Props) {
     setDetailsInitial(null);
     setDetailsMessage('');
     api.getGroundDetails(selectedGround.id)
-      .then((d: GroundDetails) => setDetailsInitial({
-        ...EMPTY_GROUND_DETAILS,
-        address: d.address, latitude: d.latitude, longitude: d.longitude, maps_url: d.maps_url,
-        owner_name: d.owner_name, owner_phone: d.owner_phone, owner_email: d.owner_email, country_code: d.country_code || '91', contact_public: d.contact_public,
-        opening_hours: d.opening_hours, price_info: d.price_info, description: d.description,
-        sports: d.sports, amenities: d.amenities, amenities_other: d.amenities_other,
-        sport_details: d.sport_details || {},
-      }))
+      .then((d: GroundDetails) => setDetailsInitial(toDetailsInput(d)))
       .catch(err => console.error('Failed to load ground details:', err));
   }, [selectedGround]);
 
@@ -431,11 +444,27 @@ export default function GroundManagement({ onBack }: Props) {
     setDetailsMessage('');
     try {
       await api.updateGroundDetails(selectedGround.id, values);
+      setDetailsInitial(toDetailsInput(await api.getGroundDetails(selectedGround.id)));
+      setDetailsVersion(v => v + 1);
       setDetailsMessage('Saved. Players can now see these details on the ground page.');
     } catch (err) {
       setDetailsMessage(err instanceof Error ? err.message : 'Failed to save details');
     } finally {
       setDetailsSaving(false);
+    }
+  };
+
+  const allotGame = async (gameId: number) => {
+    if (!selectedGround) return;
+    setAllotting(gameId);
+    setAllotErrors(prev => ({ ...prev, [gameId]: '' }));
+    try {
+      await api.allotGame(gameId);
+      await loadSchedule(selectedGround.id);
+    } catch (err) {
+      setAllotErrors(prev => ({ ...prev, [gameId]: err instanceof Error ? err.message : 'Could not allot' }));
+    } finally {
+      setAllotting(null);
     }
   };
 
@@ -1228,7 +1257,7 @@ export default function GroundManagement({ onBack }: Props) {
             <CardContent className="p-4">
               {detailsMessage && <div className="mb-3 bg-green-50 text-green-700 p-2 rounded-md text-sm">{detailsMessage}</div>}
               {detailsInitial ? (
-                <GroundDetailsForm key={selectedGround.id} initial={detailsInitial} submitLabel="Save details" saving={detailsSaving} onSubmit={saveGroundDetails} />
+                <GroundDetailsForm key={`${selectedGround.id}-${detailsVersion}`} initial={detailsInitial} submitLabel="Save details" saving={detailsSaving} onSubmit={saveGroundDetails} />
               ) : (
                 <p className="text-gray-500 text-center py-6">Loading details...</p>
               )}
@@ -1388,6 +1417,18 @@ export default function GroundManagement({ onBack }: Props) {
                             {mod.user_email && <span className="ml-2">{mod.user_email}</span>}
                           </p>
                           <Badge className="bg-purple-100 text-purple-700 text-xs mt-1">{mod.sport_type}</Badge>
+                          {mod.days && mod.days.length > 0 && (
+                            <p className="text-xs text-gray-600 mt-1" data-testid="mod-days">Manages: {mod.days.join(', ')}</p>
+                          )}
+                          {mod.groups && mod.groups.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {mod.groups.map(g => (
+                                <Badge key={g.id} className="bg-amber-100 text-amber-800 text-xs">
+                                  {g.name}{g.days.length ? ` (${g.days.join(', ')})` : ''}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => handleRemoveModFromGround(mod.id)}
@@ -1742,6 +1783,39 @@ export default function GroundManagement({ onBack }: Props) {
             </Button>
           </div>
         </div>
+
+        {(() => {
+          const now = Date.now();
+          const pending = (scheduleData?.schedule || []).filter(g =>
+            !g.allotment_id &&
+            new Date(`${g.game_date}T${(g.game_time || '00:00').slice(0, 5)}`).getTime() + (g.duration_minutes || 60) * 60000 > now &&
+            !['cancelled', 'completed', 'archived'].includes(g.status));
+          if (!pending.length) return null;
+          return (
+            <Card className="mb-4 border-amber-300 bg-amber-50" data-testid="unallotted-games">
+              <CardContent className="p-3 space-y-2">
+                <p className="text-sm font-semibold text-amber-800">
+                  ⚠ {pending.length} planned game{pending.length > 1 ? 's' : ''} not confirmed by the ground (no allotment yet)
+                </p>
+                {pending.map(g => (
+                  <div key={g.game_id} className="flex items-center justify-between gap-2 text-sm bg-white rounded-md border px-2 py-1.5">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{g.title}</p>
+                      <p className="text-xs text-gray-500">
+                        {g.game_date} {g.game_time} · {g.duration_minutes} min{g.pitch_format ? ` · ${g.pitch_format}` : ''} · started by {g.created_by}
+                      </p>
+                      {allotErrors[g.game_id] && <p className="text-xs text-red-600">{allotErrors[g.game_id]}</p>}
+                    </div>
+                    <Button size="sm" className="h-7 px-3 text-xs bg-amber-600 hover:bg-amber-700 shrink-0"
+                      disabled={allotting === g.game_id} onClick={() => allotGame(g.game_id)} data-testid={`allot-game-${g.game_id}`}>
+                      {allotting === g.game_id ? 'Allotting...' : `Allot to ${g.created_by.split(' ')[0]}`}
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-4">

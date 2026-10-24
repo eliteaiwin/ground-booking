@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { api } from '@/services/api';
 import { COUNTRY_CODES } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -140,6 +141,29 @@ export default function GroundDetailsForm({ initial, submitLabel, saving, onSubm
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [activeSport, setActiveSport] = useState(initial.sports[0] || '');
+  const [mapsStatus, setMapsStatus] = useState<'' | 'reading' | 'found' | 'failed'>('');
+  const resolvedUrl = useRef(initial.maps_url);
+
+  useEffect(() => {
+    const url = values.maps_url.trim();
+    if (!url) { setMapsStatus(''); return; }
+    if (url === resolvedUrl.current) return;
+    setMapsStatus('reading');
+    const timer = setTimeout(() => {
+      api.resolveMapsUrl(url)
+        .then((r: { latitude: number | null; longitude: number | null }) => {
+          resolvedUrl.current = url;
+          if (r.latitude != null && r.longitude != null) {
+            setValues(prev => prev.maps_url.trim() === url ? { ...prev, latitude: r.latitude, longitude: r.longitude } : prev);
+            setMapsStatus('found');
+          } else {
+            setMapsStatus('failed');
+          }
+        })
+        .catch(() => setMapsStatus('failed'));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [values.maps_url]);
 
   const set = <K extends keyof GroundDetailsInput>(key: K, value: GroundDetailsInput[K]) =>
     setValues(prev => ({ ...prev, [key]: value }));
@@ -177,9 +201,7 @@ export default function GroundDetailsForm({ initial, submitLabel, saving, onSubm
     onSubmit({ ...values, sport_details });
   };
 
-  const handleMapsUrl = (url: string) => {
-    setValues(prev => ({ ...prev, maps_url: url, latitude: url !== prev.maps_url ? null : prev.latitude, longitude: url !== prev.maps_url ? null : prev.longitude }));
-  };
+  const handleMapsUrl = (url: string) => set('maps_url', url);
 
   const hasPin = values.latitude != null && values.longitude != null;
 
@@ -209,7 +231,14 @@ export default function GroundDetailsForm({ initial, submitLabel, saving, onSubm
         )}
         <div className="space-y-1">
           <Label className="text-xs">Or paste a Google Maps link</Label>
-          <Input placeholder="https://maps.app.goo.gl/..." value={values.maps_url} onChange={e => handleMapsUrl(e.target.value)} />
+          <Input placeholder="https://maps.app.goo.gl/..." value={values.maps_url} onChange={e => handleMapsUrl(e.target.value)} data-testid="maps-url" />
+          {mapsStatus === 'reading' && <p className="text-xs text-gray-500">Reading location from the link...</p>}
+          {mapsStatus === 'found' && <p className="text-xs text-green-700" data-testid="maps-found">Location found and shown on the map above. Tap Save details to keep it.</p>}
+          {mapsStatus === 'failed' && (
+            <p className="text-xs text-red-600" data-testid="maps-failed">
+              Couldn't find a location in this link. In Google Maps open the ground, tap Share → Copy link, and paste that link (maps.app.goo.gl/...). Or use the pin button above.
+            </p>
+          )}
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Country (phone numbers from here show without a country code)</Label>
