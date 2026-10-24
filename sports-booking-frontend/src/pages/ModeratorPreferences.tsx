@@ -19,6 +19,7 @@ interface GameDefaults {
   default_quit_penalty_hours: number;
   default_potd_delay_minutes: number;
   allow_position_selection: boolean;
+  show_quit_penalty: boolean;
 }
 
 function GameDefaultsCard() {
@@ -102,6 +103,11 @@ function GameDefaultsCard() {
           <input type="checkbox" className="rounded border-gray-300" checked={defaults.allow_position_selection}
             onChange={e => save({ allow_position_selection: e.target.checked })} data-testid="allow-positions" />
           Let players choose a position when joining a game
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="rounded border-gray-300" checked={defaults.show_quit_penalty}
+            onChange={e => save({ show_quit_penalty: e.target.checked })} data-testid="show-quit-penalty" />
+          Show quit penalty (on Create Game and game pages)
         </label>
       </CardContent>
     </Card>

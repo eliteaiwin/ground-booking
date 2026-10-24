@@ -290,6 +290,7 @@ interface Game {
   is_past?: boolean;
   allow_position_selection?: boolean;
   ground_map_url?: string;
+  show_quit_penalty?: boolean;
   awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
   created_by: number;
@@ -924,7 +925,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             {game.fee_breakdown && showCostBreakdown && (
               <div className="ml-6"><FeeBreakdownTable breakdown={game.fee_breakdown} fees={gameFees} currency={currency} /></div>
             )}
-            {game.quit_penalty_hours > 0 && (
+            {game.quit_penalty_hours > 0 && game.show_quit_penalty && (
               <div className="flex items-center gap-2 text-orange-600">
                 <AlertTriangle size={16} /> <span>Quit penalty: Must pay if quitting within {game.quit_penalty_hours}h of game</span>
               </div>

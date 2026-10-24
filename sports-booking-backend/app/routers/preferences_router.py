@@ -73,6 +73,7 @@ class GameDefaultsRequest(BaseModel):
     default_quit_penalty_hours: Optional[int] = None
     default_potd_delay_minutes: Optional[int] = None
     allow_position_selection: Optional[bool] = None
+    show_quit_penalty: Optional[bool] = None
 
 
 async def game_defaults(db: aiosqlite.Connection) -> dict:
@@ -96,6 +97,7 @@ async def game_defaults(db: aiosqlite.Connection) -> dict:
         "default_quit_penalty_hours": int(await get_app_setting(db, "default_quit_penalty_hours", "0") or 0),
         "default_potd_delay_minutes": int(await get_app_setting(db, "default_potd_delay_minutes", "1440") or 1440),
         "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
+        "show_quit_penalty": (await get_app_setting(db, "show_quit_penalty", "false")) == "true",
     }
 
 
@@ -126,6 +128,8 @@ async def update_game_defaults(
         await set_app_setting(db, "default_potd_delay_minutes", str(req.default_potd_delay_minutes))
     if req.allow_position_selection is not None:
         await set_app_setting(db, "allow_position_selection", "true" if req.allow_position_selection else "false")
+    if req.show_quit_penalty is not None:
+        await set_app_setting(db, "show_quit_penalty", "true" if req.show_quit_penalty else "false")
     return await game_defaults(db)
 
 

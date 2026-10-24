@@ -85,6 +85,8 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [grounds, setGrounds] = useState<Ground[]>([]);
   const [paymentCollection, setPaymentCollection] = useState('offline');
   const [defaultPayee, setDefaultPayee] = useState<{ id: number; name: string; phone: string } | null>(null);
+  const [showQuitPenalty, setShowQuitPenalty] = useState(false);
+  const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
   const [showPayeeInfo, setShowPayeeInfo] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
@@ -113,7 +115,11 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         }
       }).catch(() => {}),
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
-      api.getGameDefaults().then((d: { default_payee: { id: number; name: string; phone: string } | null }) => setDefaultPayee(d.default_payee)).catch(() => {}),
+      api.getGameDefaults().then((d: { default_payee: { id: number; name: string; phone: string } | null; show_quit_penalty: boolean; default_quit_penalty_hours: number }) => {
+        setDefaultPayee(d.default_payee);
+        setShowQuitPenalty(d.show_quit_penalty);
+        setQuitPenaltyHours(String(d.default_quit_penalty_hours));
+      }).catch(() => {}),
       api.myAllotments().then((a: MyAllotment[]) => setAllotments(a)).catch(() => {}),
     ]);
   }, []);
@@ -221,6 +227,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         payment_timing: paymentTiming,
         duration_minutes: parseInt(durationMinutes) || 90,
         payment_mode: paymentTiming === 'before' ? 'prepaid' : 'postpaid',
+        ...(showQuitPenalty ? { quit_penalty_hours: parseInt(quitPenaltyHours) || 0 } : {}),
         payment_collection: paymentCollection,
         note_before_players: noteBefore || undefined,
         note_after_players: noteAfter || undefined,
@@ -449,6 +456,13 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                 </Select>
                 <p className="text-xs text-gray-500">Players set to "Pay first" in their profile must pay before their name is added.</p>
               </div>
+              {showQuitPenalty && (
+                <div className="space-y-2" data-testid="quit-penalty-field">
+                  <Label>Quit penalty (hours before game)</Label>
+                  <Input type="number" min="0" max="72" value={quitPenaltyHours} onChange={e => setQuitPenaltyHours(e.target.value)} />
+                  <p className="text-xs text-gray-500">Players who quit within this time before the game still pay their share.</p>
+                </div>
+              )}
               <div className="space-y-1" data-testid="default-payee">
                 <div className="text-sm text-gray-700 flex items-center gap-1.5">
                   <span>Payment Receiver: <strong>{defaultPayee ? defaultPayee.name : 'Not set'}</strong></span>

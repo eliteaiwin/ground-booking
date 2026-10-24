@@ -972,6 +972,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "duration_minutes": duration_minutes,
         "potd_congrats_delay_minutes": potd_delay_minutes,
         "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
+        "show_quit_penalty": (await get_app_setting(db, "show_quit_penalty", "false")) == "true",
         "is_archived": is_archived,
         "is_past": _game_has_ended(game),
         "created_by": game["created_by"],
@@ -1085,6 +1086,8 @@ async def create_game(
     defaults = await game_defaults(db)
     potd_delay = req.potd_congrats_delay_minutes or defaults["default_potd_delay_minutes"]
     quit_penalty = req.quit_penalty_hours if req.quit_penalty_hours is not None else defaults["default_quit_penalty_hours"]
+    if not defaults["show_quit_penalty"]:
+        quit_penalty = 0
     payee_id = req.payee_user_id or defaults["default_payee_user_id"]
 
     series_name = (req.series_name or req.ground_name).strip()
@@ -1122,6 +1125,8 @@ async def create_game_series(
     await require_admin_or_moderator(user_id, db)
     defaults = await game_defaults(db)
     quit_penalty = req.quit_penalty_hours if req.quit_penalty_hours is not None else defaults["default_quit_penalty_hours"]
+    if not defaults["show_quit_penalty"]:
+        quit_penalty = 0
     payee_id = req.payee_user_id or defaults["default_payee_user_id"]
 
     day_map = {
