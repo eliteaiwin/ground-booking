@@ -118,6 +118,9 @@ export const api = {
   login: (data: { identifier: string; password: string }) =>
     request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 
+  requestPhoneVerification: () => request('/api/auth/me/verify-phone/request', { method: 'POST' }),
+  confirmPhoneVerification: (otp: string) =>
+    request('/api/auth/me/verify-phone/confirm', { method: 'POST', body: JSON.stringify({ otp }) }),
   requestOTP: (data: { phone: string; country_code?: string }) =>
     request('/api/auth/otp/request', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -142,7 +145,7 @@ export const api = {
   updateProfile: (data: {
     first_name?: string; last_name?: string; email?: string; phone?: string;
     notification_preference?: string; sports?: string[]; locations?: string[];
-    sport_positions?: Record<string, string[]>; currency?: string; display_name?: string; gender?: string; date_of_birth?: string;
+    sport_positions?: Record<string, string[]>; currency?: string; upi_id?: string; display_name?: string; gender?: string; date_of_birth?: string;
   }) =>
     request('/api/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
 

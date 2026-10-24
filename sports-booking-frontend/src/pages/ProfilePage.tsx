@@ -9,9 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import PayoutAccountCard from '@/components/PayoutAccountCard';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, User, Phone, Mail, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X, Trash2, ImageIcon } from 'lucide-react';
+import { ArrowLeft, User, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X, Trash2, ImageIcon, Wallet, ChevronDown } from 'lucide-react';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin', 'Pune'];
@@ -79,9 +78,39 @@ export default function ProfilePage({ onBack }: Props) {
   const [locations, setLocations] = useState<string[]>(user?.locations || []);
   const [sportPositions, setSportPositions] = useState<Record<string, string[]>>(user?.sport_positions || {});
   const [currency, setCurrency] = useState(user?.currency || 'Rs');
+  const [upiId, setUpiId] = useState(user?.upi_id || '');
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paySaving, setPaySaving] = useState(false);
+  const [payMsg, setPayMsg] = useState('');
+  const [payErr, setPayErr] = useState('');
+  const savePayment = async () => {
+    setPaySaving(true); setPayMsg(''); setPayErr('');
+    try {
+      await api.updateProfile({ currency, upi_id: upiId.trim() });
+      await refreshUser();
+      setPayMsg('Payment details saved.');
+    } catch (e) {
+      setPayErr(e instanceof Error ? e.message : 'Could not save');
+    } finally {
+      setPaySaving(false);
+    }
+  };
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState('');
+  const [verifyErr, setVerifyErr] = useState('');
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [locationOptions, setLocationOptions] = useState<string[]>(ALL_LOCATIONS);
+  const [locIsOther, setLocIsOther] = useState(false);
+  useEffect(() => {
+    api.listLocations()
+      .then((r: { name: string }[]) => { if (r.length) setLocationOptions(r.map(l => l.name)); })
+      .catch(() => {});
+  }, []);
+  const currentLoc = locations[0] || '';
+  const showOtherLoc = locIsOther || (!!currentLoc && !locationOptions.includes(currentLoc));
   const [uploadingPic, setUploadingPic] = useState(false);
   const [profilePic, setProfilePic] = useState(user?.profile_pic || '');
   const [persona, setPersona] = useState<PersonaData | null>(null);
@@ -215,9 +244,6 @@ export default function ProfilePage({ onBack }: Props) {
     });
   };
 
-  const toggleLocation = (loc: string) => {
-    setLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc]);
-  };
 
   const togglePosition = (sport: string, position: string) => {
     setSportPositions(prev => {
@@ -229,9 +255,39 @@ export default function ProfilePage({ onBack }: Props) {
     });
   };
 
-  const handleVerifyPhone = () => {
-    setVerifyMsg('Verification OTP sent! (Demo: auto-verified)');
-    setTimeout(() => setVerifyMsg(''), 3000);
+  const handleVerifyPhone = async () => {
+    setVerifyErr('');
+    setVerifyMsg('');
+    if (phone !== user?.phone || countryCode !== (user?.country_code || '91')) {
+      setVerifyErr('Tap Save first, then verify the new number.');
+      return;
+    }
+    setVerifyBusy(true);
+    try {
+      await api.requestPhoneVerification();
+      setOtpSent(true);
+      setVerifyMsg(`Code sent by SMS to ${formatPhone(user?.phone)}.`);
+    } catch (e) {
+      setVerifyErr(e instanceof Error ? e.message : 'Could not send the code');
+    } finally {
+      setVerifyBusy(false);
+    }
+  };
+
+  const handleConfirmOtp = async () => {
+    setVerifyErr('');
+    setVerifyBusy(true);
+    try {
+      await api.confirmPhoneVerification(otpCode);
+      await refreshUser();
+      setOtpSent(false);
+      setOtpCode('');
+      setVerifyMsg('Mobile number verified.');
+    } catch (e) {
+      setVerifyErr(e instanceof Error ? e.message : 'Invalid code');
+    } finally {
+      setVerifyBusy(false);
+    }
   };
 
   const handleSave = async () => {
@@ -312,7 +368,10 @@ export default function ProfilePage({ onBack }: Props) {
                 <ImageCropDialog file={cropFile} onCancel={() => setCropFile(null)} onDone={uploadPic} />
               </div>
               <div>
-                <CardTitle className="text-lg">{user?.first_name} {user?.last_name}</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-1">
+                  {user?.first_name} {user?.last_name}
+                  {user?.phone_verified ? <ShieldCheck size={16} className="text-green-600" aria-label="Mobile verified" data-testid="name-verified" /> : null}
+                </CardTitle>
                 {user?.user_code && (
                   <p className="text-xs text-gray-500 font-mono">{user.user_code}</p>
                 )}
@@ -325,28 +384,6 @@ export default function ProfilePage({ onBack }: Props) {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-2 text-gray-500 text-sm"><Phone size={14} /> {formatPhone(user?.phone)}
-              {user?.phone_verified ? (
-                <Badge className="bg-green-100 text-green-700 text-xs"><ShieldCheck size={10} className="mr-1" />Verified</Badge>
-              ) : (
-                <Badge variant="outline" className="text-xs text-orange-600">Not Verified</Badge>
-              )}
-            </div>
-            {user?.email && <div className="flex items-center gap-2 text-gray-500 text-sm"><Mail size={14} /> {user?.email}</div>}
-            <div className="flex items-center gap-2 text-gray-500 text-sm">
-              {(user?.notification_preference || '').includes('whatsapp') && (
-                <><MessageCircle size={14} className="text-green-500" /><span className="text-green-600 text-xs">WhatsApp</span></>
-              )}
-              {(user?.notification_preference || '').includes('sms') && (
-                <><MessageSquare size={14} className="text-blue-500" /><span className="text-blue-600 text-xs">SMS</span></>
-              )}
-              <span>Notifications</span>
-            </div>
-            {user?.currency && (
-              <div className="flex items-center gap-2 text-gray-500 text-sm">
-                <span className="font-medium">Currency:</span> {user.currency}
-              </div>
-            )}
             {user?.sports && user.sports.length > 0 && (
               <div className="flex items-center gap-2 text-gray-500 text-sm flex-wrap">
                 <span className="font-medium">Sports:</span>
@@ -395,6 +432,38 @@ export default function ProfilePage({ onBack }: Props) {
               <p className="text-xs text-gray-400">Shown to other players in game lists. Leave empty to use your first name.</p>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="prof-phone" className="flex items-center gap-2">Mobile Number
+                {user?.phone_verified && phone === user?.phone ? (
+                  <span className="inline-flex items-center text-xs text-green-700 font-medium" data-testid="phone-verified">
+                    <ShieldCheck size={12} className="mr-0.5" />Verified
+                  </span>
+                ) : null}
+              </Label>
+              <div className="flex gap-2">
+                <select aria-label="Country code" data-testid="profile-country" value={countryCode} onChange={e => setCountryCode(e.target.value)}
+                  className="border rounded-md px-2 text-sm bg-white w-24 shrink-0">
+                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>+{c.code} {c.name}</option>)}
+                </select>
+                <Input id="prof-phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 min-w-0" />
+                {!(user?.phone_verified && phone === user?.phone) && (
+                  <Button type="button" size="sm" variant="outline" onClick={handleVerifyPhone} disabled={verifyBusy} data-testid="verify-phone"
+                    className="text-green-600 border-green-300 hover:bg-green-50 shrink-0">
+                    <ShieldCheck size={14} className="mr-1" /> Verify
+                  </Button>
+                )}
+              </div>
+              {otpSent && (
+                <div className="flex gap-2">
+                  <Input data-testid="verify-otp" inputMode="numeric" maxLength={6} placeholder="Enter the code from SMS"
+                    value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))} className="flex-1 min-w-0" />
+                  <Button type="button" size="sm" onClick={handleConfirmOtp} disabled={verifyBusy || otpCode.length < 4} data-testid="verify-confirm"
+                    className="bg-green-600 hover:bg-green-700 shrink-0">Confirm</Button>
+                </div>
+              )}
+              {verifyMsg && <p className="text-xs text-green-600">{verifyMsg}</p>}
+              {verifyErr && <p className="text-xs text-red-600">{verifyErr}</p>}
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="prof-gender">Gender</Label>
               <select id="prof-gender" data-testid="prof-gender" className="w-full border rounded-md h-9 px-2 text-sm bg-white"
                 value={gender} onChange={(e) => setGender(e.target.value)}>
@@ -414,21 +483,6 @@ export default function ProfilePage({ onBack }: Props) {
               <Input id="prof-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="prof-phone">Mobile Number</Label>
-              <div className="flex gap-2">
-                <select aria-label="Country code" data-testid="profile-country" value={countryCode} onChange={e => setCountryCode(e.target.value)}
-                  className="border rounded-md px-2 text-sm bg-white w-24 shrink-0">
-                  {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>+{c.code} {c.name}</option>)}
-                </select>
-                <Input id="prof-phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="flex-1 min-w-0" />
-                <Button type="button" size="sm" variant="outline" onClick={handleVerifyPhone}
-                  className="text-green-600 border-green-300 hover:bg-green-50 shrink-0">
-                  <ShieldCheck size={14} className="mr-1" /> Verify
-                </Button>
-              </div>
-              {verifyMsg && <p className="text-xs text-green-600">{verifyMsg}</p>}
-            </div>
-            <div className="space-y-2">
               <Label>Communication Preference</Label>
               <p className="text-xs text-gray-400">Select one or both</p>
               <div className="flex gap-4">
@@ -446,16 +500,21 @@ export default function ProfilePage({ onBack }: Props) {
             </div>
             <div className="space-y-2">
               <Label>Your Location</Label>
-              <div className="flex flex-wrap gap-2">
-                {ALL_LOCATIONS.map(loc => (
-                  <button key={loc} type="button" onClick={() => toggleLocation(loc)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                      locations.includes(loc)
-                        ? 'bg-green-600 text-white border-green-600'
-                        : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
-                    }`}>{loc}</button>
-                ))}
-              </div>
+              <select data-testid="profile-location" aria-label="Your Location"
+                value={showOtherLoc ? '__other' : currentLoc}
+                onChange={(e) => {
+                  if (e.target.value === '__other') { setLocIsOther(true); setLocations([]); }
+                  else { setLocIsOther(false); setLocations(e.target.value ? [e.target.value] : []); }
+                }}
+                className="w-full border rounded-md px-3 py-2 text-sm bg-white">
+                <option value="">Select your location</option>
+                {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                <option value="__other">Other</option>
+              </select>
+              {showOtherLoc && (
+                <Input data-testid="profile-location-other" placeholder="Type your location" maxLength={60}
+                  value={currentLoc} onChange={(e) => setLocations(e.target.value ? [e.target.value] : [])} />
+              )}
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -516,23 +575,11 @@ export default function ProfilePage({ onBack }: Props) {
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <Label>Default Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map(c => (
-                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <Button onClick={handleSave} className="w-full bg-green-600 hover:bg-green-700" disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </Button>
           </CardContent>
         </Card>
-        {user?.roles.some(r => r === 'moderator' || r === 'admin') && <PayoutAccountCard />}
         {/* My Photos - Sport-Specific */}
         <Card>
           <CardHeader>
@@ -638,6 +685,39 @@ export default function ProfilePage({ onBack }: Props) {
               </div>
             )}
           </CardContent>
+        </Card>
+
+        <Card data-testid="payment-section">
+          <CardHeader className="cursor-pointer select-none" onClick={() => setPaymentOpen(o => !o)}>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Wallet size={18} className="text-green-600" /> Payment
+              <ChevronDown size={18} className={`ml-auto text-gray-400 transition-transform ${paymentOpen ? 'rotate-180' : ''}`} />
+            </CardTitle>
+          </CardHeader>
+          {paymentOpen && (
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>Default Currency</Label>
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CURRENCIES.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="prof-upi">UPI ID</Label>
+                <Input id="prof-upi" data-testid="profile-upi" value={upiId} placeholder="e.g. 98xxxxxx45@okhdfcbank" onChange={(e) => setUpiId(e.target.value)} />
+              </div>
+              {payMsg && <p className="text-xs text-green-600">{payMsg}</p>}
+              {payErr && <p className="text-xs text-red-600">{payErr}</p>}
+              <Button onClick={savePayment} className="w-full bg-green-600 hover:bg-green-700" disabled={paySaving} data-testid="payment-save">
+                {paySaving ? 'Saving...' : 'Save payment details'}
+              </Button>
+            </CardContent>
+          )}
         </Card>
 
         {/* Player Persona */}

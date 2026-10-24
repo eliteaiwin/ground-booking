@@ -18,6 +18,7 @@ interface User {
   locations: string[];
   sport_positions: Record<string, string[]>;
   currency: string;
+  upi_id?: string;
   phone_verified: number;
   profile_pic: string;
   roles: string[];

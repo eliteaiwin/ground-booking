@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -115,6 +116,7 @@ class UpdateProfileRequest(BaseModel):
     locations: Optional[List[str]] = None
     sport_positions: Optional[dict] = None
     currency: Optional[str] = None
+    upi_id: Optional[str] = None
     display_name: Optional[str] = None
     date_of_birth: Optional[str] = None
     gender: Optional[str] = None
@@ -355,6 +357,10 @@ async def verify_otp(req: OTPVerifyRequest, db: aiosqlite.Connection = Depends(g
         raise
     except Exception:
         pass
+
+    if login_cc is not None:
+        await db.execute("UPDATE users SET phone_verified = 1 WHERE id = ?", (user["id"],))
+        await db.commit()
 
     token = create_access_token(user["id"])
     return {"token": token, "user_id": user["id"]}
@@ -630,12 +636,14 @@ async def get_profile(
     # Get currency and phone_verified safely
     currency = "Rs"
     phone_verified = 0
+    upi_id = ""
     try:
-        cursor2 = await db.execute("SELECT currency, phone_verified FROM users WHERE id = ?", (user_id,))
+        cursor2 = await db.execute("SELECT currency, phone_verified, payout_upi FROM users WHERE id = ?", (user_id,))
         extra = await cursor2.fetchone()
         if extra:
             currency = extra["currency"] or "Rs"
             phone_verified = extra["phone_verified"] or 0
+            upi_id = extra["payout_upi"] or ""
     except Exception:
         pass
 
@@ -684,6 +692,7 @@ async def get_profile(
         "sport_positions": sport_positions,
         "profile_pic": profile_pic,
         "currency": currency,
+        "upi_id": upi_id,
         "phone_verified": phone_verified,
         "roles": roles,
         "created_at": user["created_at"]
@@ -755,6 +764,12 @@ async def update_profile(
     if req.currency is not None:
         updates.append("currency = ?")
         params.append(req.currency)
+    if req.upi_id is not None:
+        upi = req.upi_id.strip()
+        if upi and not re.fullmatch(r"[A-Za-z0-9.\-_]{2,256}@[A-Za-z]{2,64}", upi):
+            raise HTTPException(status_code=400, detail="Enter a valid UPI ID, e.g. 98xxxxxx45@okhdfcbank")
+        updates.append("payout_upi = ?")
+        params.append(upi)
     if req.phone is not None or req.country_code is not None:
         current = await (await db.execute("SELECT phone, country_code FROM users WHERE id = ?", (user_id,))).fetchone()
         cc, national = split_phone(req.phone if req.phone is not None else current["phone"],
@@ -778,6 +793,33 @@ async def update_profile(
     await db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
     await db.commit()
     return {"message": "Profile updated"}
+
+
+class PhoneVerifyConfirm(BaseModel):
+    otp: str
+
+
+async def _own_phone_otp_id(db: aiosqlite.Connection, user_id: int) -> str:
+    row = await (await db.execute("SELECT phone, country_code FROM users WHERE id = ?", (user_id,))).fetchone()
+    phone = (row["phone"] or "") if row else ""
+    if not phone or phone.startswith("e-"):
+        raise HTTPException(status_code=400, detail="Add your mobile number and tap Save first")
+    return e164(row["country_code"] or "91", phone)
+
+
+@router.post("/me/verify-phone/request")
+async def request_phone_verification(user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    """Send the usual OTP to the user's saved mobile number."""
+    return await send_otp(await _own_phone_otp_id(db, user_id))
+
+
+@router.post("/me/verify-phone/confirm")
+async def confirm_phone_verification(req: PhoneVerifyConfirm, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    if not await check_otp(await _own_phone_otp_id(db, user_id), req.otp.strip()):
+        raise HTTPException(status_code=400, detail="Invalid code, please try again")
+    await db.execute("UPDATE users SET phone_verified = 1 WHERE id = ?", (user_id,))
+    await db.commit()
+    return {"phone_verified": 1}
 
 
 @router.post("/me/profile-pic")
