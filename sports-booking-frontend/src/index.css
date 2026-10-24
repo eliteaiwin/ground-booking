@@ -7,3 +7,28 @@
   }
 }
 
+
+/* Keep the app clear of the iPhone notch/status bar and home indicator, and inside the screen width. */
+@layer base {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+  body {
+    background-color: theme("colors.gray.50");
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #root {
+    width: 97%;
+    margin-inline: auto;
+  }
+  /* iOS gives date/time inputs a fixed intrinsic width that overflows narrow cards. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+  }
+}

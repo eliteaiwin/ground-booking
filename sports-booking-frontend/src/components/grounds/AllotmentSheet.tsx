@@ -278,7 +278,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
       </div>
 
       {draft && (
-        <div className="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-2xl p-4 max-w-lg mx-auto rounded-t-xl space-y-3">
+        <div className="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-w-lg mx-auto rounded-t-xl space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Allot {draft.label} on {date}</h3>
             <button type="button" aria-label="Close" onClick={() => setDraft(null)}><X size={18} /></button>
@@ -339,7 +339,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
       )}
 
       {selected && (
-        <div className="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-2xl p-4 max-w-lg mx-auto rounded-t-xl space-y-2 text-sm">
+        <div className="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-w-lg mx-auto rounded-t-xl space-y-2 text-sm">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">{selected.pitch_label} · {selected.start.slice(11)}–{selected.end.slice(11)}</h3>
             <button type="button" aria-label="Close" onClick={() => setSelected(null)}><X size={18} /></button>
