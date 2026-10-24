@@ -44,7 +44,8 @@ async def get_notifications(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     cursor = await db.execute(
-        """SELECT n.*, g.title as game_title, g.sport_type 
+        """SELECT n.*, g.title as game_title, g.sport_type, g.status as game_status,
+                  g.game_date, g.game_time
            FROM notifications n LEFT JOIN games g ON n.game_id = g.id 
            WHERE n.user_id = ? ORDER BY n.created_at DESC LIMIT 50""",
         (user_id,)
@@ -56,6 +57,9 @@ async def get_notifications(
             "game_id": n["game_id"],
             "game_title": n["game_title"],
             "sport_type": n["sport_type"],
+            "game_status": n["game_status"] or "",
+            "game_date": n["game_date"] or "",
+            "game_time": n["game_time"] or "",
             "type": n["type"],
             "message": n["message"],
             "is_read": bool(n["is_read"]),

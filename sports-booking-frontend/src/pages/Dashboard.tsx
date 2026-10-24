@@ -36,6 +36,10 @@ interface Notification {
   created_at: string;
   game_title: string;
   sport_type: string;
+  game_id?: number | null;
+  game_status?: string;
+  game_date?: string;
+  game_time?: string;
 }
 
 const formatNamePhone = (name: string, phone?: string) => {
@@ -138,6 +142,17 @@ export default function Dashboard({ onNavigate }: Props) {
     await api.markAllRead();
     setNotifications(notifications.map(n => ({ ...n, is_read: true })));
     setUnreadCount(0);
+  };
+
+  const openFromNotification = (n: Notification) => {
+    if (!n.game_id) return;
+    const start = new Date(`${n.game_date}T${(n.game_time || '00:00').slice(0, 5)}`).getTime();
+    const open = !!n.game_date && ['draft', 'voting_open'].includes(n.game_status || '') && start > Date.now();
+    if (!open) {
+      window.alert('Too late! This game has already started or is no longer open for nomination.');
+      return;
+    }
+    onNavigate('game-detail', n.game_id);
   };
 
   const activeGames = games.filter(g => !g.is_archived);
@@ -633,7 +648,21 @@ export default function Dashboard({ onNavigate }: Props) {
                   <div className="flex items-start gap-2">
                     {notif.sport_type && sportIcon(notif.sport_type)}
                     <div className="flex-1">
-                      <p className="text-sm text-gray-800">{notif.message}</p>
+                      {notif.game_id && /Join now!?$/.test(notif.message) ? (
+                        <p className="text-sm text-gray-800">
+                          {notif.message.replace(/Join now!?$/, '')}
+                          <button
+                            type="button"
+                            className="font-semibold text-green-700 underline hover:text-green-800"
+                            onClick={() => openFromNotification(notif)}
+                            data-testid="notif-join"
+                          >
+                            Join now!
+                          </button>
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-800">{notif.message}</p>
+                      )}
                       <p className="text-xs text-gray-400 mt-1">
                         {new Date(notif.created_at).toLocaleString()}
                       </p>
