@@ -56,6 +56,15 @@ const longDateTime = (ts?: string | null): string => {
   return `${d.getDate()}-${d.toLocaleString('en-US', { month: 'short' })} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 
+const initiatedDateTime = (ts?: string | null): string => {
+  if (!ts) return '';
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : `${ts.replace(' ', 'T')}Z`);
+  if (isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  const h = d.getHours() % 12 || 12;
+  return `${p(d.getDate())}-${d.toLocaleString('en-US', { month: 'short' })}-${p(d.getFullYear() % 100)} ${h}:${p(d.getMinutes())} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
+};
+
 function nomination(player: Player): { tone: keyof typeof NOMINATION_COLOR; text: string } {
   const who = player.display_name || player.name.split(' ')[0];
   const when = longDateTime(player.joined_at);
@@ -261,6 +270,7 @@ interface Game {
   payee: { id: number; name: string; phone: string } | null;
   created_by: number;
   created_by_name: string;
+  created_at?: string;
   selected_players: Player[];
   waiting_list: Player[];
   teams: Team[];
@@ -842,7 +852,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
         )}
 
         <Card>
-          <CardContent className="p-4 space-y-3">
+          <CardContent className="p-4 space-y-1.5">
             <div className="flex items-center gap-2 text-gray-600"><MapPin size={16} /> <span>{game.ground_name}{game.pitch_format && ` · ${pitchLabel(game.pitch_format, game.pitch_number)}`}</span></div>
             {(isModerator || isAdmin) && game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived && new Date(`${game.game_date}T${game.game_time || '23:59'}`) > new Date() && (
               <div className={`text-xs rounded px-2 py-1 ${game.ground_confirmed ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-800'}`}>
@@ -889,7 +899,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 </button>
               </div>
             )}
-            <p className="text-xs text-gray-400">Created by {game.created_by_name}</p>
+            <p className="text-xs text-gray-400 pt-1">
+              Game initiated by {game.created_by_name}{initiatedDateTime(game.created_at) && ` on ${initiatedDateTime(game.created_at)}`}
+            </p>
           </CardContent>
         </Card>
 
