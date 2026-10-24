@@ -548,8 +548,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
       } catch {
         setShowQuitConfirm(true);
       }
-    } else if (window.confirm('Are you sure you want to remove your name from this game?')) {
-      handleAction('quit', () => api.quitGame(game!.id));
+    } else {
+      setQuitPenaltyInfo(null);
+      setShowQuitConfirm(true);
     }
   };
 
@@ -896,9 +897,10 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     You will still need to pay {currency}{game.cost_per_person} even if you quit now.
                   </p>
                 </div>
-              ) : (
-                <p className="text-sm text-gray-700 mb-3">Are you sure you want to remove your name from this game?</p>
-              )}
+              ) : null}
+              <p className="text-sm text-red-700 font-medium mb-3" data-testid="quit-warning">
+                Are you sure you want to Quit? once done, you go in the queue last if you want to rejoin.
+              </p>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setShowQuitConfirm(false)}>Cancel</Button>
                 <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={confirmQuit}>
