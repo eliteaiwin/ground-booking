@@ -7,9 +7,10 @@ The new build adds Sign in with Apple as a login option on the login screen (sho
 
 Guideline 2.1 – Information Needed
 
-1. Screen recordings (made on a physical iPhone 13 Pro Max)
-- Recording 1 (attached, 28 s): the app opened from TestFlight, then Sign in with Apple with Face ID. The Apple sheet offers Share My Email and Hide My Email. The user lands on the Dashboard with no errors.
-- Recording 2 (attached): [launch from the Home Screen, Login with OTP using demo phone 9990000001 and code 246810, Dashboard, open and join a game, game detail (teams, payments, discussion), Profile, Profile > Delete Account (cancel at the confirmation step)]
+1. Screen recordings (made on a physical iPhone 13 Pro Max, iOS 26.7.2, TestFlight build 1.0.34)
+- Recording 1 – Sign in with Apple (28 s): the app opens, the user taps Sign in with Apple, and the Apple sheet offers Share My Email or Hide My Email. The user confirms with Face ID and lands on the Dashboard.
+- Recording 2 – Login and joining a game (61 s): the user taps Login with OTP and enters the demo phone 9990000001. A mistyped 9-digit number is first rejected by the app's validation. The user enters the code 246810 and reaches the Dashboard, then opens an upcoming game and taps Nominate Self to join it. A first-time-on-this-ground deposit notice appears. The recording then shows the Confirmed Players list (the user marked "You"), the Discussion section (Chat and Photos & Videos), and a player profile with masked contact details.
+- Recording 3 – Account deletion (21 s): Profile menu > Edit Profile > Delete My Account. The confirmation explains the 90-day grace period and permanent deletion, and offers Cancel or Confirm Delete.
 The app requests no sensitive permissions (no location, camera, contacts or tracking). There are no purchases or subscriptions.
 
 2. Devices and operating systems tested
