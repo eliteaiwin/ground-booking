@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, User, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X, Trash2, ImageIcon, Wallet, ChevronDown } from 'lucide-react';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
+const canonSport = (s: string) => ALL_SPORTS.find(a => a.toLowerCase() === s.toLowerCase()) || s;
 const ALL_LOCATIONS = ['Bangalore', 'Chennai', 'Delhi', 'Gurgaon', 'Noida', 'Hyderabad', 'Cochin', 'Pune'];
 
 const SPORT_POSITIONS: Record<string, string[]> = {
@@ -229,7 +230,7 @@ export default function ProfilePage({ onBack }: Props) {
   };
 
   const addSport = (sport: string) => {
-    if (!sports.includes(sport)) {
+    if (!sports.some(x => x.toLowerCase() === sport.toLowerCase())) {
       setSports(prev => [...prev, sport]);
     }
   };
@@ -543,7 +544,7 @@ export default function ProfilePage({ onBack }: Props) {
                   </div>
                   <p className="text-xs text-gray-500 mb-2">Select your positions:</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {(SPORT_POSITIONS[sport] || []).map(pos => (
+                    {(SPORT_POSITIONS[canonSport(sport)] || []).map(pos => (
                       <button key={pos} type="button" onClick={() => togglePosition(sport, pos)}
                         className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
                           (sportPositions[sport] || []).includes(pos)
@@ -565,7 +566,7 @@ export default function ProfilePage({ onBack }: Props) {
                 <div className="border border-dashed border-gray-300 rounded-lg p-3">
                   <p className="text-xs text-gray-500 mb-2">Add a sport:</p>
                   <div className="flex flex-wrap gap-2">
-                    {ALL_SPORTS.filter(s => !sports.includes(s)).map(sport => (
+                    {ALL_SPORTS.filter(s => !sports.some(x => x.toLowerCase() === s.toLowerCase())).map(sport => (
                       <button key={sport} type="button" onClick={() => addSport(sport)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border border-gray-300 bg-white text-gray-600 hover:border-green-400 hover:bg-green-50 transition-all">
                         <Plus size={12} /> {sport}
