@@ -215,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithOTP = async (phone: string, otp: string, countryCode?: string) => {
     const res = await api.verifyOTP({ phone, otp, country_code: countryCode });
     localStorage.setItem('token', res.token);
+    localStorage.setItem('login_via', phone.includes('@') ? 'email' : 'phone');
     await refreshUser();
     setIsAddingAccount(false);
   };
@@ -222,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = async (idToken: string) => {
     const res = await api.googleAuth({ id_token: idToken });
     localStorage.setItem('token', res.token);
+    localStorage.setItem('login_via', 'email');
     await refreshUser();
     setIsAddingAccount(false);
   };
@@ -229,6 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithApple = async (identityToken: string, givenName?: string | null, familyName?: string | null) => {
     const res = await api.appleAuth({ identity_token: identityToken, given_name: givenName, family_name: familyName });
     localStorage.setItem('token', res.token);
+    localStorage.setItem('login_via', 'email');
     await refreshUser();
     setIsAddingAccount(false);
   };

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { maskedPhoneText } from '@/lib/player';
+import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
@@ -205,14 +206,19 @@ export default function Dashboard({ onNavigate }: Props) {
                           {user?.first_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-800 truncate">{formatNamePhone(`${user?.first_name || ''} ${user?.last_name || ''}`.trim(), user?.phone)}</p>
+                          <p className="text-sm font-semibold text-gray-800 truncate" data-testid="menu-user">
+                            {`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.name || 'User'}
+                          </p>
+                          <p className="text-xs text-gray-600 truncate">
+                            {(localStorage.getItem('login_via') === 'email' || !user?.phone) ? (user?.email || formatPhone(user?.phone)) : formatPhone(user?.phone)}
+                          </p>
                         </div>
                       </div>
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {user?.roles.map(role => (
-                          <Badge key={role} variant={role === activeRole ? "default" : "secondary"} className="text-xs" style={role === activeRole ? { backgroundColor: activeTheme.primary_color } : undefined}>{roleDisplayNames[role] || role}</Badge>
-                        ))}
-                      </div>
+                      {activeRole && (
+                        <p className="text-xs text-gray-700 mt-1" data-testid="menu-role">
+                          Role: <span className="font-semibold">{roleDisplayNames[activeRole] || activeRole}</span>
+                        </p>
+                      )}
                     </div>
 
                     {/* Menu items */}
