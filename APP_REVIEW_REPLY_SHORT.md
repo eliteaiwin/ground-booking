@@ -7,14 +7,13 @@ The new build adds Sign in with Apple as a login option on the login screen (sho
 
 Guideline 2.1 – Information Needed
 
-1. Screen recording
-[PASTE LINK TO RECORDING MADE ON A PHYSICAL iPHONE RUNNING THE LATEST iOS]
-The recording starts at app launch and shows: first login with SMS OTP (account is created automatically), Sign in with Apple, login with the demo account, Dashboard, joining a game, game detail (teams, payments, discussion), Profile, and Profile > Delete Account. The app requests no sensitive permissions (no location, camera, contacts, or tracking). There are no purchases or subscriptions.
+1. Screen recordings (made on a physical iPhone 13 Pro Max)
+- Recording 1 (attached, 28 s): the app opened from TestFlight, then Sign in with Apple with Face ID. The Apple sheet offers Share My Email and Hide My Email. The user lands on the Dashboard with no errors.
+- Recording 2 (attached): [launch from the Home Screen, Login with OTP using demo phone 9990000001 and code 246810, Dashboard, open and join a game, game detail (teams, payments, discussion), Profile, Profile > Delete Account (cancel at the confirmation step)]
+The app requests no sensitive permissions (no location, camera, contacts or tracking). There are no purchases or subscriptions.
 
 2. Devices and operating systems tested
-- iPhone [MODEL], iOS [VERSION]
-- iPad Air 11-inch (M3), iPadOS [VERSION]
-[Replace with the exact devices/OS versions you tested via TestFlight.]
+- iPhone 13 Pro Max, iOS [VERSION from Settings > General > About > iOS Version]
 
 3. App purpose and target audience
 Elite Turf Booking organizes amateur turf/sports games (soccer by default) for groups of players in India. Moderators schedule games at a ground, players confirm attendance, teams are split, ground costs are shared and tracked, and players vote Player of the Day. Rankings are recalculated after each game. Target audience: adult amateur players and their game organizers. The app is free with no in-app purchases or paid content.
