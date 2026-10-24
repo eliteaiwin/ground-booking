@@ -289,6 +289,7 @@ interface Game {
   is_archived: boolean;
   is_past?: boolean;
   allow_position_selection?: boolean;
+  ground_map_url?: string;
   awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
   created_by: number;
@@ -887,7 +888,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
         <Card>
           <CardContent className="p-4 space-y-1.5">
             <div className="flex items-center gap-2 text-gray-600">
-              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(game.ground_name)}`} target="_blank" rel="noreferrer"
+              <a href={game.ground_map_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(game.ground_name)}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-2 text-blue-600 hover:underline" data-testid="maps-link">
                 <MapPin size={16} /> <span>Open in Google Maps</span>
               </a>

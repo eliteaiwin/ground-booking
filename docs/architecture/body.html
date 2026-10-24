@@ -1,0 +1,183 @@
+<section class="a-section" aria-labelledby="flow-heading">
+  <h2 class="a-section__title" id="flow-heading">How information flows</h2>
+  <p class="a-section__note">
+    People use the web or phone app. Every app talks to one FastAPI server on Fly.io, which stores data in SQLite and calls outside services for login codes, sign-in checks and payments. Select a box to read what it does; drag to pan, or use the zoom buttons.
+  </p>
+  <div class="a-diagram" data-a-diagram tabindex="0">
+    <div class="a-toolbar a-no-print" style="margin: 8px 8px 0; justify-content: flex-end">
+      <button type="button" class="a-btn a-btn--outline" data-a-zoom="out">Zoom out</button>
+      <button type="button" class="a-btn a-btn--outline" data-a-zoom="in">Zoom in</button>
+      <button type="button" class="a-btn a-btn--outline" data-a-zoom="reset">Reset view</button>
+    </div>
+    <svg class="a-diagram__canvas" data-a-diagram-canvas viewBox="0 0 1120 700" role="img"
+      aria-label="Diagram: five user roles use the web, iPhone and Android apps. All apps call the FastAPI server on Fly.io over HTTPS. The server stores data in SQLite and an uploads folder, and calls Twilio for SMS codes, Resend for email codes, Google and Apple to verify sign-in, and Cashfree for payments. Code goes from GitHub to Codemagic, which builds the iPhone app for TestFlight and the Android app, and to Fly.io with flyctl deploy.">
+      <defs>
+        <marker id="a-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" class="a-edge__head" />
+        </marker>
+      </defs>
+      <g data-a-diagram-viewport class="a-diagram__viewport">
+        <g class="a-group"><rect x="16" y="40" width="196" height="440" rx="10" /><text x="30" y="62">People and roles</text></g>
+        <g class="a-group"><rect x="236" y="40" width="208" height="440" rx="10" /><text x="250" y="62">Apps</text></g>
+        <g class="a-group"><rect x="476" y="40" width="236" height="430" rx="10" /><text x="490" y="62">Fly.io · Singapore</text></g>
+        <g class="a-group"><rect x="744" y="40" width="360" height="440" rx="10" /><text x="758" y="62">Outside services</text></g>
+        <g class="a-group"><rect x="16" y="516" width="1088" height="168" rx="10" /><text x="30" y="538">Code, builds and releases</text></g>
+
+        <path class="a-edge a-edge--dim" d="M190,108 H200 M190,188 H200 M190,268 H200 M190,348 H200 M190,428 H200 M200,108 V428" />
+        <path class="a-edge" d="M200,128 H255" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M200,248 H255" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M200,368 H255" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="214" y="120">use</text>
+
+        <path class="a-edge" d="M425,128 H495" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M425,248 H458 V140 H495" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M425,368 H462 V150 H495" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="430" y="90">HTTPS · JSON</text>
+
+        <path class="a-edge" d="M590,156 V220" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="598" y="194">SQL</text>
+        <path class="a-edge" d="M685,140 H702 V368 H687" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="640" y="322">files</text>
+
+        <path class="a-edge" d="M685,112 H726 V98 H760" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M726,112 V168 H760" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M726,168 V238 H760" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M726,238 V308 H760" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M726,308 V378 H760" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="990" y="102">SMS code</text>
+        <text class="a-edge__label" x="990" y="172">email code</text>
+        <text class="a-edge__label" x="990" y="242">check token</text>
+        <text class="a-edge__label" x="990" y="312">check token</text>
+        <text class="a-edge__label" x="990" y="382">pay · payouts</text>
+        <path class="a-edge a-edge--dim" d="M340,396 V448 H760" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="470" y="442">share links (from the phone)</text>
+
+        <path class="a-edge" d="M210,608 H290" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M460,592 H540" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M460,624 H500 V640 H790" marker-end="url(#a-arrow)" />
+        <path class="a-edge" d="M125,580 V500 H590 V472" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="300" y="494">flyctl deploy (Docker image)</text>
+        <path class="a-edge a-edge--dim" d="M640,564 V550 H340 V398" marker-end="url(#a-arrow)" />
+        <text class="a-edge__label" x="350" y="544">TestFlight installs the iPhone app</text>
+
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Admin and Super Admin"
+          data-a-detail="Manages users and roles, app-wide settings (in-app payments, fees, enabled sports, name display), approves ground registrations, and has every Moderator power. Only an Admin can delete an archived game. Super Admins (tittlejoseph, elitedevlit) cannot be disabled.">
+          <rect x="30" y="80" width="160" height="56" /><text class="a-node__title" x="44" y="105">Admin</text><text class="a-node__sub" x="44" y="123">+ Super Admin</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Ground Manager"
+          data-a-detail="Owns grounds: details, photos, pitch layouts, the schedule calendar, join requests and blocked users. Allots time slots to moderator groups, including weekly repeats for up to a year, so those moderators can create games without a warning.">
+          <rect x="30" y="160" width="160" height="56" /><text class="a-node__title" x="44" y="185">Ground Manager</text><text class="a-node__sub" x="44" y="203">grounds · allotments</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Moderator"
+          data-a-detail="Creates games and series, opens them for nomination, nominates or removes players, makes teams, marks payments, ticks who played after the game, sets Pay first on a player, and sets Game Defaults (payment receiver, quit penalty, Player of the Day window, positions).">
+          <rect x="30" y="240" width="160" height="56" /><text class="a-node__title" x="44" y="265">Moderator</text><text class="a-node__sub" x="44" y="283">games · players · pay</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Player"
+          data-a-detail="Joins games (Nominate Self), quits or removes themself, pays their share, chats and shares photos, nominates Player of the Day after the game, and manages their profile and photo. Sees other players' numbers masked.">
+          <rect x="30" y="320" width="160" height="56" /><text class="a-node__title" x="44" y="345">Player</text><text class="a-node__sub" x="44" y="363">join · pay · vote</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Read-only"
+          data-a-detail="Can view games and results but cannot join, vote or change anything.">
+          <rect x="30" y="400" width="160" height="56" /><text class="a-node__title" x="44" y="425">Read-only</text><text class="a-node__sub" x="44" y="443">view only</text></g>
+
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Web app"
+          data-a-detail="React 19 + TypeScript, built with Vite, styled with Tailwind CSS and Radix/shadcn components. The same build is served by the FastAPI server and wrapped into the phone apps.">
+          <rect x="255" y="100" width="170" height="56" /><text class="a-node__title" x="269" y="125">Web app</text><text class="a-node__sub" x="269" y="143">React · Vite · Tailwind</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="iPhone app"
+          data-a-detail="The web app inside a native shell made with Capacitor 8. Adds Sign in with Apple. Built by Codemagic and installed through TestFlight; App Store review is pending.">
+          <rect x="255" y="220" width="170" height="56" /><text class="a-node__title" x="269" y="245">iPhone app</text><text class="a-node__sub" x="269" y="263">Capacitor · TestFlight</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Android app"
+          data-a-detail="The same web app in a Capacitor 8 Android shell. Codemagic builds an APK for testing and an AAB for the Play Store.">
+          <rect x="255" y="340" width="170" height="56" /><text class="a-node__title" x="269" y="365">Android app</text><text class="a-node__sub" x="269" y="383">Capacitor · APK / AAB</text></g>
+
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="FastAPI server"
+          data-a-detail="Python FastAPI app run by uvicorn in one Docker image. Serves the web app and the /api endpoints: login, games, payments, grounds, discussion, notifications. Two Fly apps run the same image: elite-turf-booking-staging and elite-turf-booking (production). Game times use India time.">
+          <rect x="495" y="100" width="190" height="56" /><text class="a-node__title" x="509" y="125">FastAPI server</text><text class="a-node__sub" x="509" y="143">Python · staging + production</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="SQLite database"
+          data-a-detail="One SQLite file (/data/app.db) on a Fly volume, accessed with aiosqlite. Holds users, roles, grounds, games, players, payments, votes, messages and settings. Backups are copies taken before each production deploy.">
+          <rect x="495" y="220" width="190" height="56" /><text class="a-node__title" x="509" y="245">SQLite database</text><text class="a-node__sub" x="509" y="263">/data/app.db · Fly volume</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Uploads"
+          data-a-detail="Profile photos, cropped thumbnails, ground photos and game photos or videos, stored on the same Fly volume (/data/uploads).">
+          <rect x="495" y="340" width="190" height="56" /><text class="a-node__title" x="509" y="365">Uploads</text><text class="a-node__sub" x="509" y="383">photos · videos</text></g>
+
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Twilio Verify"
+          data-a-detail="Sends and checks the 6-digit SMS login code. Demo review accounts use a fixed code instead and never reach Twilio.">
+          <rect x="760" y="70" width="220" height="56" /><text class="a-node__title" x="774" y="95">Twilio Verify</text><text class="a-node__sub" x="774" y="113">phone login codes</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Resend"
+          data-a-detail="Sends the email login code. SendGrid or SMTP can be used instead through settings.">
+          <rect x="760" y="140" width="220" height="56" /><text class="a-node__title" x="774" y="165">Resend</text><text class="a-node__sub" x="774" y="183">email login codes</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Google Sign-In"
+          data-a-detail="The user signs in with Google on the device; the server checks the Google ID token against the app's client ID and logs the user in.">
+          <rect x="760" y="210" width="220" height="56" /><text class="a-node__title" x="774" y="235">Google Sign-In</text><text class="a-node__sub" x="774" y="253">Google Identity Services</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Sign in with Apple"
+          data-a-detail="iPhone only. The Apple sheet (with Hide My Email) returns a token that the server checks before logging the user in.">
+          <rect x="760" y="280" width="220" height="56" /><text class="a-node__title" x="774" y="305">Sign in with Apple</text><text class="a-node__sub" x="774" y="323">iPhone login</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Cashfree Payments"
+          data-a-detail="In-app payments with Easy Split: the player pays the share plus the gateway fee (2% + 18% GST) and the app fee (4%), and the money is split to the payment receiver. Configured on staging only; production records payments offline.">
+          <rect x="760" y="350" width="220" height="56" /><text class="a-node__title" x="774" y="375">Cashfree</text><text class="a-node__sub" x="774" y="393">payments · split payouts</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="WhatsApp"
+          data-a-detail="The app builds the game status or payment reminder text and opens a wa.me share link on the phone. No WhatsApp API or server call is involved.">
+          <rect x="760" y="420" width="220" height="56" /><text class="a-node__title" x="774" y="445">WhatsApp</text><text class="a-node__sub" x="774" y="463">share links</text></g>
+
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="GitHub"
+          data-a-detail="Source code in eliteaiwin/ground-booking: frontend, backend, Dockerfile, Fly configs and codemagic.yaml.">
+          <rect x="40" y="580" width="170" height="56" /><text class="a-node__title" x="54" y="605">GitHub</text><text class="a-node__sub" x="54" y="623">eliteaiwin/ground-booking</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Codemagic"
+          data-a-detail="Cloud build service for the phone apps (paid per build minute). The iOS workflow signs the app and uploads it to App Store Connect and TestFlight; the Android workflow emails the APK and AAB.">
+          <rect x="290" y="580" width="170" height="56" /><text class="a-node__title" x="304" y="605">Codemagic</text><text class="a-node__sub" x="304" y="623">iOS + Android builds</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="App Store Connect and TestFlight"
+          data-a-detail="Apple account eliteaiwin@gmail.com. Builds go to TestFlight for internal testers; the App Store submission waits on Apple review.">
+          <rect x="540" y="564" width="200" height="56" /><text class="a-node__title" x="554" y="589">App Store Connect</text><text class="a-node__sub" x="554" y="607">TestFlight testers</text></g>
+        <g class="a-node" data-a-node tabindex="0" role="button" data-a-title="Android release files"
+          data-a-detail="APK for direct install on test phones and AAB for Google Play, emailed by Codemagic after each Android build.">
+          <rect x="790" y="612" width="200" height="56" /><text class="a-node__title" x="804" y="637">Android APK / AAB</text><text class="a-node__sub" x="804" y="655">test install · Play Store</text></g>
+      </g>
+    </svg>
+    <div class="a-inspector" data-a-inspector aria-live="polite">
+      <p class="a-inspector__title" data-a-inspector-title>Select a box</p>
+      <p style="margin: 0; color: rgb(var(--text-secondary))" data-a-inspector-body>What that part does appears here.</p>
+    </div>
+  </div>
+</section>
+
+<section class="a-section" aria-labelledby="stack-heading">
+  <h2 class="a-section__title" id="stack-heading">Tech stack</h2>
+  <div class="a-table-scroll">
+    <table class="a-table">
+      <caption class="a-visually-hidden">Technologies used, by layer</caption>
+      <thead><tr><th scope="col">Layer</th><th scope="col">Technology</th><th scope="col">Used for</th></tr></thead>
+      <tbody>
+        <tr><td>Web front end</td><td>React 19, TypeScript, Vite, Tailwind CSS, Radix / shadcn UI, lucide icons</td><td>All screens, shared by web and phone apps</td></tr>
+        <tr><td>Phone apps</td><td>Capacitor 8 (iOS and Android), Apple sign-in plugin</td><td>Native shells around the web app</td></tr>
+        <tr><td>Back end</td><td>Python 3.12, FastAPI, uvicorn, Pydantic, aiosqlite, httpx</td><td>REST API, rules for games, payments and roles</td></tr>
+        <tr><td>Data</td><td>SQLite on a Fly volume; uploads folder on the same volume</td><td>All app data, photos and videos</td></tr>
+        <tr><td>Hosting</td><td>Fly.io (Singapore), Docker image, separate staging and production apps</td><td>Runs the server and serves the web app</td></tr>
+        <tr><td>Login</td><td>Twilio Verify (SMS), Resend (email), Google Identity, Sign in with Apple, JWT tokens</td><td>Passwordless sign-in</td></tr>
+        <tr><td>Payments</td><td>Cashfree Easy Split (staging), offline tracking (production)</td><td>Collecting shares and paying the receiver</td></tr>
+        <tr><td>Builds</td><td>GitHub, Codemagic, App Store Connect / TestFlight</td><td>Phone app builds and testing</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="a-section" aria-labelledby="life-heading">
+  <h2 class="a-section__title" id="life-heading">Game life cycle</h2>
+  <ol class="a-prose">
+    <li><strong>Draft</strong>: a moderator creates the game; Game Defaults fill in the receiver, quit penalty and Player of the Day window.</li>
+    <li><strong>Open for Nomination</strong>: players join or are nominated. Pay-first players wait under Awaiting Payment until they pay. The share is ground cost ÷ max players.</li>
+    <li><strong>Game Started</strong>: set automatically at the start time.</li>
+    <li><strong>Completed</strong>: set automatically at the end time; the moderator can still tick who played and add late players. The share is re-split among the players who played.</li>
+    <li><strong>Nominate Player of the Day</strong>: open for the set window (24 hours by default), then the winner is announced.</li>
+    <li><strong>Archived</strong>: past games move to Archived; only an Admin can delete one.</li>
+  </ol>
+</section>
+
+<section class="a-section" aria-labelledby="notes-heading">
+  <h2 class="a-section__title" id="notes-heading">Things to know</h2>
+  <div class="a-grid a-grid--halves">
+    <div class="a-callout a-callout--risk">
+      <p class="a-callout__title">One database file</p>
+      All data lives in one SQLite file on one Fly machine. It is cheap and simple, but backups are manual copies taken before each production deploy.
+    </div>
+    <div class="a-callout a-callout--decision">
+      <p class="a-callout__title">Payments in production</p>
+      Cashfree is set up on staging only. Production tracks payments offline until Cashfree keys are added there.
+    </div>
+  </div>
+</section>

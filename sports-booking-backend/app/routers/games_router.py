@@ -1247,6 +1247,7 @@ async def get_game(
     result = await get_game_dict(db, game_id)
     result["can_moderate"] = await can_moderate_game(user_id, game_id, db)
     result["ground_country_code"] = await _ground_country_code(db, result.get("ground_name") or "")
+    result["ground_map_url"] = await _ground_map_url(db, result.get("ground_name") or "")
     sees_contacts = (await (await db.execute(
         "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator', 'ground_management')",
         (user_id,)
@@ -1268,6 +1269,22 @@ async def _ground_country_code(db: aiosqlite.Connection, ground_name: str) -> st
         cursor = await db.execute("SELECT country_code FROM grounds WHERE name = ?", (ground_name,))
     row = await cursor.fetchone()
     return (row["country_code"] if row else "") or "91"
+
+
+async def _ground_map_url(db: aiosqlite.Connection, ground_name: str) -> str:
+    parts = ground_name.split(" - ")
+    if len(parts) == 2:
+        cursor = await db.execute(
+            "SELECT maps_url, latitude, longitude FROM grounds WHERE location = ? AND name = ?", (parts[0].strip(), parts[1].strip())
+        )
+    else:
+        cursor = await db.execute("SELECT maps_url, latitude, longitude FROM grounds WHERE name = ?", (ground_name,))
+    row = await cursor.fetchone()
+    if not row:
+        return ""
+    if row["latitude"] is not None and row["longitude"] is not None:
+        return f"https://www.google.com/maps/search/?api=1&query={row['latitude']},{row['longitude']}"
+    return row["maps_url"] or ""
 
 
 def _mask_local(phone: str) -> str:
