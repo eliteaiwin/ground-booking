@@ -1807,6 +1807,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     </button>
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                          {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
                           {player.must_prepay && player.payment_confirmed !== 1 && (
                             <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-orange-700 border-orange-300">Pay first</Badge>
                           )}
@@ -1860,7 +1861,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         )}
                         {removableStage && <RemovePlayerButton allowed={canRemove(player)} onRemove={() => removePlayer(player)} />}
 
-                        {player.user_id === user?.id && <Badge className="bg-green-100 text-green-700 text-xs">You</Badge>}
 
                         {/* Fallback: non-completed games still show old mark paid button */}
                         {!showPaymentDetails && (isModerator || isAdmin) && player.payment_confirmed !== 1 && (game.status === 'in_progress') && (
@@ -1974,6 +1974,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     </button>
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {player.user_id === user?.id && <Badge className="ml-1 bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     </span>
                     <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id, nomination(player).text)} />
                     {game.status === 'completed' && (isAdmin || isModerator || isGroundManagement) && (
@@ -1982,7 +1983,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         + Played
                       </Button>
                     )}
-                    {player.user_id === user?.id && <Badge className="bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     {removableStage && <RemovePlayerButton allowed={canRemove(player)} onRemove={() => removePlayer(player)} />}
                   </div>
                 ))}
