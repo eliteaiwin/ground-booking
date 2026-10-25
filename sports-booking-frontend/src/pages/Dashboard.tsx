@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, BarChart3, RefreshCw, CalendarDays } from 'lucide-react';
+import { WhatsNew } from '@/components/WhatsNew';
 
 interface Game {
   id: number;
@@ -174,6 +175,7 @@ export default function Dashboard({ onNavigate }: Props) {
             <h1 className="text-lg font-bold"><span className="text-red-600">Elite</span> Turf Booking</h1>
           </div>
           <div className="flex items-center gap-2">
+            <WhatsNew />
             <button
               onClick={() => setActiveTab('notifications')}
               className="relative p-2 rounded-full hover:opacity-80"
