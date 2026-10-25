@@ -6,7 +6,7 @@ export function WhatsNew() {
   return (
     <>
       <button type="button" data-testid="app-version" onClick={() => setOpen(true)}
-        className="text-[10px] leading-none opacity-80 hover:opacity-100 underline-offset-2 hover:underline">
+        className="text-[9px] leading-none opacity-80 hover:opacity-100 underline-offset-2 hover:underline">
         Ver {APP_VERSION}
       </button>
       {open && (

@@ -175,10 +175,12 @@ export default function Dashboard({ onNavigate }: Props) {
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button type="button" aria-label="About" data-testid="about-logo" className="text-2xl" onClick={() => setShowAbout(true)}>&#9917;</button>
-            <h1 className="text-lg font-bold"><span className="text-red-600">Elite</span> Turf Booking</h1>
+            <div className="flex flex-col items-end leading-tight">
+              <h1 className="text-lg font-bold"><span className="text-red-600">Elite</span> Turf Booking</h1>
+              <WhatsNew />
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <WhatsNew />
             <button
               onClick={() => setActiveTab('notifications')}
               className="relative p-2 rounded-full hover:opacity-80"
