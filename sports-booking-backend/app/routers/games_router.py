@@ -729,26 +729,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     player_photo_map: dict[int, str] = {}
     if player_ids:
         placeholders = ",".join("?" * len(player_ids))
-        # Try sport-specific photo first
-        if sport_type:
-            cursor = await db.execute(
-                f"SELECT user_id, filename FROM user_photos WHERE user_id IN ({placeholders}) AND purpose = ?",
-                (*player_ids, sport_type)
-            )
-            for row in await cursor.fetchall():
-                player_photo_map[row["user_id"]] = row["filename"]
-        # Fill in with profile photos for those who don't have a sport-specific one
-        missing_ids = [uid for uid in player_ids if uid not in player_photo_map]
-        if missing_ids:
-            placeholders2 = ",".join("?" * len(missing_ids))
-            cursor = await db.execute(
-                f"SELECT user_id, filename FROM user_photos WHERE user_id IN ({placeholders2}) AND purpose = 'profile'",
-                tuple(missing_ids)
-            )
-            for row in await cursor.fetchall():
-                if row["user_id"] not in player_photo_map:
-                    player_photo_map[row["user_id"]] = row["filename"]
-        # Fall back to legacy profile_pic for remaining
+        # Small icons use the profile photo; a sport photo only when there is no profile photo
+        cursor = await db.execute(
+            f"SELECT user_id, filename FROM user_photos WHERE user_id IN ({placeholders}) AND purpose = 'profile'",
+            tuple(player_ids)
+        )
+        for row in await cursor.fetchall():
+            player_photo_map[row["user_id"]] = row["filename"]
         still_missing = [uid for uid in player_ids if uid not in player_photo_map]
         if still_missing:
             placeholders3 = ",".join("?" * len(still_missing))
@@ -757,8 +744,16 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
                 tuple(still_missing)
             )
             for row in await cursor.fetchall():
-                if row["id"] not in player_photo_map and row["profile_pic"]:
-                    player_photo_map[row["id"]] = row["profile_pic"]
+                player_photo_map[row["id"]] = row["profile_pic"]
+        missing_ids = [uid for uid in player_ids if uid not in player_photo_map]
+        if sport_type and missing_ids:
+            placeholders2 = ",".join("?" * len(missing_ids))
+            cursor = await db.execute(
+                f"SELECT user_id, filename FROM user_photos WHERE user_id IN ({placeholders2}) AND purpose = ?",
+                (*missing_ids, sport_type)
+            )
+            for row in await cursor.fetchall():
+                player_photo_map.setdefault(row["user_id"], row["filename"])
 
     selected = []
     waiting = []

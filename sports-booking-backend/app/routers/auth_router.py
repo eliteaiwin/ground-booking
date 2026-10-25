@@ -1,5 +1,5 @@
 import re
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -863,8 +863,18 @@ async def upload_profile_pic(
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    # Update database
+    # Update database; the profile photo is also the 'profile' entry in My Photos
     await db.execute("UPDATE users SET profile_pic = ? WHERE id = ?", (filename, user_id))
+    for old in await (await db.execute(
+        "SELECT id, filename FROM user_photos WHERE user_id = ? AND purpose = 'profile'", (user_id,)
+    )).fetchall():
+        old_file = UPLOAD_DIR / old["filename"]
+        if old["filename"] != filename and old_file.exists():
+            old_file.unlink()
+        await db.execute("DELETE FROM user_photos WHERE id = ?", (old["id"],))
+    await db.execute(
+        "INSERT INTO user_photos (user_id, filename, purpose) VALUES (?, ?, 'profile')", (user_id, filename)
+    )
     await db.commit()
 
     return {"message": "Profile picture uploaded", "filename": filename}
@@ -887,7 +897,7 @@ VALID_PHOTO_PURPOSES = ('profile', 'soccer', 'cricket', 'badminton', 'basketball
 @router.post("/me/photos")
 async def upload_user_photo(
     file: UploadFile = File(...),
-    purpose: str = "profile",
+    purpose: str = Form("profile"),
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
@@ -1013,7 +1023,11 @@ async def update_photo_purpose(
     # Update users.profile_pic for backward compat
     if purpose == "profile":
         await db.execute("UPDATE users SET profile_pic = ? WHERE id = ?", (photo["filename"], user_id))
-        await db.commit()
+    else:
+        await db.execute(
+            "UPDATE users SET profile_pic = '' WHERE id = ? AND profile_pic = ?", (user_id, photo["filename"])
+        )
+    await db.commit()
 
     return {"message": "Photo purpose updated", "purpose": purpose}
 
@@ -1042,15 +1056,9 @@ async def delete_user_photo(
     await db.execute("DELETE FROM user_photos WHERE id = ?", (photo_id,))
     await db.commit()
 
-    # If we deleted the profile photo, pick the next available or clear it
+    # Sport photos never become the profile photo
     if was_profile:
-        cursor = await db.execute(
-            "SELECT filename FROM user_photos WHERE user_id = ? ORDER BY created_at ASC LIMIT 1",
-            (user_id,)
-        )
-        next_photo = await cursor.fetchone()
-        new_pic = next_photo["filename"] if next_photo else ""
-        await db.execute("UPDATE users SET profile_pic = ? WHERE id = ?", (new_pic, user_id))
+        await db.execute("UPDATE users SET profile_pic = '' WHERE id = ?", (user_id,))
         await db.commit()
 
     return {"message": "Photo deleted"}
@@ -1151,8 +1159,10 @@ async def get_user_summary(
         (target_user_id,),
     )
     photos = [dict(r) for r in await cursor.fetchall()]
-    if not photos and u["profile_pic"]:
-        photos = [{"id": 0, "filename": u["profile_pic"], "purpose": "profile", "created_at": ""}]
+    if u["profile_pic"] and not any(p["purpose"] == "profile" for p in photos):
+        photos.insert(0, {"id": 0, "filename": u["profile_pic"], "purpose": "profile", "created_at": ""})
+    photos.sort(key=lambda p: p["purpose"] != "profile")
+    profile_photo = next((p["filename"] for p in photos if p["purpose"] == "profile"), "")
 
     cursor = await db.execute(
         """SELECT dm.id, dm.file_path, dm.caption, dm.created_at, g.id AS game_id, g.ground_name, g.game_date
@@ -1192,7 +1202,7 @@ async def get_user_summary(
         "locations": [x for x in (u["locations"] or "").split(",") if x],
         "roles": roles,
         "member_since": u["created_at"] or "",
-        "profile_pic": u["profile_pic"] or (photos[0]["filename"] if photos else ""),
+        "profile_pic": profile_photo,
         "stats": {
             "rank": me.get("rank"),
             "games_played": me.get("games_played", 0),

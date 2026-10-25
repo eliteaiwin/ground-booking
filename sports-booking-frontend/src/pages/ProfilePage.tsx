@@ -622,7 +622,7 @@ export default function ProfilePage({ onBack }: Props) {
                   <input ref={multiFileRef} type="file" accept="image/*" className="hidden" onChange={handleUploadMultiPhoto} />
                 </div>
               </div>
-              <p className="text-xs text-gray-400">Max 5MB per photo. One photo per purpose — uploading replaces the existing one.</p>
+              <p className="text-xs text-gray-400">Max 5MB per photo. One photo per category; uploading again replaces that category's photo. Your Profile photo shows everywhere; a sport photo shows first when someone views you from that sport's game.</p>
             </div>
 
             {/* Photo grid */}

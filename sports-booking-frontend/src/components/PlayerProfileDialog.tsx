@@ -33,6 +33,8 @@ export interface PlayerSummary {
 interface Props {
   userId: number;
   onClose: () => void;
+  /** Sport of the game the popup was opened from; that sport's photo becomes the main photo. */
+  sport?: string;
   /** Extra context-specific content shown at the bottom of the Info tab . */
   children?: ReactNode;
 }
@@ -57,7 +59,7 @@ const Row = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-export default function PlayerProfileDialog({ userId, onClose, children }: Props) {
+export default function PlayerProfileDialog({ userId, onClose, sport, children }: Props) {
   const [summary, setSummary] = useState<PlayerSummary | null>(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('info');
@@ -88,6 +90,7 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
 
   const s = summary;
   const photoCount = s ? s.photos.length + s.game_photos.length : 0;
+  const mainPhoto = (s && sport && s.photos.find(p => p.purpose === sport.toLowerCase())?.filename) || s?.profile_pic || '';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={onClose}>
@@ -106,9 +109,9 @@ export default function PlayerProfileDialog({ userId, onClose, children }: Props
         ) : (
           <>
             <div className="flex flex-col items-center mb-4">
-              {s.profile_pic ? (
-                <button type="button" onClick={() => setEnlarged(api.getProfilePicUrl(s.profile_pic))}>
-                  <img src={api.getProfilePicUrl(s.profile_pic)} alt={s.name} className="w-20 h-20 rounded-full object-cover mb-2" />
+              {mainPhoto ? (
+                <button type="button" onClick={() => setEnlarged(api.getProfilePicUrl(mainPhoto))}>
+                  <img src={api.getProfilePicUrl(mainPhoto)} alt={s.name} data-testid="profile-main-photo" className="w-20 h-20 rounded-full object-cover mb-2" />
                 </button>
               ) : (
                 <span className="mb-2"><PlayerAvatar size="lg" gender={s.gender} /></span>
