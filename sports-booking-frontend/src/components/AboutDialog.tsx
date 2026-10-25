@@ -9,8 +9,12 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         <img src={elizophLogo} alt="Elizoph Technologies" className="w-48 h-auto" />
         <p className="mt-4 text-sm font-semibold"><span className="text-red-600">Elite</span> Turf Booking</p>
         <p className="text-xs text-gray-500">Ver {APP_VERSION}</p>
+        <div className="mt-4 text-sm space-y-1">
+          <p>Email: <a href="mailto:admin@elizoph.com" data-testid="about-email" className="text-blue-600 hover:underline">admin@elizoph.com</a></p>
+          <p>Mobile: <a href="tel:+918951575798" data-testid="about-phone" className="text-blue-600 hover:underline">+91-8951575798</a></p>
+        </div>
         <a href="https://www.elizoph.com" target="_blank" rel="noopener noreferrer"
-          className="mt-5 text-sm text-blue-600 hover:underline" data-testid="about-link">www.elizoph.com</a>
+          className="mt-4 text-sm text-blue-600 hover:underline" data-testid="about-link">www.elizoph.com</a>
       </div>
     </div>
   );
