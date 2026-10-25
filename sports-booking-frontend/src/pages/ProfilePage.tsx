@@ -587,7 +587,7 @@ export default function ProfilePage({ onBack }: Props) {
             <CardTitle className="text-lg flex items-center gap-2">
               <ImageIcon size={18} className="text-blue-500" /> My Photos
             </CardTitle>
-            <p className="text-xs text-gray-500">Upload photos for your profile and different sports. Sport-specific photos show in player lists.</p>
+            <p className="text-xs text-gray-500">Upload photos for your profile and different sports. Your Profile photo shows in player lists; a sport photo shows in your info popup from that sport's games.</p>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Upload new photo */}
@@ -622,7 +622,7 @@ export default function ProfilePage({ onBack }: Props) {
                   <input ref={multiFileRef} type="file" accept="image/*" className="hidden" onChange={handleUploadMultiPhoto} />
                 </div>
               </div>
-              <p className="text-xs text-gray-400">Max 5MB per photo. One photo per category; uploading again replaces that category's photo. Your Profile photo shows everywhere; a sport photo shows first when someone views you from that sport's game.</p>
+              <p className="text-xs text-gray-400">Max 5MB per photo. One photo per category; uploading again replaces that category's photo.</p>
             </div>
 
             {/* Photo grid */}
