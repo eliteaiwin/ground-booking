@@ -75,40 +75,26 @@ function nomination(player: Player): { tone: keyof typeof NOMINATION_COLOR; text
   return { tone: 'self', text: `${who} nominated self${on}` };
 }
 
-// Opens the player popup. Hover (desktop) or press-and-hold (phone) shows who nominated the player and when;
+// Tap (or hover on desktop) shows who nominated the player and when; the photo opens the player popup.
 // green = self-nominated, blue = nominated by a moderator.
-function PlayerInfoButton({ player, onOpen }: { player: Player; onOpen: () => void }) {
+function PlayerInfoButton({ player }: { player: Player }) {
   const { tone, text: info } = nomination(player);
   const [tip, setTip] = useState(false);
-  const timer = useRef<number | null>(null);
-  const held = useRef(false);
-  const start = () => {
-    if (!info) return;
-    held.current = false;
-    timer.current = window.setTimeout(() => {
-      held.current = true;
-      setTip(true);
-      window.setTimeout(() => setTip(false), 3000);
-    }, 500);
-  };
-  const stop = () => { if (timer.current) window.clearTimeout(timer.current); };
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!tip) return;
+    const close = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setTip(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [tip]);
   return (
-    <span className="relative inline-flex" onMouseEnter={() => info && setTip(true)} onMouseLeave={() => setTip(false)}>
+    <span ref={ref} className="relative inline-flex" onPointerEnter={e => e.pointerType === 'mouse' && setTip(true)} onPointerLeave={e => e.pointerType === 'mouse' && setTip(false)}>
       <button
         type="button"
-        data-profile-trigger
         data-testid="player-info"
+        aria-label="Nomination details"
         className={`transition-colors ${NOMINATION_COLOR[tone]}`}
-        onPointerDown={start}
-        onPointerUp={stop}
-        onPointerLeave={stop}
-        onContextMenu={e => { if (info) e.preventDefault(); }}
-        onClick={() => {
-          if (held.current) { held.current = false; return; }
-          setTip(false);
-          onOpen();
-        }}
-        title={info ? undefined : 'View profile'}
+        onClick={() => setTip(t => !t)}
       >
         <Info size={14} />
       </button>
@@ -1813,7 +1799,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                           )}
                         </span>
                         {/* Profile info */}
-                        <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
+                        <PlayerInfoButton player={player} />
 
                         {/* When Payment Details checkbox is NOT checked: show icons + POTD votes */}
                         {!showPaymentDetails && (
@@ -1976,7 +1962,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                       {player.user_id === user?.id && <Badge className="ml-1 bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     </span>
-                    <PlayerInfoButton player={player} onOpen={() => openProfile(player.user_id)} />
+                    <PlayerInfoButton player={player} />
                     {game.status === 'completed' && (isAdmin || isModerator || isGroundManagement) && (
                       <Button size="sm" variant="outline" className="h-6 px-2 text-xs" data-testid="mark-played"
                         onClick={() => handleAction('nominate', () => api.nominatePlayer(game.id, player.user_id))}>

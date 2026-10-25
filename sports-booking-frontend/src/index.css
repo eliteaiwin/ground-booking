@@ -13,6 +13,8 @@
   html,
   body {
     overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   body {
     background-color: theme("colors.gray.50");
@@ -30,5 +32,14 @@
     -webkit-appearance: none;
     appearance: none;
     min-width: 0;
+  }
+}
+
+/* iPhone zooms the whole page in when a text box with a font under 16px is tapped. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }
