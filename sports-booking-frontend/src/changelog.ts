@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.17', date: '2026-10-25', changes: [
+    'About: tap the ⚽ icon or Profile menu → About to see Elizoph Technologies and www.elizoph.com',
+  ]},
   { version: '1.16', date: '2026-10-25', changes: [
     'Version number in the header; tap it to see what changed in every version',
     'My Photos: each photo keeps its own category (Profile, Soccer, Cricket, ...); uploading a sport photo no longer replaces the Profile photo',

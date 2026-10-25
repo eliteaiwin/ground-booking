@@ -8,8 +8,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, BarChart3, RefreshCw, CalendarDays } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays } from 'lucide-react';
 import { WhatsNew } from '@/components/WhatsNew';
+import { AboutDialog } from '@/components/AboutDialog';
 
 interface Game {
   id: number;
@@ -115,6 +116,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('games');
   const [archivePeriod, setArchivePeriod] = useState<ArchivePeriod>('week');
+  const [showAbout, setShowAbout] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [showSwitchRole, setShowSwitchRole] = useState(false);
@@ -168,10 +170,11 @@ export default function Dashboard({ onNavigate }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">&#9917;</span>
+            <button type="button" aria-label="About" data-testid="about-logo" className="text-2xl" onClick={() => setShowAbout(true)}>&#9917;</button>
             <h1 className="text-lg font-bold"><span className="text-red-600">Elite</span> Turf Booking</h1>
           </div>
           <div className="flex items-center gap-2">
@@ -316,6 +319,14 @@ export default function Dashboard({ onNavigate }: Props) {
                       >
                         <UserPlus size={16} className="text-gray-400" />
                         Add User
+                      </button>
+
+                      <button
+                        onClick={() => { setShowUserMenu(false); setShowAbout(true); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Info size={16} className="text-gray-400" />
+                        About
                       </button>
 
                       <div className="border-t my-1" />
