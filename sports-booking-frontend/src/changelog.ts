@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.21', date: '2026-10-28', changes: [
+    'Ground Details: picking the ground\'s Country now shows its currency right away (e.g. USA / Canada → $, United Kingdom → £)',
+  ] },
   { version: '1.20', date: '2026-10-28', changes: [
     'Money shows in the currency of the ground\'s country: ₹ for India grounds, $ for US grounds, £ for UK and so on, instead of "Rs" or "$"',
     'The currency follows the ground, not the player: someone with a UK phone number playing on an India ground pays in ₹',

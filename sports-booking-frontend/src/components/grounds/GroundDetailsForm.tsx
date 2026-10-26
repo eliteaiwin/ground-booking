@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/services/api';
 import { COUNTRY_CODES } from '@/lib/phone';
+import { currencyForCountry } from '@/lib/currency';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -241,11 +242,17 @@ export default function GroundDetailsForm({ initial, submitLabel, saving, onSubm
           )}
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Country (phone numbers from here show without a country code)</Label>
-          <select className="w-full border rounded-md h-9 px-2 text-sm bg-white mb-2" data-testid="ground-country"
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Country</Label>
+            <span className="text-xs font-semibold text-green-700" data-testid="ground-currency">
+              Currency: {currencyForCountry(values.country_code || '91')}
+            </span>
+          </div>
+          <select className="w-full border rounded-md h-9 px-2 text-sm bg-white" data-testid="ground-country"
             value={values.country_code || '91'} onChange={e => set('country_code', e.target.value)}>
             {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.name} (+{c.code})</option>)}
           </select>
+          <p className="text-[11px] text-gray-500 mb-2">Games on this ground are charged in this currency. Phone numbers from this country show without a country code.</p>
           <Label className="text-xs">Address</Label>
           <Textarea rows={2} placeholder="Street, area, city" value={values.address} onChange={e => set('address', e.target.value)} />
         </div>
