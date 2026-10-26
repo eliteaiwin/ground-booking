@@ -13,6 +13,7 @@ import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
 import { localYmd } from '../lib/utils';
 import { currencySymbol } from '@/lib/currency';
+import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 
 interface UserItem {
   id: number;
@@ -60,7 +61,10 @@ export default function CreateSeries({ onBack }: Props) {
   const [seriesName, setSeriesName] = useState('');
   const [payFirstEnabled, setPayFirstEnabled] = useState(false);
   useEffect(() => {
-    api.getGameDefaults().then((d: { pay_first_enabled?: boolean }) => setPayFirstEnabled(!!d.pay_first_enabled)).catch(() => {});
+    api.getGameDefaults().then((d: { pay_first_enabled?: boolean; default_payment_collection?: string }) => {
+      setPayFirstEnabled(!!d.pay_first_enabled);
+      if (d.default_payment_collection === 'app' || d.default_payment_collection === 'offline') setPaymentCollection(d.default_payment_collection);
+    }).catch(() => {});
   }, []);
   const [sportType, setSportType] = useState('soccer');
   const [groundName, setGroundName] = useState('');
@@ -275,13 +279,7 @@ export default function CreateSeries({ onBack }: Props) {
                 </div>
                 <div className="space-y-2">
                   <Label>How to pay</Label>
-                  <Select value={paymentCollection} onValueChange={setPaymentCollection}>
-                    <SelectTrigger data-testid="payment-collection"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="offline">Track offline (cash / UPI to receiver)</SelectItem>
-                      <SelectItem value="app">Pay through the app</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <PaymentCollectionChoice value={paymentCollection} onChange={setPaymentCollection} />
                   {payFirstEnabled && <p className="text-xs text-gray-500">Players set to "Pay first" must pay before their name is added.</p>}
                 </div>
                 <div className="space-y-2">

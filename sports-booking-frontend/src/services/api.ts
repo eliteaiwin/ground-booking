@@ -107,6 +107,18 @@ async function request(path: string, options: RequestInit = {}, retries = 2): Pr
 }
 
 // Auth
+const uploadHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem('token');
+  const headers: Record<string, string> = {};
+  if (_proxyBasicAuth) {
+    headers['Authorization'] = `Basic ${_proxyBasicAuth}`;
+    if (token) headers['X-Auth-Token'] = `Bearer ${token}`;
+  } else if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 export const api = {
   register: (data: {
     first_name: string; last_name: string; phone: string; email?: string;
@@ -402,6 +414,7 @@ export const api = {
     default_payee_user_id?: number; default_quit_penalty_hours?: number;
     default_potd_delay_minutes?: number; allow_position_selection?: boolean; show_quit_penalty?: boolean;
     pay_first_enabled?: boolean;
+    default_payment_collection?: string;
   }) =>
     request('/api/preferences/game-defaults', { method: 'PUT', body: JSON.stringify(data) }),
 
@@ -535,6 +548,28 @@ export const api = {
       return res.json();
     });
   },
+
+  markPaidWithProof: (gameId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('game_id', String(gameId));
+    formData.append('file', file);
+    return fetch(`${API_URL}/api/payments/pay-with-proof`, { method: 'POST', headers: uploadHeaders(), body: formData })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({ detail: 'Upload failed' }));
+        if (!res.ok) throw new Error(body.detail || 'Upload failed');
+        return body as { message: string };
+      });
+  },
+
+  /** Object URL of a player's payment screenshot (revoke when done). */
+  getPaymentProof: (gameId: number, userId: number) =>
+    fetch(`${API_URL}/api/payments/proof/${gameId}/${userId}`, { headers: uploadHeaders() }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Screenshot not found' }));
+        throw new Error(err.detail || 'Screenshot not found');
+      }
+      return URL.createObjectURL(await res.blob());
+    }),
 
   getMediaComments: (mediaId: number) =>
     request(`/api/discussions/media/${mediaId}/comments`),

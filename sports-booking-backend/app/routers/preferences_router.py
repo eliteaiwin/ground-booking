@@ -75,6 +75,7 @@ class GameDefaultsRequest(BaseModel):
     allow_position_selection: Optional[bool] = None
     show_quit_penalty: Optional[bool] = None
     pay_first_enabled: Optional[bool] = None
+    default_payment_collection: Optional[str] = None
 
 
 async def game_defaults(db: aiosqlite.Connection) -> dict:
@@ -100,6 +101,7 @@ async def game_defaults(db: aiosqlite.Connection) -> dict:
         "allow_position_selection": (await get_app_setting(db, "allow_position_selection", "false")) == "true",
         "show_quit_penalty": (await get_app_setting(db, "show_quit_penalty", "false")) == "true",
         "pay_first_enabled": (await get_app_setting(db, "pay_first_enabled", "false")) == "true",
+        "default_payment_collection": (await get_app_setting(db, "default_payment_collection", "offline")) or "offline",
     }
 
 
@@ -134,6 +136,10 @@ async def update_game_defaults(
         await set_app_setting(db, "show_quit_penalty", "true" if req.show_quit_penalty else "false")
     if req.pay_first_enabled is not None:
         await set_app_setting(db, "pay_first_enabled", "true" if req.pay_first_enabled else "false")
+    if req.default_payment_collection is not None:
+        if req.default_payment_collection not in ("offline", "app"):
+            raise HTTPException(status_code=400, detail="default_payment_collection must be 'offline' or 'app'")
+        await set_app_setting(db, "default_payment_collection", req.default_payment_collection)
     return await game_defaults(db)
 
 

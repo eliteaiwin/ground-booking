@@ -2,6 +2,12 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.22', date: '2026-10-28', changes: [
+    'Create Game and Edit Game: choose "Pay through App" or "Settle Offline" with radio buttons',
+    'Settle Offline: each player gets a "Mark as paid" button next to their name, before or after the game. It asks for a payment screenshot and tells the moderator',
+    'Moderators can open the payment screenshot from the payment icon next to the player',
+    'Pay through App: unpaid players see a Pay button instead. A moderator can switch a game between the two any time',
+  ] },
   { version: '1.21', date: '2026-10-28', changes: [
     'Ground Details: picking the ground\'s Country now shows its currency right away (e.g. USA / Canada → $, United Kingdom → £)',
   ] },

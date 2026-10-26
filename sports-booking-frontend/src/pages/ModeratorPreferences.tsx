@@ -10,6 +10,7 @@ import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { ALL_SPORTS } from '../lib/sports';
 import CurrencyIcon from '@/components/CurrencyIcon';
+import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 
 interface Props {
   onBack: () => void;
@@ -22,6 +23,7 @@ interface GameDefaults {
   allow_position_selection: boolean;
   show_quit_penalty: boolean;
   pay_first_enabled: boolean;
+  default_payment_collection?: string;
 }
 
 type UserLite = { id: number; name: string; phone: string };
@@ -174,6 +176,11 @@ function GameDefaultsCard() {
           Use Pay first (chosen players must pay before they are added to a game)
         </label>
         {defaults.pay_first_enabled && <PayFirstPlayers />}
+        <div className="space-y-1" data-testid="default-payment-collection">
+          <Label className="text-sm">How players pay (default for new games)</Label>
+          <PaymentCollectionChoice value={defaults.default_payment_collection || 'offline'}
+            onChange={v => save({ default_payment_collection: v })} />
+        </div>
       </CardContent>
     </Card>
   );

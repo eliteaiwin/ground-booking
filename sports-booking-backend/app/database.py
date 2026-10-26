@@ -748,7 +748,7 @@ async def init_db():
         await db.execute("ALTER TABLE payments ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0")
     except Exception:
         pass
-    for col in ("paid_by INTEGER", "paid_via TEXT NOT NULL DEFAULT ''"):
+    for col in ("paid_by INTEGER", "paid_via TEXT NOT NULL DEFAULT ''", "proof_file TEXT NOT NULL DEFAULT ''"):
         try:
             await db.execute(f"ALTER TABLE payments ADD COLUMN {col}")
         except Exception:

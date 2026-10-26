@@ -24,6 +24,8 @@ import { pitchLabel } from '@/lib/grounds';
 import PlayerProfileDialog from '@/components/PlayerProfileDialog';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
+import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
+import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -141,8 +143,8 @@ const shortDateTime = (iso?: string | null): string => {
 
 // Cash icon beside a player: red = due, green = paid, amber = paid too little or too much.
 // Hover (desktop) or tap (phone) shows the details.
-function PaymentIcon({ pd, confirmed, due, currency, onSettle }: {
-  pd?: PaymentDetail; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void;
+function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof }: {
+  pd?: PaymentDetail; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void; onViewProof?: () => void;
 }) {
   const [tip, setTip] = useState(false);
   const paid = pd?.paid_amount || 0;
@@ -171,13 +173,19 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle }: {
     text = `${rs(pending)} to pay after the game`;
   }
   return (
-    <span className="relative inline-flex" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+    <span className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
       <button type="button" className={color} data-testid="payment-icon" aria-label={text} onClick={() => setTip(t => !t)}>
         <Banknote size={16} />
       </button>
       {tip && (
         <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
           {text}
+          {pd?.has_proof && onViewProof && (
+            <button type="button" className="block mt-1 underline font-medium text-green-300" data-testid="view-proof"
+              onClick={(e) => { e.stopPropagation(); setTip(false); onViewProof(); }}>
+              View payment screenshot
+            </button>
+          )}
           {excess > 0 && onSettle && (
             <button type="button" className="block mt-1 underline font-medium text-amber-300"
               onClick={(e) => { e.stopPropagation(); setTip(false); onSettle(String(Math.ceil(excess - 0.001))); }}>
@@ -199,7 +207,7 @@ function PotdPointsBadge({ result }: { result: POTDResult }) {
   const counts = ([[1, result.first_pref, 3], [2, result.second_pref, 2], [3, result.third_pref, 1]] as const)
     .filter(([, n]) => n > 0);
   return (
-    <span className="relative inline-flex" onMouseEnter={() => setTip(true)} onMouseLeave={() => setTip(false)}>
+    <span className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
       <button type="button" data-testid="potd-points" onClick={() => setTip(t => !t)}>
         <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300">
           <Star size={10} className="mr-0.5" />{result.points} pts
@@ -241,6 +249,7 @@ interface PaymentDetail {
   paid_by?: number | null;
   paid_by_name?: string;
   paid_via?: string;
+  has_proof?: boolean;
 }
 
 interface Game {
@@ -395,6 +404,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
   const [editPaymentCollection, setEditPaymentCollection] = useState('offline');
+  const [proofGameOpen, setProofGameOpen] = useState(false);
+  const [proofUrl, setProofUrl] = useState('');
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [editGroundCost, setEditGroundCost] = useState('');
   const [editNoteBefore, setEditNoteBefore] = useState('');
@@ -1167,13 +1178,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     </div>
                     <div>
                       <Label className="text-xs text-gray-500">How to pay</Label>
-                      <Select value={editPaymentCollection} onValueChange={setEditPaymentCollection}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="offline">Track offline (cash / UPI to receiver)</SelectItem>
-                          <SelectItem value="app">Pay through the app</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <PaymentCollectionChoice value={editPaymentCollection} onChange={setEditPaymentCollection} />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Note before player list</Label>
@@ -1521,7 +1526,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </>
                 ) : (
                   <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                    onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
+                    onClick={() => setProofGameOpen(true)}
                     disabled={actionLoading === 'pay'}>
                     {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
                   </Button>
@@ -1531,10 +1536,10 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {/* Payment for current user - PostPaid */}
-          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payee && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && (game.status === 'in_progress' || game.status === 'completed') && (
+          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payee && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && ['voting_open', 'in_progress', 'completed'].includes(game.status) && (
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
-                <h4 className="font-semibold text-orange-800 mb-1">{myPaidSoFar > 0 ? 'Pay Remaining Amount' : 'Payment Due'}</h4>
+                <h4 className="font-semibold text-orange-800 mb-1">{myPaidSoFar > 0 ? 'Pay Remaining Amount' : game.status === 'voting_open' ? 'Your Share' : 'Payment Due'}</h4>
                 {myPaidSoFar > 0 && (
                   <p className="text-xs text-orange-700 mb-1">Ground cost changed. You paid {formatMoney(myPaidSoFar.toFixed(0), currency)}; your share is now {formatMoney(myShare.toFixed(0), currency)}.</p>
                 )}
@@ -1554,7 +1559,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   </>
                 ) : (
                   <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                    onClick={() => handleAction('pay', () => api.recordPayment(game.id))}
+                    onClick={() => setProofGameOpen(true)}
                     disabled={actionLoading === 'pay'}>
                     {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
                   </Button>
@@ -1563,6 +1568,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Card>
           )}
         </div>
+
+        <MarkPaidDialog gameId={proofGameOpen ? game.id : null}
+          amount={formatMoney(myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0), currency)}
+          payee={game.payee?.name} onClose={() => setProofGameOpen(false)}
+          onDone={() => handleAction('pay', async () => {})} />
+        <ProofViewer url={proofUrl} onClose={() => { URL.revokeObjectURL(proofUrl); setProofUrl(''); }} />
 
         {canCreateTeams && game.teams.length === 0 && (
           <Card className="border-blue-200 bg-blue-50">
@@ -1797,6 +1808,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
+                          {player.user_id === user?.id && player.payment_confirmed !== 1 && !(game.pay_first_enabled && player.must_prepay) && (
+                            <Button size="sm" className="ml-1 h-5 px-2 text-[11px] bg-orange-600 hover:bg-orange-700" data-testid="row-pay"
+                              onClick={() => (payOnlineAvailable ? payOnline(game.id) : setProofGameOpen(true))}>
+                              {payOnlineAvailable ? 'Pay' : 'Mark as paid'}
+                            </Button>
+                          )}
                           {game.pay_first_enabled && player.must_prepay && player.payment_confirmed !== 1 && (
                             <Badge variant="outline" className="ml-1 text-[10px] px-1 py-0 text-orange-700 border-orange-300">Pay first</Badge>
                           )}
@@ -1812,6 +1829,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               confirmed={player.payment_confirmed === 1}
                               due={game.status === 'completed' || game.payment_timing === 'before' || !!player.must_prepay}
                               currency={currency}
+                              onViewProof={(isModerator || isAdmin || player.user_id === user?.id)
+                                ? () => { api.getPaymentProof(game.id, player.user_id).then(setProofUrl).catch((e: Error) => setError(e.message)); }
+                                : undefined}
                               onSettle={(isModerator || isAdmin) ? (amt) => {
                                 if (window.confirm(`Returned ${formatMoney(amt, currency)} to this player offline? This marks the excess as settled.`)) {
                                   handleAction('settle', () => api.settleExcess(game.id, player.user_id));

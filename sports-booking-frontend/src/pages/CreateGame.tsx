@@ -14,6 +14,7 @@ import { useSports } from '../lib/sports';
 import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
 import { currencySymbol } from '@/lib/currency';
+import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 
 interface UserItem {
   id: number;
@@ -121,6 +122,8 @@ export default function CreateGame({ onBack, onCreated }: Props) {
       api.getGameDefaults().then((d: { default_payee: { id: number; name: string; phone: string } | null; show_quit_penalty: boolean; default_quit_penalty_hours: number; pay_first_enabled?: boolean }) => {
         setDefaultPayee(d.default_payee);
         setPayFirstEnabled(!!d.pay_first_enabled);
+        const dc = (d as { default_payment_collection?: string }).default_payment_collection;
+        if (dc === 'app' || dc === 'offline') setPaymentCollection(dc);
         setShowQuitPenalty(d.show_quit_penalty);
         setQuitPenaltyHours(String(d.default_quit_penalty_hours));
       }).catch(() => {}),
@@ -451,13 +454,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
 
               <div className="space-y-2">
                 <Label>How to pay</Label>
-                <Select value={paymentCollection} onValueChange={setPaymentCollection}>
-                  <SelectTrigger data-testid="payment-collection"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="offline">Track offline (cash / UPI to receiver)</SelectItem>
-                    <SelectItem value="app">Pay through the app</SelectItem>
-                  </SelectContent>
-                </Select>
+                <PaymentCollectionChoice value={paymentCollection} onChange={setPaymentCollection} />
                 {payFirstEnabled && <p className="text-xs text-gray-500">Players set to "Pay first" must pay before their name is added.</p>}
               </div>
               {showQuitPenalty && (

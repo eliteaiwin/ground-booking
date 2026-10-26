@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone, timedelta
@@ -91,6 +94,98 @@ async def record_payment(
 
     await db.commit()
     return {"message": "Payment recorded successfully"}
+
+
+PROOF_DIR = os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads")
+os.makedirs(PROOF_DIR, exist_ok=True)
+PROOF_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _short_date(d: str) -> str:
+    try:
+        return datetime.strptime(d, "%Y-%m-%d").strftime("%d-%b-%y")
+    except (TypeError, ValueError):
+        return d or ""
+
+
+def _money(currency: str, amount: float) -> str:
+    text = f"{amount:,.0f}" if float(amount).is_integer() else f"{amount:,.2f}"
+    return f"{currency} {text}" if currency[-1:].isalpha() else f"{currency}{text}"
+
+
+@router.post("/pay-with-proof")
+async def record_payment_with_proof(
+    game_id: int = Form(...),
+    file: UploadFile = File(...),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Settle Offline: the player marks their share as paid and attaches a payment screenshot."""
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload a screenshot image of the payment")
+    content = await file.read(PROOF_MAX_BYTES + 1)
+    if len(content) > PROOF_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Screenshot too large. Max size: 10MB")
+    if not content:
+        raise HTTPException(status_code=400, detail="The screenshot is empty")
+    pay = await (await db.execute(
+        "SELECT amount, paid_amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+    )).fetchone()
+    owed = max(0.0, (pay["amount"] - (pay["paid_amount"] or 0))) if pay else None
+
+    try:
+        await record_payment(RecordPaymentRequest(game_id=game_id), user_id, db)
+    except HTTPException as e:
+        if e.detail != "Already paid":
+            raise
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif"):
+        ext = ".jpg"
+    name = f"proof_{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(PROOF_DIR, name), "wb") as f:
+        f.write(content)
+    await db.execute("UPDATE payments SET proof_file = ? WHERE game_id = ? AND user_id = ?", (name, game_id, user_id))
+
+    game = await (await db.execute(
+        "SELECT title, game_date, ground_name, created_by, payee_user_id, cost_per_person FROM games WHERE id = ?", (game_id,)
+    )).fetchone()
+    payer = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
+    if game:
+        if owed is None:
+            row = await (await db.execute("SELECT amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, user_id))).fetchone()
+            owed = row["amount"] if row else game["cost_per_person"]
+        amount = _money(await ground_currency(db, game["ground_name"]), owed)
+        message = (f"{payer['name'] if payer else 'A player'} marked {amount} as paid for {game['title']} "
+                   f"({_short_date(game['game_date'])}) and uploaded a payment screenshot.")
+        for mod_id in {game["created_by"], game["payee_user_id"]} - {None, user_id}:
+            await db.execute(
+                "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_proof', ?)",
+                (mod_id, game_id, message)
+            )
+    await db.commit()
+    return {"message": "Marked as paid. The moderator has been told and can see your screenshot."}
+
+
+@router.get("/proof/{game_id}/{player_id}")
+async def get_payment_proof(
+    game_id: int,
+    player_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    if user_id != player_id:
+        from .games_router import can_moderate_game
+        await require_admin_or_moderator(user_id, db)
+        if not await can_moderate_game(user_id, game_id, db):
+            raise HTTPException(status_code=403, detail="Only this game's moderators can see payment screenshots")
+    row = await (await db.execute(
+        "SELECT proof_file FROM payments WHERE game_id = ? AND user_id = ?", (game_id, player_id)
+    )).fetchone()
+    path = os.path.join(PROOF_DIR, row["proof_file"]) if row and row["proof_file"] else ""
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No payment screenshot")
+    return FileResponse(path)
 
 
 @router.get("/my")

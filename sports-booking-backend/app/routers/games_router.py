@@ -884,7 +884,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
-        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, u.name,
+        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, u.name,
                   p.paid_by, p.paid_via, m.name AS paid_by_name
            FROM payments p
            JOIN users u ON p.user_id = u.id
@@ -907,6 +907,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "paid_by": pr["paid_by"],
             "paid_by_name": pr["paid_by_name"] or "",
             "paid_via": pr["paid_via"] or "",
+            "has_proof": bool(pr["proof_file"]),
         }
         for pr in payment_rows
     ]

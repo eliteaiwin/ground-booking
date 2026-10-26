@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, BellRing } from 'lucide-react';
 import { api } from '../services/api';
 import { openCashfreeCheckout } from '@/lib/cashfree';
 import { formatMoney, currencySymbol } from '@/lib/currency';
+import MarkPaidDialog from '@/components/MarkPaidDialog';
 
 export interface PaymentHistoryItem {
   game_id: number;
@@ -66,6 +67,7 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: 'game_date', asc: false });
   const [busy, setBusy] = useState<number | null>(null);
   const [note, setNote] = useState('');
+  const [proofItem, setProofItem] = useState<{ game_id: number; amount: string; payee: string } | null>(null);
 
   const load = useCallback(() => {
     setError('');
@@ -93,8 +95,8 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
 
   const act = async (item: PaymentHistoryItem, kind: 'settle' | 'remind' | 'pay') => {
     if (kind === 'pay' && !item.pay_online) {
-      const to = item.payee_name ? ` to ${item.payee_name}` : '';
-      if (!window.confirm(`Have you paid ${money(item.remaining, item.currency)}${to} for ${item.title} (${shortDate(item.game_date)})? This marks it as paid.`)) return;
+      setProofItem({ game_id: item.game_id, amount: money(item.remaining, item.currency), payee: item.payee_name });
+      return;
     }
     if (kind === 'settle') {
       const what = item.remaining > 0 ? `due of ${money(item.remaining, item.currency)} was paid` : `excess of ${money(-item.remaining, item.currency)} was returned`;
@@ -155,6 +157,8 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
 
   return (
     <div data-testid="payment-history" className="space-y-3">
+      <MarkPaidDialog gameId={proofItem?.game_id ?? null} amount={proofItem?.amount} payee={proofItem?.payee}
+        onClose={() => setProofItem(null)} onDone={(m) => { setNote(m); load(); }} />
       {data.series && <p className="text-xs text-gray-500 text-center">Showing only <b>{data.series}</b> games</p>}
       <div className="grid grid-cols-2 gap-2 text-center">
         <div className={`rounded-lg p-2 ${s.outstanding > 0 ? 'bg-red-50' : s.outstanding < 0 ? 'bg-amber-50' : 'bg-green-50'}`}>
