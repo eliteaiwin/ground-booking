@@ -737,6 +737,10 @@ async def init_db():
 
     # Migrations for existing databases
     try:
+        await db.execute("ALTER TABLE moderator_groups ADD COLUMN parent_id INTEGER REFERENCES moderator_groups(id)")
+    except Exception:
+        pass
+    try:
         await db.execute("ALTER TABLE games ADD COLUMN ground_cost REAL NOT NULL DEFAULT 0")
     except Exception:
         pass

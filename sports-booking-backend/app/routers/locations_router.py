@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from ..database import get_db
 from ..auth import get_current_user_id
+from ..pitches import group_ancestors, group_parents
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -1267,6 +1268,18 @@ async def list_ground_moderators(
         found = {datetime.strptime(r["allot_date"], "%Y-%m-%d").weekday() for r in await cur.fetchall()}
         return [weekday_names[d] for d in sorted(found)]
 
+    parents = await group_parents(db)
+    group_names = {g["id"]: g["name"] for g in await (await db.execute(
+        "SELECT id, name FROM moderator_groups WHERE ground_id = ?", (ground_id,)
+    )).fetchall()}
+
+    def _path(gid: int) -> str:
+        return " › ".join(group_names.get(a, "") for a in [*reversed(group_ancestors(gid, parents)), gid])
+
+    async def _group_days(gid: int) -> list[str]:
+        ids = [gid, *group_ancestors(gid, parents)]
+        return await _days(f"moderator_group_id IN ({','.join('?' * len(ids))})", tuple(ids))
+
     result = []
     for r in rows:
         group_rows = await (await db.execute(
@@ -1274,8 +1287,8 @@ async def list_ground_moderators(
                WHERE m.user_id = ? AND mg.ground_id = ? ORDER BY mg.name COLLATE NOCASE""",
             (r["user_id"], ground_id)
         )).fetchall()
-        groups = [{"id": g["id"], "name": g["name"], "days": await _days("moderator_group_id = ?", (g["id"],))} for g in group_rows]
-        group_ids = [g["id"] for g in group_rows]
+        groups = [{"id": g["id"], "name": _path(g["id"]), "days": await _group_days(g["id"])} for g in group_rows]
+        group_ids = sorted({x for g in group_rows for x in [g["id"], *group_ancestors(g["id"], parents)]})
         marks = ",".join("?" * len(group_ids))
         where = f"moderator_user_id = ? OR moderator_group_id IN ({marks})" if group_ids else "moderator_user_id = ?"
         result.append({

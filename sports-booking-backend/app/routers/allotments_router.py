@@ -10,7 +10,7 @@ from ..auth import get_current_user_id
 from ..database import get_db
 from ..pitches import (
     describe, find_layout, layouts_payload, load_occupancy, parse_dt, pitch_label, pitch_units,
-    sport_layouts, unit_count, user_group_ids,
+    group_descendants, group_member_ids, group_parents, sport_layouts, unit_count, user_group_ids,
 )
 
 router = APIRouter(prefix="/api/allotments", tags=["allotments"])
@@ -18,6 +18,11 @@ router = APIRouter(prefix="/api/allotments", tags=["allotments"])
 
 class GroupRequest(BaseModel):
     name: str
+    parent_id: Optional[int] = None
+
+
+class GroupParentRequest(BaseModel):
+    parent_id: Optional[int] = None
 
 
 class GroupMemberRequest(BaseModel):
@@ -99,7 +104,7 @@ async def list_groups(ground_id: int, user_id: int = Depends(get_current_user_id
     ground = await _ground(db, ground_id)
     await _require_viewer(db, user_id, ground)
     groups = await (await db.execute(
-        "SELECT id, name FROM moderator_groups WHERE ground_id = ? ORDER BY name COLLATE NOCASE", (ground_id,)
+        "SELECT id, name, parent_id FROM moderator_groups WHERE ground_id = ? ORDER BY name COLLATE NOCASE", (ground_id,)
     )).fetchall()
     result = []
     for g in groups:
@@ -110,6 +115,7 @@ async def list_groups(ground_id: int, user_id: int = Depends(get_current_user_id
         result.append({
             "id": g["id"],
             "name": g["name"],
+            "parent_id": g["parent_id"],
             "members": [{"user_id": m["id"], "name": m["name"], "phone": m["phone"]} for m in members],
         })
     return result
@@ -122,14 +128,36 @@ async def create_group(ground_id: int, req: GroupRequest, user_id: int = Depends
     name = req.name.strip()[:60]
     if not name:
         raise HTTPException(status_code=400, detail="Group name is required")
+    if req.parent_id is not None and (await _group(db, req.parent_id))["ground_id"] != ground_id:
+        raise HTTPException(status_code=400, detail="The parent group belongs to another ground")
     try:
         cursor = await db.execute(
-            "INSERT INTO moderator_groups (ground_id, name, created_by) VALUES (?, ?, ?)", (ground_id, name, user_id)
+            "INSERT INTO moderator_groups (ground_id, name, created_by, parent_id) VALUES (?, ?, ?, ?)",
+            (ground_id, name, user_id, req.parent_id)
         )
     except aiosqlite.IntegrityError:
         raise HTTPException(status_code=409, detail=f"A group named '{name}' already exists at this ground")
     await db.commit()
-    return {"id": cursor.lastrowid, "name": name, "members": []}
+    return {"id": cursor.lastrowid, "name": name, "parent_id": req.parent_id, "members": []}
+
+
+@router.put("/groups/{group_id}/parent")
+async def set_group_parent(group_id: int, req: GroupParentRequest, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    group = await _group(db, group_id)
+    await _require_manager(db, user_id, group["ground_id"])
+    if req.parent_id is not None:
+        parent = await _group(db, req.parent_id)
+        if parent["ground_id"] != group["ground_id"]:
+            raise HTTPException(status_code=400, detail="The parent group belongs to another ground")
+        parents = await group_parents(db)
+        if req.parent_id == group_id or req.parent_id in group_descendants(group_id, parents):
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{group['name']}' can't go under '{parent['name']}': that would make a loop",
+            )
+    await db.execute("UPDATE moderator_groups SET parent_id = ? WHERE id = ?", (req.parent_id, group_id))
+    await db.commit()
+    return {"id": group_id, "parent_id": req.parent_id}
 
 
 @router.put("/groups/{group_id}")
@@ -157,6 +185,7 @@ async def delete_group(group_id: int, user_id: int = Depends(get_current_user_id
     )).fetchone()
     if upcoming["cnt"]:
         raise HTTPException(status_code=400, detail=f"This group still has {upcoming['cnt']} upcoming allotment(s). Remove them first.")
+    await db.execute("UPDATE moderator_groups SET parent_id = ? WHERE parent_id = ?", (group["parent_id"], group_id))
     await db.execute("UPDATE games SET moderator_group_id = NULL WHERE moderator_group_id = ?", (group_id,))
     await db.execute("DELETE FROM moderator_group_members WHERE group_id = ?", (group_id,))
     await db.execute("DELETE FROM moderator_groups WHERE id = ?", (group_id,))
@@ -277,10 +306,7 @@ async def create_allotment(
         group = await _group(db, req.moderator_group_id)
         if group["ground_id"] != ground_id:
             raise HTTPException(status_code=400, detail="That moderator group belongs to another ground")
-        rows = await (await db.execute(
-            "SELECT user_id FROM moderator_group_members WHERE group_id = ?", (req.moderator_group_id,)
-        )).fetchall()
-        members = {r["user_id"] for r in rows}
+        members = await group_member_ids(db, req.moderator_group_id)
     else:
         target = await (await db.execute(
             "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL", (req.moderator_user_id,)

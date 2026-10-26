@@ -852,8 +852,10 @@ export const api = {
 
   // Pitch allotments & moderator groups
   listModeratorGroups: (groundId: number) => request(`/api/allotments/grounds/${groundId}/groups`),
-  createModeratorGroup: (groundId: number, name: string) =>
-    request(`/api/allotments/grounds/${groundId}/groups`, { method: 'POST', body: JSON.stringify({ name }) }),
+  createModeratorGroup: (groundId: number, name: string, parentId: number | null = null) =>
+    request(`/api/allotments/grounds/${groundId}/groups`, { method: 'POST', body: JSON.stringify({ name, parent_id: parentId }) }),
+  setModeratorGroupParent: (groupId: number, parentId: number | null) =>
+    request(`/api/allotments/groups/${groupId}/parent`, { method: 'PUT', body: JSON.stringify({ parent_id: parentId }) }),
   renameModeratorGroup: (groupId: number, name: string) =>
     request(`/api/allotments/groups/${groupId}`, { method: 'PUT', body: JSON.stringify({ name }) }),
   deleteModeratorGroup: (groupId: number) =>

@@ -189,11 +189,46 @@ def describe(item: dict) -> str:
     return f"{item['pitch_label']} allotted to {item['holder'] or 'someone'} ({when})"
 
 
+async def group_parents(db: aiosqlite.Connection) -> dict[int, Optional[int]]:
+    rows = await (await db.execute("SELECT id, parent_id FROM moderator_groups")).fetchall()
+    return {r["id"]: r["parent_id"] for r in rows}
+
+
+def group_ancestors(group_id: int, parents: dict[int, Optional[int]]) -> list[int]:
+    """Parent, grandparent, ... of a group (nearest first)."""
+    chain, seen = [], {group_id}
+    parent = parents.get(group_id)
+    while parent is not None and parent not in seen:
+        chain.append(parent)
+        seen.add(parent)
+        parent = parents.get(parent)
+    return chain
+
+
+def group_descendants(group_id: int, parents: dict[int, Optional[int]]) -> set[int]:
+    return {g for g in parents if g != group_id and group_id in group_ancestors(g, parents)}
+
+
 async def user_group_ids(db: aiosqlite.Connection, user_id: int) -> set[int]:
+    """Groups a user belongs to, directly or through a sub-group (a parent group's allotment covers its sub-groups)."""
     rows = await (await db.execute(
         "SELECT group_id FROM moderator_group_members WHERE user_id = ?", (user_id,)
     )).fetchall()
-    return {r["group_id"] for r in rows}
+    direct = {r["group_id"] for r in rows}
+    if not direct:
+        return direct
+    parents = await group_parents(db)
+    return direct | {a for g in direct for a in group_ancestors(g, parents)}
+
+
+async def group_member_ids(db: aiosqlite.Connection, group_id: int) -> set[int]:
+    """Members of a group and of all its sub-groups."""
+    ids = {group_id} | group_descendants(group_id, await group_parents(db))
+    marks = ",".join("?" * len(ids))
+    rows = await (await db.execute(
+        f"SELECT DISTINCT user_id FROM moderator_group_members WHERE group_id IN ({marks})", tuple(ids)
+    )).fetchall()
+    return {r["user_id"] for r in rows}
 
 
 def allotment_belongs_to(item: dict, user_id: int, groups: set[int]) -> bool:

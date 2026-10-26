@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.18', date: '2026-10-26', changes: [
+    'Ground Mgmt → Groups: a group can sit under a parent group (e.g. "Lobo Sun Mod" under "Lobo Mod Gang"); loops are blocked',
+    'A slot allotted to a parent group covers everyone in its sub-groups; a sub-group slot covers only that sub-group',
+    'Moderators tab shows each person\'s groups with their parent (e.g. "Lobo Mod Gang › Lobo Tue Mod") and the days they manage',
+  ]},
   { version: '1.17', date: '2026-10-25', changes: [
     'About: tap the ⚽ icon or Profile menu → About to see Elizoph Technologies, www.elizoph.com, email and mobile (tap to mail or call)',
   ]},
