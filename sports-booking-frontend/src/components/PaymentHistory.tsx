@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, BellRing } from 'lucide-react';
 import { api } from '../services/api';
 import { openCashfreeCheckout } from '@/lib/cashfree';
@@ -127,7 +127,6 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
   if (!data) return <p className="text-sm text-gray-500 text-center py-4">Loading payments...</p>;
 
   const s = data.summary;
-  const anyAction = data.items.some(i => i.can_settle || i.can_pay);
   const sortBtn = (key: SortKey, label: string, right = false) => (
     <button
       type="button"
@@ -186,12 +185,12 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                 {head('paid_amount', 'Paid', true)}
                 {head('balance', 'Balance', true)}
                 {head('done_minutes', 'Done in')}
-                {anyAction && <th className="px-0.5 py-1.5" />}
-              </tr>
+                              </tr>
             </thead>
             <tbody>
               {rows.map(i => (
-                <tr key={i.game_id} data-testid="pay-row" className="border-t">
+                <Fragment key={i.game_id}>
+                <tr data-testid="pay-row" className="border-t">
                   <td className="px-1 py-1.5">
                     {shortDate(i.game_date)}
                     {showGame && <span data-testid="pay-game" className="block text-[10px] text-gray-500 max-w-[96px] truncate" title={i.game_name}>{i.game_name}</span>}
@@ -205,8 +204,11 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                     {i.remaining > 0 ? <span className="text-gray-400">Unpaid</span> : formatDuration(i.done_minutes) || '-'}
                     {i.paid_via === 'offline' && <span className="block text-[9px] text-gray-500">offline</span>}
                   </td>
-                  {anyAction && (
-                    <td className="px-0.5 py-1 text-right">
+                </tr>
+                {(i.can_pay || i.can_settle) && (
+                  <tr data-testid="pay-actions">
+                    <td colSpan={5} className="px-1 pb-1.5 pt-0">
+                      <div className="flex justify-end items-center gap-1">
                       {i.can_pay && (
                         <button type="button" data-testid="pay-now" disabled={busy === i.game_id}
                           className="px-2 py-1 rounded bg-orange-600 text-white text-[11px] font-medium hover:bg-orange-700 disabled:opacity-40" onClick={() => act(i, 'pay')}>
@@ -227,9 +229,11 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                           </button>
                         </span>
                       )}
+                    </div>
                     </td>
-                  )}
-                </tr>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
