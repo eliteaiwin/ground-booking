@@ -13,6 +13,7 @@ import { ArrowLeft, Search, X, UserPlus, ChevronDown, CheckCircle2, AlertTriangl
 import { useSports } from '../lib/sports';
 import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
+import { currencySymbol } from '@/lib/currency';
 
 interface UserItem {
   id: number;
@@ -26,6 +27,7 @@ interface Ground {
   name: string;
   location: string;
   display_name: string;
+  currency?: string;
   pitch_layouts?: Record<string, PitchLayout[]>;
 }
 
@@ -100,7 +102,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [noteBefore, setNoteBefore] = useState('');
   const [noteAfter, setNoteAfter] = useState('');
 
-  const currency = user?.currency || 'Rs';
+  const currency = currencySymbol(grounds.find(g => g.display_name === groundName)?.currency || user?.currency);
 
 
   useEffect(() => {

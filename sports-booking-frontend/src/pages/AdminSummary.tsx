@@ -3,7 +3,9 @@ import { formatPhone } from '@/lib/phone';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, DollarSign, Users, AlertTriangle, Search, CheckCircle, X } from 'lucide-react';
+import { ArrowLeft, Users, AlertTriangle, Search, CheckCircle, X } from 'lucide-react';
+import { formatMoney, sumByCurrency } from '@/lib/currency';
+import CurrencyIcon from '@/components/CurrencyIcon';
 
 interface GamePayment {
   game_id: number;
@@ -13,6 +15,9 @@ interface GamePayment {
   ground_name: string;
   game_status: string;
   amount: number;
+  paid_amount?: number;
+  pending?: number;
+  currency?: string;
   status: string;
   paid_at: string | null;
 }
@@ -33,6 +38,7 @@ interface GameSummary {
   game_date: string;
   ground_name: string;
   cost_per_person: number;
+  currency?: string;
   game_status: string;
   total_players: number;
   paid_count: number;
@@ -148,8 +154,10 @@ export default function AdminSummary({ onBack }: Props) {
     }
   };
 
-  const totalCollected = perGame.reduce((s, g) => s + g.total_collected, 0);
-  const totalPendingAmount = perGame.reduce((s, g) => s + g.total_pending, 0);
+  const byCurrency = (totals: [string, number][]) =>
+    (totals.length ? totals : [['₹', 0] as [string, number]]).map(([c, n]) => formatMoney(n.toFixed(2), c)).join(' · ');
+  const totalCollected = byCurrency(sumByCurrency(perGame, g => g.currency, g => g.total_collected));
+  const totalPendingAmount = byCurrency(sumByCurrency(perGame, g => g.currency, g => g.total_pending));
 
   const filteredUsers = usersWithPayments.filter(u => {
     if (!userSearch) return true;
@@ -273,15 +281,15 @@ export default function AdminSummary({ onBack }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <Card className="border-green-200 bg-green-50">
                 <CardContent className="p-4 text-center">
-                  <DollarSign size={20} className="mx-auto text-green-600 mb-1" />
-                  <p className="text-2xl font-bold text-green-700">${totalCollected.toFixed(2)}</p>
+                  <CurrencyIcon currency={perGame[0]?.currency} size={20} className="mx-auto text-green-600 mb-1" />
+                  <p className="text-2xl font-bold text-green-700">{totalCollected}</p>
                   <p className="text-xs text-green-600">Total Collected</p>
                 </CardContent>
               </Card>
               <Card className="border-red-200 bg-red-50">
                 <CardContent className="p-4 text-center">
                   <AlertTriangle size={20} className="mx-auto text-red-600 mb-1" />
-                  <p className="text-2xl font-bold text-red-700">${totalPendingAmount.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-red-700">{totalPendingAmount}</p>
                   <p className="text-xs text-red-600">Total Pending</p>
                 </CardContent>
               </Card>
@@ -306,7 +314,7 @@ export default function AdminSummary({ onBack }: Props) {
                         <span className="text-green-600">{g.paid_count} paid</span>
                         <span className="text-red-600">{g.pending_count} pending</span>
                         <span className="text-gray-500">
-                          ${g.total_collected.toFixed(2)} / ${(g.total_collected + g.total_pending).toFixed(2)}
+                          {formatMoney(g.total_collected.toFixed(2), g.currency)} / {formatMoney((g.total_collected + g.total_pending).toFixed(2), g.currency)}
                         </span>
                       </div>
                       {g.total_players > 0 && (
@@ -341,8 +349,8 @@ export default function AdminSummary({ onBack }: Props) {
                           <p className="text-xs text-gray-500">{formatPhone(u.phone)} - {u.games.length} game(s)</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          {u.total_pending > 0 && <Badge className="bg-red-100 text-red-700">${u.total_pending.toFixed(2)}</Badge>}
-                          {u.total_paid > 0 && <Badge className="bg-green-100 text-green-700">${u.total_paid.toFixed(2)}</Badge>}
+                          {u.total_pending > 0 && <Badge className="bg-red-100 text-red-700">{byCurrency(sumByCurrency(u.games.filter(g => g.status !== 'paid'), g => g.currency, g => g.pending ?? g.amount).filter(([, n]) => n > 0))}</Badge>}
+                          {u.total_paid > 0 && <Badge className="bg-green-100 text-green-700">{byCurrency(sumByCurrency(u.games.filter(g => g.status === 'paid'), g => g.currency, g => g.paid_amount ?? g.amount).filter(([, n]) => n > 0))}</Badge>}
                         </div>
                       </button>
                       {expandedUserId === u.user_id && (
@@ -356,7 +364,7 @@ export default function AdminSummary({ onBack }: Props) {
                               </div>
                               <div className="text-right flex items-center gap-2">
                                 <div>
-                                  <p className="font-bold">${g.amount.toFixed(2)}</p>
+                                  <p className="font-bold">{formatMoney(g.amount.toFixed(2), g.currency)}</p>
                                   <Badge className={g.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>{g.status === 'paid' ? 'Paid' : 'Unpaid'}</Badge>
                                 </div>
                                 {g.status === 'pending' && (

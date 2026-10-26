@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays } from 'lucide-react';
 import { WhatsNew } from '@/components/WhatsNew';
 import { AboutDialog } from '@/components/AboutDialog';
+import { formatMoney, currencySymbol } from '@/lib/currency';
 
 interface Game {
   id: number;
@@ -21,6 +22,7 @@ interface Game {
   game_time: string;
   max_players: number;
   cost_per_person: number;
+  currency?: string;
   payment_timing: string;
   status: string;
   is_archived: boolean;
@@ -121,7 +123,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [showSwitchRole, setShowSwitchRole] = useState(false);
 
-  const currency = user?.currency || 'Rs';
+  const currency = currencySymbol(user?.currency);
   const otherAccounts = storedAccounts.filter(a => a.userId !== user?.id);
 
   useEffect(() => {
@@ -574,7 +576,7 @@ export default function Dashboard({ onNavigate }: Props) {
                             +{game.waiting_list.length} waiting
                           </span>
                         )}
-                        <span>{game.cost_per_person} {currency}/person</span>
+                        <span>{formatMoney(game.cost_per_person, game.currency || currency)}/person</span>
                       </div>
                       {game.player_of_the_day && (
                         <div className="mt-2 text-xs text-yellow-600 font-medium flex items-center gap-1">

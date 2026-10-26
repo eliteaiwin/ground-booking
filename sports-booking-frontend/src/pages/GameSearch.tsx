@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Search, Users, Trophy, Calendar, MapPin, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSports, sportLabel } from '../lib/sports';
 import { localYmd } from '../lib/utils';
+import { formatMoney, currencySymbol } from '@/lib/currency';
 
 interface Player {
   user_id: number;
@@ -33,6 +34,7 @@ interface GameResult {
   status: string;
   max_players: number;
   cost_per_person: number;
+  currency?: string;
   duration_minutes: number;
   selected_players: Player[];
   waiting_list: Player[];
@@ -154,7 +156,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
   const [expandedGame, setExpandedGame] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const currency = user?.currency || 'Rs';
+  const currency = currencySymbol(user?.currency);
 
   // User's sports from profile
   const userSports: string[] = useMemo(() => {
@@ -382,7 +384,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                           {game.waiting_list.length > 0 && (
                             <span className="text-orange-500 ml-1">+{game.waiting_list.length} waiting</span>
                           )}
-                          <span className="ml-2">{game.cost_per_person} {currency}/person</span>
+                          <span className="ml-2">{formatMoney(game.cost_per_person, game.currency || currency)}/person</span>
                         </p>
                       </div>
 

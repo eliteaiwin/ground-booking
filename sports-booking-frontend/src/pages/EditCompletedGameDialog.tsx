@@ -5,8 +5,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trophy, ArrowLeft, ArrowRight, DollarSign } from 'lucide-react';
+import { Trophy, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Player, formatPlayerDisplay } from '@/lib/player';
+import { formatMoney } from '@/lib/currency';
+import CurrencyIcon from '@/components/CurrencyIcon';
 
 interface Team {
   id: number;
@@ -320,13 +322,13 @@ export default function EditCompletedGameDialog({
         </div>
         <div className="flex justify-between text-gray-600">
           <span>Ground cost</span>
-          <span>{groundCost.toFixed(2)} {currency}</span>
+          <span>{formatMoney(groundCost.toFixed(2), currency)}</span>
         </div>
         <div className="flex justify-between items-center pt-2 border-t border-gray-200">
           <span className="font-semibold text-gray-800 flex items-center gap-1">
-            <DollarSign size={14} /> Per player
+            <CurrencyIcon currency={currency} size={14} /> Per player
           </span>
-          <span className="font-bold text-green-700">{perPerson.toFixed(0)} {currency}</span>
+          <span className="font-bold text-green-700">{formatMoney(perPerson.toFixed(0), currency)}</span>
         </div>
         {hasTeams && (
           <>

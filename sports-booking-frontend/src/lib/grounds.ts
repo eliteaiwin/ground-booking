@@ -211,6 +211,7 @@ export interface GroundDetails {
   country_code: string;
   photos: { id: number; filename: string; caption: string; is_main: boolean }[];
   moderators: { user_id: number; name: string; phone: string; sport_type: string }[];
+  currency?: string;
   upcoming_games: {
     game_id: number; title: string; sport_type: string; status: string; game_date: string; game_time: string;
     duration_minutes: number; max_players: number; player_count: number; cost_per_person: number;

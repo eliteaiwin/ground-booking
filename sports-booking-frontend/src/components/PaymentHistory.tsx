@@ -2,10 +2,12 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, BellRing } from 'lucide-react';
 import { api } from '../services/api';
 import { openCashfreeCheckout } from '@/lib/cashfree';
+import { formatMoney, currencySymbol } from '@/lib/currency';
 
 export interface PaymentHistoryItem {
   game_id: number;
   game_name: string;
+  currency?: string;
   title: string;
   game_date: string;
   game_time: string;
@@ -32,7 +34,7 @@ interface History {
 type SortKey = 'game_name' | 'game_date' | 'amount' | 'paid_amount' | 'balance' | 'done_minutes';
 
 const num = (n: number) => Math.round(n).toLocaleString('en-IN');
-const money = (n: number) => `₹${num(n)}`;
+const money = (n: number, c?: string | null) => formatMoney(num(n), c);
 
 export function formatDuration(minutes: number | null): string {
   if (minutes == null) return '';
@@ -92,11 +94,11 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
   const act = async (item: PaymentHistoryItem, kind: 'settle' | 'remind' | 'pay') => {
     if (kind === 'pay' && !item.pay_online) {
       const to = item.payee_name ? ` to ${item.payee_name}` : '';
-      if (!window.confirm(`Have you paid ${money(item.remaining)}${to} for ${item.title} (${shortDate(item.game_date)})? This marks it as paid.`)) return;
+      if (!window.confirm(`Have you paid ${money(item.remaining, item.currency)}${to} for ${item.title} (${shortDate(item.game_date)})? This marks it as paid.`)) return;
     }
     if (kind === 'settle') {
-      const what = item.remaining > 0 ? `due of ${money(item.remaining)} was paid` : `excess of ${money(-item.remaining)} was returned`;
-      if (!window.confirm(`Confirm the ${what} offline for ${item.title} (${shortDate(item.game_date)})? Remaining becomes ₹0.`)) return;
+      const what = item.remaining > 0 ? `due of ${money(item.remaining, item.currency)} was paid` : `excess of ${money(-item.remaining, item.currency)} was returned`;
+      if (!window.confirm(`Confirm the ${what} offline for ${item.title} (${shortDate(item.game_date)})? Balance becomes 0.`)) return;
     }
     setBusy(item.game_id);
     setNote('');
@@ -127,6 +129,15 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
   if (!data) return <p className="text-sm text-gray-500 text-center py-4">Loading payments...</p>;
 
   const s = data.summary;
+  const perCur: { cur: string; owed: number; paid: number; due: number; excess: number }[] = [];
+  for (const i of data.items) {
+    const cur = currencySymbol(i.currency);
+    let c = perCur.find(x => x.cur === cur);
+    if (!c) { c = { cur, owed: 0, paid: 0, due: 0, excess: 0 }; perCur.push(c); }
+    c.owed += i.amount; c.paid += i.paid_amount;
+    if (i.remaining > 0) c.due += i.remaining; else c.excess -= i.remaining;
+  }
+  if (!perCur.length) perCur.push({ cur: currencySymbol(null), owed: 0, paid: 0, due: 0, excess: 0 });
   const sortBtn = (key: SortKey, label: string, right = false) => (
     <button
       type="button"
@@ -149,8 +160,12 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
         <div className={`rounded-lg p-2 ${s.outstanding > 0 ? 'bg-red-50' : s.outstanding < 0 ? 'bg-amber-50' : 'bg-green-50'}`}>
           <p className="text-[11px] text-gray-500">Balance</p>
           <p data-testid="pay-outstanding" className={`font-bold ${s.outstanding > 0 ? 'text-red-600' : s.outstanding < 0 ? 'text-amber-600' : 'text-green-600'}`}>
-            {s.outstanding > 0 ? `−${money(s.outstanding)}` : s.outstanding < 0 ? `+${money(-s.outstanding)}` : money(0)}
-            {s.outstanding !== 0 && <span className="block text-[10px] font-normal">{s.outstanding > 0 ? 'due' : 'excess'}</span>}
+            {perCur.map(c => (
+              <span key={c.cur} className={`block ${c.owed - c.paid > 0 ? 'text-red-600' : c.owed - c.paid < 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                {c.owed - c.paid > 0 ? `−${money(c.owed - c.paid, c.cur)}` : c.owed - c.paid < 0 ? `+${money(c.paid - c.owed, c.cur)}` : money(0, c.cur)}
+              </span>
+            ))}
+            {s.outstanding !== 0 && perCur.length === 1 && <span className="block text-[10px] font-normal">{s.outstanding > 0 ? 'due' : 'excess'}</span>}
           </p>
         </div>
         <div className="rounded-lg p-2 bg-gray-50">
@@ -159,12 +174,12 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
         </div>
         <div className="rounded-lg p-2 bg-gray-50">
           <p className="text-[11px] text-gray-500">Paid</p>
-          <p data-testid="pay-paid" className="font-bold text-gray-800">{money(s.paid)} <span className="text-[11px] font-normal text-gray-500">of {money(s.owed)}</span></p>
+          <p data-testid="pay-paid" className="font-bold text-gray-800">{perCur.map(c => <span key={c.cur} className="block">{money(c.paid, c.cur)} <span className="text-[11px] font-normal text-gray-500">of {money(c.owed, c.cur)}</span></span>)}</p>
         </div>
         <div className="rounded-lg p-2 bg-gray-50">
           <p className="text-[11px] text-gray-500">Due</p>
           <p data-testid="pay-due" className={`font-bold ${s.due > 0 ? 'text-red-600' : 'text-gray-800'}`}>
-            {money(s.due)}{s.excess > 0 && <span className="block text-[11px] font-normal text-amber-600">{money(s.excess)} excess</span>}
+            {perCur.map(c => <span key={c.cur} className="block">{money(c.due, c.cur)}{c.excess > 0 && <span className="block text-[11px] font-normal text-amber-600">{money(c.excess, c.cur)} excess</span>}</span>)}
           </p>
         </div>
       </div>
@@ -181,7 +196,7 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                     <div className="flex flex-col items-start gap-0.5">{sortBtn('game_date', 'Date')}{sortBtn('game_name', 'Game')}</div>
                   </th>
                 ) : head('game_date', 'Date')}
-                {head('amount', 'Owed ₹', true)}
+                {head('amount', 'Owed', true)}
                 {head('paid_amount', 'Paid', true)}
                 {head('balance', 'Balance', true)}
                 {head('done_minutes', 'Done in')}
@@ -195,7 +210,7 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                     {shortDate(i.game_date)}
                     {showGame && <span data-testid="pay-game" className="block text-[10px] text-gray-500 max-w-[96px] truncate" title={i.game_name}>{i.game_name}</span>}
                   </td>
-                  <td className="px-1 py-1.5 text-right">{num(i.amount)}</td>
+                  <td className="px-1 py-1.5 text-right">{money(i.amount, i.currency)}</td>
                   <td className="px-1 py-1.5 text-right">{num(i.paid_amount)}</td>
                   <td data-testid="pay-balance" className={`px-1 py-1.5 text-right font-medium ${i.balance < 0 ? 'text-red-600' : i.balance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                     {i.balance > 0 ? `+${num(i.balance)}` : i.balance < 0 ? `−${num(-i.balance)}` : '0'}

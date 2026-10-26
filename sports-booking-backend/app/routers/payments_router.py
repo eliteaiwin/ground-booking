@@ -7,6 +7,7 @@ import aiosqlite
 from .. import cashfree
 from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
+from ..currency import ground_currency
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -104,10 +105,12 @@ async def my_payments(
         (user_id,)
     )
     payments = await cursor.fetchall()
+    currencies = {name: await ground_currency(db, name) for name in {p["ground_name"] for p in payments}}
     return [
         {
             "id": p["id"],
             "game_id": p["game_id"],
+            "currency": currencies[p["ground_name"]],
             "game_title": p["title"],
             "sport_type": p["sport_type"],
             "game_date": p["game_date"],
@@ -245,6 +248,10 @@ async def payment_summary(
             users_map[uid]["total_pending"] += pending
 
     users_list = sorted(users_map.values(), key=lambda x: x["total_pending"], reverse=True)
+    currencies = {name: await ground_currency(db, name) for name in {g["ground_name"] for g in games} | {up["ground_name"] for up in user_payments}}
+    for u in users_list:
+        for ug in u["games"]:
+            ug["currency"] = currencies[ug["ground_name"]]
 
     # Also return list of games for dropdown (filtered by date range and status)
     games_dropdown_query = """SELECT g.id, g.title, g.game_date, g.sport_type, g.ground_name, g.status
@@ -263,6 +270,7 @@ async def payment_summary(
                 "game_date": g["game_date"],
                 "ground_name": g["ground_name"],
                 "cost_per_person": g["cost_per_person"],
+                "currency": currencies[g["ground_name"]],
                 "game_status": g["game_status"],
                 "total_players": g["total_players"],
                 "paid_count": g["paid_count"] or 0,
@@ -494,6 +502,7 @@ async def payment_history(
         items.append({
             "game_id": r["game_id"],
             "game_name": r["series_name"] or r["title"],
+            "currency": await ground_currency(db, r["ground_name"]),
             "title": r["title"],
             "game_date": r["game_date"],
             "game_time": r["game_time"],

@@ -12,6 +12,7 @@ import { useSports } from '../lib/sports';
 import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
 import { localYmd } from '../lib/utils';
+import { currencySymbol } from '@/lib/currency';
 
 interface UserItem {
   id: number;
@@ -25,6 +26,7 @@ interface Ground {
   name: string;
   location: string;
   display_name: string;
+  currency?: string;
   pitch_layouts?: Record<string, PitchLayout[]>;
 }
 
@@ -86,7 +88,7 @@ export default function CreateSeries({ onBack }: Props) {
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [sportDefaults, setSportDefaults] = useState<Record<string, number>>({});
 
-  const currency = user?.currency || 'Rs';
+  const currency = currencySymbol(grounds.find(g => g.display_name === groundName)?.currency || user?.currency);
 
 
   useEffect(() => {

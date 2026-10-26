@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from ..database import get_db
 from ..auth import get_current_user_id
 from ..pitches import group_ancestors, group_parents
+from ..currency import currency_for_country
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/data/uploads" if os.path.exists("/data") else "./uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -310,6 +311,7 @@ async def list_grounds(
             "ground_code": ground_code,
             "ground_code_display": f"{ground_code}-{r['location']}-{r['name']}".replace(' ', '') if ground_code else "",
             "display_name": f"{r['location']} - {r['name']}",
+            "currency": currency_for_country(r["country_code"]),
             "is_approved": r["is_approved"],
             "created_at": r["created_at"],
             "main_photo": main_photo,
@@ -2077,6 +2079,7 @@ async def get_ground_details(
     details = _ground_summary(g, sport_types, photos[0]["filename"] if photos else "")
     details.update({
         "sports": [s for s in (g["sports"] or "").split(",") if s],
+        "currency": currency_for_country(g["country_code"]),
         "description": g["description"],
         "opening_hours": g["opening_hours"],
         "price_info": g["price_info"],

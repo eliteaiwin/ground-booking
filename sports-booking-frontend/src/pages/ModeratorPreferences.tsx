@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Settings, DollarSign, Trophy, Eye, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, Settings, Trophy, Eye, SlidersHorizontal, X } from 'lucide-react';
 import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { ALL_SPORTS } from '../lib/sports';
+import CurrencyIcon from '@/components/CurrencyIcon';
 
 interface Props {
   onBack: () => void;
@@ -179,7 +180,7 @@ function GameDefaultsCard() {
 }
 
 export default function ModeratorPreferences({ onBack }: Props) {
-  const { appSettings, refreshAppSettings, isAdmin } = useAuth();
+  const { user, appSettings, refreshAppSettings, isAdmin } = useAuth();
   const [prefs, setPrefs] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState('');
   const [success, setSuccess] = useState('');
@@ -398,7 +399,7 @@ export default function ModeratorPreferences({ onBack }: Props) {
         {isAdmin && appSettings && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2"><DollarSign size={18} /> Payments</CardTitle>
+              <CardTitle className="text-lg flex items-center gap-2"><CurrencyIcon currency={user?.currency} size={18} /> Payments</CardTitle>
               <p className="text-sm text-gray-500">Toggle in-app payments and surcharge.</p>
             </CardHeader>
             <CardContent className="space-y-4">

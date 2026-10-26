@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.20', date: '2026-10-28', changes: [
+    'Money shows in the currency of the ground\'s country: ₹ for India grounds, $ for US grounds, £ for UK and so on, instead of "Rs" or "$"',
+    'The currency follows the ground, not the player: someone with a UK phone number playing on an India ground pays in ₹',
+    'Payment screens and admin totals add up each currency separately, e.g. "−₹6,000 · −$15"',
+  ] },
   { version: '1.19', date: '2026-10-27', changes: [
     'Player info popup has a Payment tab: Balance (− due / + excess), Paid, Due and average paying time, with a sortable table of Date, Owed, Paid, Balance and Done in (time after the game ended)',
     'Your own unpaid rows have a Pay button; moderators get a Settle button on other players\' rows. Each payment goes against that row\'s game',

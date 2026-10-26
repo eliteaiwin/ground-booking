@@ -13,6 +13,7 @@ from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
+from ..currency import ground_currency
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -963,6 +964,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "online_payment_ready": pay_settings["enabled"] and cashfree.configured(),
         "payment_timing": game["payment_timing"],
         "payment_collection": game["payment_collection"] or "offline",
+        "currency": await ground_currency(db, game["ground_name"]),
         "status": game["status"],
         "payee": payee_info,
         "quit_penalty_hours": quit_penalty_hours,

@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, CreditCard } from 'lucide-react';
+import { formatMoney, sumByCurrency } from '@/lib/currency';
 
 interface Payment {
   id: number;
@@ -13,6 +14,7 @@ interface Payment {
   game_time: string;
   ground_name: string;
   amount: number;
+  currency?: string;
   status: string;
   paid_at: string | null;
 }
@@ -38,8 +40,12 @@ export default function MyPayments({ onBack }: Props) {
     api.myPayments().then(setPayments).finally(() => setLoading(false));
   }, []);
 
-  const totalPending = payments.filter(p => p.status === 'pending').reduce((sum, p) => sum + p.amount, 0);
-  const totalPaid = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+  const byCurrency = (list: Payment[]) => {
+    const t = sumByCurrency(list, p => p.currency, p => p.amount);
+    return (t.length ? t : [['₹', 0] as [string, number]]).map(([c, n]) => formatMoney(n.toFixed(2), c)).join(' · ');
+  };
+  const totalPending = byCurrency(payments.filter(p => p.status === 'pending'));
+  const totalPaid = byCurrency(payments.filter(p => p.status === 'paid'));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -57,13 +63,13 @@ export default function MyPayments({ onBack }: Props) {
         <div className="grid grid-cols-2 gap-3">
           <Card className="border-green-200 bg-green-50">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-green-700">${totalPaid.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-green-700">{totalPaid}</p>
               <p className="text-xs text-green-600">Total Paid</p>
             </CardContent>
           </Card>
           <Card className="border-red-200 bg-red-50">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-red-700">${totalPending.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-red-700">{totalPending}</p>
               <p className="text-xs text-red-600">Pending</p>
             </CardContent>
           </Card>
@@ -89,7 +95,7 @@ export default function MyPayments({ onBack }: Props) {
                     <p className="text-xs text-gray-500">{payment.ground_name} - {payment.game_date}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold">${payment.amount.toFixed(2)}</p>
+                    <p className="font-bold">{formatMoney(payment.amount.toFixed(2), payment.currency)}</p>
                     <Badge className={payment.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
                       {payment.status === 'paid' ? 'Paid' : 'Pending'}
                     </Badge>

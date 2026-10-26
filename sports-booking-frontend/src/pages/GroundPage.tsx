@@ -13,6 +13,7 @@ import {
   AMENITIES, EMPTY_SPORT_DETAIL, amenityStatusText, directionsUrl, mapEmbedUrl, pitchLabel, sportConfig, whatsappUrl,
   type GroundDetails,
 } from '@/lib/grounds';
+import { formatMoney } from '@/lib/currency';
 
 interface Props {
   groundId: number;
@@ -219,7 +220,7 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
                       {game.pitch_format && <p className="text-xs text-gray-600">{pitchLabel(game.pitch_format, game.pitch_number)}</p>}
                       <p className="text-xs text-gray-500 mt-0.5">
                         {game.player_count}/{game.max_players} players · {spotsLeft > 0 ? <span className="text-green-700 font-medium">{spotsLeft} spots left</span> : <span className="text-orange-600">Full (waitlist)</span>}
-                        {game.cost_per_person > 0 && <> · Rs {game.cost_per_person}/person</>}
+                        {game.cost_per_person > 0 && <> · {formatMoney(game.cost_per_person, ground.currency)}/person</>}
                       </p>
                       <Badge variant="outline" className="text-[10px] mt-1">{STATUS_LABELS[game.status] || game.status}</Badge>
                     </div>

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, User, MapPin, MessageCircle, MessageSquare, ShieldCheck, Camera, Trophy, Target, Award, Plus, X, Trash2, ImageIcon, Wallet, ChevronDown } from 'lucide-react';
+import { currencySymbol } from '@/lib/currency';
 
 const ALL_SPORTS = ['Soccer', 'Cricket', 'Badminton', 'Basketball', 'Hockey'];
 const canonSport = (s: string) => ALL_SPORTS.find(a => a.toLowerCase() === s.toLowerCase()) || s;
@@ -26,7 +27,7 @@ const SPORT_POSITIONS: Record<string, string[]> = {
 };
 
 const CURRENCIES = [
-  { value: 'Rs', label: 'Rs (Indian Rupee)' },
+  { value: '₹', label: '₹ (Indian Rupee)' },
   { value: '$', label: '$ (US Dollar)' },
   { value: '€', label: '€ (Euro)' },
   { value: '£', label: '£ (British Pound)' },
@@ -79,7 +80,7 @@ export default function ProfilePage({ onBack }: Props) {
   const [sports, setSports] = useState<string[]>(user?.sports || []);
   const [locations, setLocations] = useState<string[]>(user?.locations || []);
   const [sportPositions, setSportPositions] = useState<Record<string, string[]>>(user?.sport_positions || {});
-  const [currency, setCurrency] = useState(user?.currency || 'Rs');
+  const [currency, setCurrency] = useState(currencySymbol(user?.currency));
   const [upiId, setUpiId] = useState(user?.upi_id || '');
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);

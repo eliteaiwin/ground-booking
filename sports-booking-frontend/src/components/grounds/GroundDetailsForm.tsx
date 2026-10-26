@@ -74,7 +74,7 @@ function SportDetailEditor({ sport, detail, onChange }: { sport: string; detail:
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Cost</Label>
-          <Input placeholder="e.g. Rs 1500/hr" value={detail.price} onChange={e => set('price', e.target.value)} />
+          <Input placeholder="e.g. ₹1500/hr" value={detail.price} onChange={e => set('price', e.target.value)} />
         </div>
         {cfg.surfaces.length > 0 && (
           <div className="space-y-1">

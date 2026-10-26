@@ -15,13 +15,15 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, DollarSign, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy, X } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy, X } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
 import { pitchLabel } from '@/lib/grounds';
 import PlayerProfileDialog from '@/components/PlayerProfileDialog';
+import { formatMoney, currencySymbol } from '@/lib/currency';
+import CurrencyIcon from '@/components/CurrencyIcon';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -146,7 +148,7 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle }: {
   const paid = pd?.paid_amount || 0;
   const excess = pd?.excess || 0;
   const pending = pd?.pending || 0;
-  const rs = (n: number) => `${Math.ceil(n - 0.001)} ${currency}`;
+  const rs = (n: number) => `${formatMoney(Math.ceil(n - 0.001), currency)}`;
   let color = 'text-gray-300';
   let text = 'No payment yet';
   if (pd && excess > 0) {
@@ -254,6 +256,7 @@ interface Game {
   game_time: string;
   max_players: number;
   cost_per_person: number;
+  currency?: string;
   base_ground_cost: number;
   ground_cost: number;
   per_person_amount: number;
@@ -423,7 +426,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [markPaidComment, setMarkPaidComment] = useState('');
   const [profileUserId, setProfileUserId] = useState<number | null>(null);
 
-  const currency = user?.currency || 'Rs';
+  const currency = currencySymbol(game?.currency || user?.currency);
 
   useEffect(() => {
     loadGame();
@@ -646,7 +649,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `Date: ${formatGameDate(game!.game_date)}\n`;
     msg += `Start Time: ${formatTime12h(game!.game_time)} (Duration: ${duration} mins)\n`;
     msg += `Reporting Time: ${getReportingTime(game!.game_time)}\n`;
-    msg += `Per Person Cost: ${perPerson.toFixed(0)} ${currency}\n\n`;
+    msg += `Per Person Cost: ${formatMoney(perPerson.toFixed(0), currency)}\n\n`;
 
     msg += `Confirmed:\n------------\n`;
     game!.selected_players.forEach((p, i) => {
@@ -881,7 +884,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     The quit penalty window is <strong>{quitPenaltyInfo.quit_penalty_hours} hours</strong> before the game.
                   </p>
                   <p className="text-sm text-red-700 font-semibold mb-3">
-                    You will still need to pay {currency}{game.cost_per_person} even if you quit now.
+                    You will still need to pay {formatMoney(game.cost_per_person, currency)} even if you quit now.
                   </p>
                 </div>
               ) : null}
@@ -916,9 +919,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
             )}
             <div className="flex items-center gap-2 text-gray-600"><Users size={16} /> <span>Max {game.max_players} players</span></div>
             <div className="flex items-center gap-2 text-gray-600">
-              <DollarSign size={16} />
+              <CurrencyIcon currency={currency} size={16} />
               <span>
-                {(isModerator || isAdmin || isGroundManagement) ? `Ground fee ${(game.base_ground_cost || game.ground_cost).toFixed(0)} ${currency} / ` : 'Fee '}{perPerson.toFixed(0)} {currency} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
+                {(isModerator || isAdmin || isGroundManagement) ? `Ground fee ${formatMoney((game.base_ground_cost || game.ground_cost).toFixed(0), currency)} / ` : 'Fee '}{formatMoney(perPerson.toFixed(0), currency)} per person ({game.payment_timing === 'before' ? 'PrePaid' : 'PostPaid'})
               </span>
               {game.fee_breakdown && (
                 <button type="button" aria-label="Show cost breakdown" onClick={() => setShowCostBreakdown(v => !v)} className="text-gray-500">
@@ -1135,7 +1138,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         if (total <= 0 || players <= 0) return null;
                         return (
                           <>
-                            <p className="text-xs text-green-600 mt-1">Cost per person: {Math.ceil(total / players - 0.001)} {currency}{game.status === 'completed' ? ` (${players} played)` : ''}</p>
+                            <p className="text-xs text-green-600 mt-1">Cost per person: {formatMoney(Math.ceil(total / players - 0.001), currency)}{game.status === 'completed' ? ` (${players} played)` : ''}</p>
                             {game.status === 'completed' && (
                               <p className="text-xs text-gray-500 mt-1">Players who already paid will see any excess or remaining amount next to their name.</p>
                             )}
@@ -1244,7 +1247,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       <p><strong>Players who Paid:</strong> {cancelPreview.paid_players}</p>
                       {cancelPreview.refund_amount > 0 && (
                         <p className="text-red-800 font-semibold">
-                          Refund Amount: {cancelPreview.refund_amount} {currency} (will be marked for refund)
+                          Refund Amount: {formatMoney(cancelPreview.refund_amount, currency)} (will be marked for refund)
                         </p>
                       )}
                       <Separator className="my-2" />
@@ -1467,7 +1470,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <CreditCard size={16} /> Pay to Confirm Your Spot
                 </h4>
                 <p className="text-xs text-orange-700 mb-1">Your name is added to the list once your payment is received.</p>
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{myAwaiting.due ?? perPerson} {currency}</strong></p>
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(myAwaiting.due ?? perPerson, currency)}</strong></p>
                 {game.payee && (
                   <p className="text-sm text-orange-700 mb-3">
                     Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
@@ -1480,7 +1483,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       onClick={() => payOnline(game.id)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
-                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myAwaitingFees.total.toFixed(0)} ${currency} online`}
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myAwaitingFees.total.toFixed(0), currency)} online`}
                     </Button>
                   </>
                 ) : (
@@ -1500,7 +1503,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 {game.payment_timing !== 'before' && (
                   <p className="text-xs text-orange-700 mb-1">The moderator has asked you to pay before this game.</p>
                 )}
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{game.cost_per_person} {currency}</strong></p>
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(game.cost_per_person, currency)}</strong></p>
                 {game.payee && (
                   <p className="text-sm text-orange-700 mb-3">
                     Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
@@ -1513,7 +1516,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       onClick={() => payOnline(game.id)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
-                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(0)} ${currency} online`}
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myFeeBreakdown.total.toFixed(0), currency)} online`}
                     </Button>
                   </>
                 ) : (
@@ -1533,9 +1536,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
               <CardContent className="p-4">
                 <h4 className="font-semibold text-orange-800 mb-1">{myPaidSoFar > 0 ? 'Pay Remaining Amount' : 'Payment Due'}</h4>
                 {myPaidSoFar > 0 && (
-                  <p className="text-xs text-orange-700 mb-1">Ground cost changed. You paid {myPaidSoFar.toFixed(0)} {currency}; your share is now {myShare.toFixed(0)} {currency}.</p>
+                  <p className="text-xs text-orange-700 mb-1">Ground cost changed. You paid {formatMoney(myPaidSoFar.toFixed(0), currency)}; your share is now {formatMoney(myShare.toFixed(0), currency)}.</p>
                 )}
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0)} {currency}</strong></p>
+                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0), currency)}</strong></p>
                 <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                 </p>
@@ -1546,7 +1549,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       onClick={() => payOnline(game.id)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
-                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${myFeeBreakdown.total.toFixed(0)} ${currency} online`}
+                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myFeeBreakdown.total.toFixed(0), currency)} online`}
                     </Button>
                   </>
                 ) : (
@@ -1665,20 +1668,20 @@ export default function GameDetail({ gameId, onBack }: Props) {
         {game.status === 'completed' && (game.payment_summary.total > 0 || (game.payment_details && game.payment_details.length > 0)) && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2"><DollarSign size={16} /> Payment Tracking</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2"><CurrencyIcon currency={currency} size={16} /> Payment Tracking</CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-0">
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div className="bg-gray-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-gray-800">{totalOutstanding.toFixed(0)} {currency}</p>
+                  <p className="text-lg font-bold text-gray-800">{formatMoney(totalOutstanding.toFixed(0), currency)}</p>
                   <p className="text-xs text-gray-500">Total Outstanding</p>
                 </div>
                 <div className="bg-green-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-green-600">{totalReceived.toFixed(0)} {currency}</p>
+                  <p className="text-lg font-bold text-green-600">{formatMoney(totalReceived.toFixed(0), currency)}</p>
                   <p className="text-xs text-gray-500">Received</p>
                 </div>
                 <div className="bg-red-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-red-600">{pendingAmount.toFixed(0)} {currency}</p>
+                  <p className="text-lg font-bold text-red-600">{formatMoney(pendingAmount.toFixed(0), currency)}</p>
                   <p className="text-xs text-gray-500">Pending</p>
                 </div>
               </div>
@@ -1692,7 +1695,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <div>
                   <Button className="w-full bg-green-600 hover:bg-green-700"
                     onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${perPerson.toFixed(0)} ${currency}\nTotal outstanding: ${totalOutstanding.toFixed(0)} ${currency}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
+                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${formatMoney(perPerson.toFixed(0), currency)}\nTotal outstanding: ${formatMoney(totalOutstanding.toFixed(0), currency)}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
                       handleAction('remind', () => api.remindUnpaid(game.id));
                     }}
@@ -1810,7 +1813,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               due={game.status === 'completed' || game.payment_timing === 'before' || !!player.must_prepay}
                               currency={currency}
                               onSettle={(isModerator || isAdmin) ? (amt) => {
-                                if (window.confirm(`Returned ${amt} ${currency} to this player offline? This marks the excess as settled.`)) {
+                                if (window.confirm(`Returned ${formatMoney(amt, currency)} to this player offline? This marks the excess as settled.`)) {
                                   handleAction('settle', () => api.settleExcess(game.id, player.user_id));
                                 }
                               } : undefined}
@@ -1919,7 +1922,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     {p.display_name || p.name}
                   </button>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-gray-500">{p.due} {currency} due</span>
+                    <span className="text-xs text-gray-500">{formatMoney(p.due ?? 0, currency)} due</span>
                     <Button size="sm" variant="outline" className="h-7 text-xs"
                       onClick={() => handleAction(`mark-paid-${p.user_id}`, () => api.markPaymentMade(game.id, p.user_id))}
                       disabled={actionLoading === `mark-paid-${p.user_id}`}>

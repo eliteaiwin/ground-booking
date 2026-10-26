@@ -4,8 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Users, DollarSign } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { Player, formatPlayerDisplay } from '@/lib/player';
+import { formatMoney } from '@/lib/currency';
+import CurrencyIcon from '@/components/CurrencyIcon';
 
 interface Props {
   open: boolean;
@@ -134,7 +136,7 @@ export default function CompleteGameDialog({
         <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
           <div className="flex justify-between text-gray-600">
             <span>Ground booking cost</span>
-            <span>{groundCost.toFixed(2)} {currency}</span>
+            <span>{formatMoney(groundCost.toFixed(2), currency)}</span>
           </div>
           <div className="flex justify-between text-gray-600">
             <span>Booked for max players</span>
@@ -146,10 +148,10 @@ export default function CompleteGameDialog({
           </div>
           <div className="flex justify-between items-center pt-2 border-t border-gray-200">
             <span className="font-semibold text-gray-800 flex items-center gap-1">
-              <DollarSign size={14} /> Per person
+              <CurrencyIcon currency={currency} size={14} /> Per person
             </span>
             <span className="font-bold text-green-700">
-              {perPerson.toFixed(0)} {currency}
+              {formatMoney(perPerson.toFixed(0), currency)}
             </span>
           </div>
         </div>

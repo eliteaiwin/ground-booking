@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { sportLabel } from '@/lib/sports';
+import { formatMoney, currencySymbol } from '@/lib/currency';
 
 const SLOT_MINUTES = 30;
 const SLOT_PX = 22;
@@ -72,10 +73,12 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [currency, setCurrency] = useState('₹');
 
   useEffect(() => {
     api.getGroundDetails(groundId)
-      .then((d: { sports: string[]; sport_types?: string[] }) => {
+      .then((d: { sports: string[]; sport_types?: string[]; currency?: string }) => {
+        setCurrency(currencySymbol(d.currency));
         const list = d.sports.length ? d.sports : (d.sport_types || []);
         setSports(list); setSport(list[0] || '');
       })
@@ -281,7 +284,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
                     <span className="font-semibold">{it.pitch_label}</span> · {it.holder}
                     <br />
                     {it.start.slice(11)}–{it.end.slice(11)}
-                    {isAllotment && it.rent ? ` · ₹${it.rent}${it.rent_paid ? ' paid' : ''}` : ''}
+                    {isAllotment && it.rent ? ` · ${formatMoney(it.rent, currency)}${it.rent_paid ? ' paid' : ''}` : ''}
                   </button>
                 );
               })}
@@ -329,7 +332,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label htmlFor="allot-rent">Rent (₹)</Label>
+              <Label htmlFor="allot-rent">Rent ({currency})</Label>
               <Input id="allot-rent" type="number" min="0" value={draft.rent} onChange={(e) => setDraft({ ...draft, rent: e.target.value })} />
             </div>
             <div className="space-y-1">
@@ -360,7 +363,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
           {selected.kind === 'allotment' ? (
             <>
               <p>Allotted to <b>{selected.holder}</b></p>
-              <p>Rent: ₹{selected.rent || 0} · {selected.rent_paid ? 'Paid' : 'Not paid'}</p>
+              <p>Rent: {formatMoney(selected.rent || 0, currency)} · {selected.rent_paid ? 'Paid' : 'Not paid'}</p>
               {(occ?.items || [])
                 .filter((it) => it.kind === 'game' && it.allotment_id === selected.id)
                 .map((g) => <p key={g.id} className="text-xs text-gray-600">Game: {g.title} ({g.status})</p>)}

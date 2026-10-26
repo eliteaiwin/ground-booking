@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Info } from 'lucide-react';
 import { api } from '@/services/api';
 import { computeFeeBreakdown, type FeeBreakdown, type FeeSettings } from '@/lib/fees';
+import { formatMoney } from '@/lib/currency';
 
 export function FeeBreakdownTable({ breakdown, fees, currency }: { breakdown: FeeBreakdown; fees: FeeSettings; currency: string }) {
   const row = (label: string, amount: number, total = false) => (
     <div className={`flex justify-between gap-2 ${total ? 'font-semibold border-t pt-1 mt-1' : ''}`}>
       <span>{label}</span>
-      <span className="whitespace-nowrap">{amount.toFixed(2)} {currency}</span>
+      <span className="whitespace-nowrap">{formatMoney(amount.toFixed(2), currency)}</span>
     </div>
   );
   return (
@@ -44,7 +45,7 @@ export default function CostBreakdown({ groundCost, players, collection, currenc
     <div className="p-2 bg-green-50 rounded text-sm text-green-800" data-testid="cost-breakdown">
       <div className="flex items-center gap-1">
         <span>
-          Per player: <span className="font-semibold">{breakdown ? breakdown.total : Math.ceil(share - 0.001)} {currency}</span>
+          Per player: <span className="font-semibold">{formatMoney(breakdown ? breakdown.total : Math.ceil(share - 0.001), currency)}</span>
           <span className="text-xs text-green-700"> (read-only, {players} players)</span>
         </span>
         {breakdown && (
