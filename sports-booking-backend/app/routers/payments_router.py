@@ -449,7 +449,7 @@ async def payment_history(
 ):
     """Every completed game a player owes for: owed, paid, remaining (negative = excess) and how long after the game they paid.
     With game_id, only games of that game's series (e.g. every 'Wed Blr united' game) are included."""
-    from .games_router import _game_end, can_moderate_game
+    from .games_router import _game_end, can_moderate_game, _payment_settings
     await _require_history_viewer(user_id, player_id, db)
     where, params = "p.user_id = ? AND g.status = 'completed'", [player_id]
     series = ""
@@ -467,8 +467,9 @@ async def payment_history(
             series = game["title"]
     rows = await (await db.execute(
         f"""SELECT p.game_id, p.amount, COALESCE(p.paid_amount, 0) AS paid_amount, p.paid_at, p.paid_via,
-                   g.title, g.series_name, g.ground_name, g.game_date, g.game_time, g.duration_minutes, g.status AS game_status
-            FROM payments p JOIN games g ON g.id = p.game_id
+                   g.title, g.series_name, g.ground_name, g.game_date, g.game_time, g.duration_minutes, g.status AS game_status,
+                   g.payment_collection, u.name AS payee_name
+            FROM payments p JOIN games g ON g.id = p.game_id LEFT JOIN users u ON u.id = g.payee_user_id
             WHERE {where} ORDER BY g.game_date DESC, g.game_time DESC""",
         params
     )).fetchall()
@@ -479,6 +480,7 @@ async def payment_history(
         "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'moderator'", (user_id,)
     )).fetchone() is not None
 
+    online_ready = (await _payment_settings(db))["enabled"] and cashfree.configured()
     items, pay_minutes = [], []
     for r in rows:
         remaining = round(r["amount"] - r["paid_amount"], 2)
@@ -499,10 +501,15 @@ async def payment_history(
             "amount": r["amount"],
             "paid_amount": r["paid_amount"],
             "remaining": remaining,
+            "balance": 0.0 - remaining,
+            "payee_name": r["payee_name"] or "",
+            "pay_online": bool(user_id == player_id and remaining > 0 and (r["payment_collection"] or "offline") == "app"
+                               and online_ready),
             "paid_at": paid_at.strftime("%Y-%m-%d %H:%M") if paid_at else None,
             "paid_via": r["paid_via"] or "",
             "done_minutes": done,
-            "can_settle": bool(is_mod and remaining != 0 and (is_admin or await can_moderate_game(user_id, r["game_id"], db))),
+            "can_pay": user_id == player_id and remaining > 0,
+            "can_settle": bool(is_mod and user_id != player_id and remaining != 0 and (is_admin or await can_moderate_game(user_id, r["game_id"], db))),
         })
     owed = round(sum(i["amount"] for i in items), 2)
     paid = round(sum(i["paid_amount"] for i in items), 2)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, BellRing, CheckCircle2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, BellRing } from 'lucide-react';
 import { api } from '../services/api';
+import { openCashfreeCheckout } from '@/lib/cashfree';
 
 export interface PaymentHistoryItem {
   game_id: number;
@@ -12,6 +13,10 @@ export interface PaymentHistoryItem {
   amount: number;
   paid_amount: number;
   remaining: number;
+  balance: number;
+  payee_name: string;
+  pay_online: boolean;
+  can_pay: boolean;
   paid_at: string | null;
   paid_via: string;
   done_minutes: number | null;
@@ -24,7 +29,7 @@ interface History {
   items: PaymentHistoryItem[];
 }
 
-type SortKey = 'game_name' | 'game_date' | 'amount' | 'paid_amount' | 'remaining' | 'done_minutes';
+type SortKey = 'game_name' | 'game_date' | 'amount' | 'paid_amount' | 'balance' | 'done_minutes';
 
 const num = (n: number) => Math.round(n).toLocaleString('en-IN');
 const money = (n: number) => `₹${num(n)}`;
@@ -84,7 +89,11 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
     });
   }, [data, sort]);
 
-  const act = async (item: PaymentHistoryItem, kind: 'settle' | 'remind') => {
+  const act = async (item: PaymentHistoryItem, kind: 'settle' | 'remind' | 'pay') => {
+    if (kind === 'pay' && !item.pay_online) {
+      const to = item.payee_name ? ` to ${item.payee_name}` : '';
+      if (!window.confirm(`Have you paid ${money(item.remaining)}${to} for ${item.title} (${shortDate(item.game_date)})? This marks it as paid.`)) return;
+    }
     if (kind === 'settle') {
       const what = item.remaining > 0 ? `due of ${money(item.remaining)} was paid` : `excess of ${money(-item.remaining)} was returned`;
       if (!window.confirm(`Confirm the ${what} offline for ${item.title} (${shortDate(item.game_date)})? Remaining becomes ₹0.`)) return;
@@ -92,11 +101,21 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
     setBusy(item.game_id);
     setNote('');
     try {
-      const r = kind === 'settle'
-        ? await api.settlePaymentOffline(userId, item.game_id)
-        : await api.remindPayment(userId, item.game_id);
-      setNote(r.message || 'Done');
-      if (kind === 'settle') load();
+      let msg = '';
+      if (kind === 'pay' && item.pay_online) {
+        const order = await api.createPaymentOrder(item.game_id);
+        const sdkError = await openCashfreeCheckout(order);
+        const result = await api.verifyPaymentOrder(order.order_id);
+        if (result.status !== 'paid') throw new Error(sdkError || 'Payment not completed. If money was deducted, it will update here automatically.');
+        msg = 'Payment received';
+      } else {
+        const r = kind === 'pay' ? await api.recordPayment(item.game_id)
+          : kind === 'settle' ? await api.settlePaymentOffline(userId, item.game_id)
+          : await api.remindPayment(userId, item.game_id);
+        msg = r.message || 'Done';
+      }
+      setNote(msg);
+      if (kind !== 'remind') load();
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -108,7 +127,7 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
   if (!data) return <p className="text-sm text-gray-500 text-center py-4">Loading payments...</p>;
 
   const s = data.summary;
-  const anyAction = data.items.some(i => i.can_settle);
+  const anyAction = data.items.some(i => i.can_settle || i.can_pay);
   const sortBtn = (key: SortKey, label: string, right = false) => (
     <button
       type="button"
@@ -129,9 +148,10 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
       {data.series && <p className="text-xs text-gray-500 text-center">Showing only <b>{data.series}</b> games</p>}
       <div className="grid grid-cols-2 gap-2 text-center">
         <div className={`rounded-lg p-2 ${s.outstanding > 0 ? 'bg-red-50' : s.outstanding < 0 ? 'bg-amber-50' : 'bg-green-50'}`}>
-          <p className="text-[11px] text-gray-500">Outstanding</p>
+          <p className="text-[11px] text-gray-500">Balance</p>
           <p data-testid="pay-outstanding" className={`font-bold ${s.outstanding > 0 ? 'text-red-600' : s.outstanding < 0 ? 'text-amber-600' : 'text-green-600'}`}>
-            {s.outstanding < 0 ? `${money(-s.outstanding)} excess` : money(s.outstanding)}
+            {s.outstanding > 0 ? `−${money(s.outstanding)}` : s.outstanding < 0 ? `+${money(-s.outstanding)}` : money(0)}
+            {s.outstanding !== 0 && <span className="block text-[10px] font-normal">{s.outstanding > 0 ? 'due' : 'excess'}</span>}
           </p>
         </div>
         <div className="rounded-lg p-2 bg-gray-50">
@@ -164,7 +184,7 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                 ) : head('game_date', 'Date')}
                 {head('amount', 'Owed ₹', true)}
                 {head('paid_amount', 'Paid', true)}
-                {head('remaining', 'Left', true)}
+                {head('balance', 'Balance', true)}
                 {head('done_minutes', 'Done in')}
                 {anyAction && <th className="px-0.5 py-1.5" />}
               </tr>
@@ -178,8 +198,8 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                   </td>
                   <td className="px-1 py-1.5 text-right">{num(i.amount)}</td>
                   <td className="px-1 py-1.5 text-right">{num(i.paid_amount)}</td>
-                  <td className={`px-1 py-1.5 text-right font-medium ${i.remaining > 0 ? 'text-red-600' : i.remaining < 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                    {i.remaining < 0 ? `+${num(-i.remaining)}` : num(i.remaining)}
+                  <td data-testid="pay-balance" className={`px-1 py-1.5 text-right font-medium ${i.balance < 0 ? 'text-red-600' : i.balance > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                    {i.balance > 0 ? `+${num(i.balance)}` : i.balance < 0 ? `−${num(-i.balance)}` : '0'}
                   </td>
                   <td className="px-1 py-1.5" title={i.paid_at ? `Paid ${i.paid_at}${i.paid_via ? ` (${i.paid_via})` : ''}` : ''}>
                     {i.remaining > 0 ? <span className="text-gray-400">Unpaid</span> : formatDuration(i.done_minutes) || '-'}
@@ -187,8 +207,14 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                   </td>
                   {anyAction && (
                     <td className="px-0.5 py-1 text-right">
+                      {i.can_pay && (
+                        <button type="button" data-testid="pay-now" disabled={busy === i.game_id}
+                          className="px-2 py-1 rounded bg-orange-600 text-white text-[11px] font-medium hover:bg-orange-700 disabled:opacity-40" onClick={() => act(i, 'pay')}>
+                          Pay
+                        </button>
+                      )}
                       {i.can_settle && (
-                        <span className="inline-flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-0.5">
                           {i.remaining > 0 && (
                             <button type="button" title="Send payment reminder" data-testid="pay-remind" disabled={busy === i.game_id}
                               className="p-1 rounded text-blue-600 hover:bg-blue-50 disabled:opacity-40" onClick={() => act(i, 'remind')}>
@@ -196,8 +222,8 @@ export default function PaymentHistory({ userId, gameId, showGame = false }: Pro
                             </button>
                           )}
                           <button type="button" title={i.remaining > 0 ? 'Due settled offline' : 'Excess returned offline'} data-testid="pay-settle" disabled={busy === i.game_id}
-                            className="p-1 rounded text-green-600 hover:bg-green-50 disabled:opacity-40" onClick={() => act(i, 'settle')}>
-                            <CheckCircle2 size={14} />
+                            className="px-2 py-1 rounded bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-40" onClick={() => act(i, 'settle')}>
+                            Settle
                           </button>
                         </span>
                       )}

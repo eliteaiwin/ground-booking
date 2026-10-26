@@ -3,10 +3,11 @@ export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
   { version: '1.19', date: '2026-10-27', changes: [
-    'Player info popup has a Payment tab: Outstanding, Paid, Due and average paying time, with a sortable table of Date, Owed, Paid, Left and Done in (time after the game ended)',
+    'Player info popup has a Payment tab: Balance (− due / + excess), Paid, Due and average paying time, with a sortable table of Date, Owed, Paid, Balance and Done in (time after the game ended)',
+    'Your own unpaid rows have a Pay button; moderators get a Settle button on other players\' rows. Each payment goes against that row\'s game',
     'Opened from a game, the Payment tab shows only that game series (e.g. only "Wed Blr united" games)',
     'My Profile → My Payments shows the same for all your games, with a Game column',
-    'Moderators can confirm a due or excess was settled offline (Left becomes 0) and send a payment reminder from each row',
+    'Settle confirms a due or excess was settled offline (Balance becomes 0); the bell sends a payment reminder',
   ] },
   { version: '1.18', date: '2026-10-26', changes: [
     'Ground Mgmt → Groups: a group can sit under a parent group (e.g. "Lobo Sun Mod" under "Lobo Mod Gang"); loops are blocked',
