@@ -3,6 +3,7 @@ import { formatPhone, COUNTRY_CODES } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { ImageCropDialog } from '../components/ImageCropDialog';
+import PaymentHistory from '../components/PaymentHistory';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -81,6 +82,7 @@ export default function ProfilePage({ onBack }: Props) {
   const [currency, setCurrency] = useState(user?.currency || 'Rs');
   const [upiId, setUpiId] = useState(user?.upi_id || '');
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [paySaving, setPaySaving] = useState(false);
   const [payMsg, setPayMsg] = useState('');
   const [payErr, setPayErr] = useState('');
@@ -720,6 +722,22 @@ export default function ProfilePage({ onBack }: Props) {
             </CardContent>
           )}
         </Card>
+
+        {user && (
+          <Card data-testid="payment-history-section">
+            <CardHeader className="cursor-pointer select-none" onClick={() => setHistoryOpen(o => !o)}>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Wallet size={18} className="text-blue-600" /> My Payments
+                <ChevronDown size={18} className={`ml-auto text-gray-400 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+              </CardTitle>
+            </CardHeader>
+            {historyOpen && (
+              <CardContent className="px-3">
+                <PaymentHistory userId={user.id} showGame />
+              </CardContent>
+            )}
+          </Card>
+        )}
 
         {/* Player Persona */}
         <Card>

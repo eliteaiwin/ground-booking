@@ -3112,6 +3112,33 @@ def _others_phrase(n: int) -> str:
     return f"{n} other players have done so"
 
 
+def _duration_label(minutes: float) -> str:
+    m = max(int(round(minutes)), 0)
+    d, h, mm = m // 1440, (m % 1440) // 60, m % 60
+    if d:
+        return f"{d}d {h}h" if h else f"{d}d"
+    if h:
+        return f"{h}h {mm}m" if mm else f"{h}h"
+    return f"{mm}m"
+
+
+async def _avg_pay_minutes(db: aiosqlite.Connection) -> Dict[int, float]:
+    """Average time each player takes to pay in full after a completed game ends (players with 2+ such games)."""
+    from .payments_router import _local_paid_at
+    rows = await (await db.execute(
+        """SELECT p.user_id, p.paid_at, g.game_date, g.game_time, g.duration_minutes
+           FROM payments p JOIN games g ON g.id = p.game_id
+           WHERE g.status = 'completed' AND p.paid_at IS NOT NULL
+             AND COALESCE(p.paid_amount, 0) > 0 AND COALESCE(p.paid_amount, 0) >= p.amount"""
+    )).fetchall()
+    times: Dict[int, List[float]] = {}
+    for r in rows:
+        end, paid = _game_end(r), _local_paid_at(r["paid_at"])
+        if end and paid:
+            times.setdefault(r["user_id"], []).append(max((paid - end).total_seconds() / 60, 0))
+    return {uid: sum(t) / len(t) for uid, t in times.items() if len(t) >= 2}
+
+
 def _leader_suffix(value: int, values: dict, player_id: int, what: str) -> str:
     """Return ' — the most ...' when the player leads all others on `values`."""
     if value <= 0 or value < max(values.values(), default=0):
@@ -3263,6 +3290,20 @@ async def get_player_insights(
             facts.append({"category": "payments", "text": text + "."})
         elif fp:
             facts.append({"category": "payments", "text": f"Was the first to pay in {_count_label(fp, 'game')}."})
+
+    avg_pay = await _avg_pay_minutes(db)
+    if player_id in avg_pay and len(avg_pay) >= 2:
+        mine = avg_pay[player_id]
+        rank = 1 + sum(1 for uid, v in avg_pay.items() if uid != player_id and v < mine)
+        n = len(avg_pay)
+        text = f"Pays {_duration_label(mine)} after the game ends on average"
+        if rank <= 3 and rank <= n // 2:
+            text += f" — one of the best (#{rank} of {n})"
+        elif rank > n - 3 and rank > (n + 1) // 2:
+            text += f" — one of the worst (#{rank} of {n})"
+        else:
+            text += f" (#{rank} of {n})"
+        facts.append({"category": "payments", "text": text + "."})
 
     potd_wins = await _potd_win_counts(db)
     pw = potd_wins.get(player_id, 0)

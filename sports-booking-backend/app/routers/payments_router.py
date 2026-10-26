@@ -411,3 +411,187 @@ async def get_settlements(
         }
         for r in rows
     ]
+
+
+# --- Per-player payment history (popup Payment tab / My Profile) ---
+
+class HistoryActionRequest(BaseModel):
+    game_id: int
+    comment: str = ""
+
+
+def _local_paid_at(value) -> Optional[datetime]:
+    """paid_at is stored as UTC (ISO with offset, or SQLite's naive UTC timestamp); convert to the games' local time."""
+    from zoneinfo import ZoneInfo
+    from .games_router import APP_TIMEZONE
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None)
+
+
+async def _require_history_viewer(viewer_id: int, player_id: int, db: aiosqlite.Connection):
+    if viewer_id != player_id:
+        await require_admin_or_moderator(viewer_id, db)
+
+
+@router.get("/history/{player_id}")
+async def payment_history(
+    player_id: int,
+    game_id: Optional[int] = Query(None),
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Every completed game a player owes for: owed, paid, remaining (negative = excess) and how long after the game they paid.
+    With game_id, only games of that game's series (e.g. every 'Wed Blr united' game) are included."""
+    from .games_router import _game_end, can_moderate_game
+    await _require_history_viewer(user_id, player_id, db)
+    where, params = "p.user_id = ? AND g.status = 'completed'", [player_id]
+    series = ""
+    if game_id is not None:
+        game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+        if not game:
+            raise HTTPException(status_code=404, detail="Game not found")
+        if game["series_name"]:
+            where += " AND g.series_name = ? AND g.ground_name = ?"
+            params += [game["series_name"], game["ground_name"]]
+            series = game["series_name"]
+        else:
+            where += " AND g.title = ? AND g.ground_name = ?"
+            params += [game["title"], game["ground_name"]]
+            series = game["title"]
+    rows = await (await db.execute(
+        f"""SELECT p.game_id, p.amount, COALESCE(p.paid_amount, 0) AS paid_amount, p.paid_at, p.paid_via,
+                   g.title, g.series_name, g.ground_name, g.game_date, g.game_time, g.duration_minutes, g.status AS game_status
+            FROM payments p JOIN games g ON g.id = p.game_id
+            WHERE {where} ORDER BY g.game_date DESC, g.game_time DESC""",
+        params
+    )).fetchall()
+    is_admin = await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+    )).fetchone() is not None
+    is_mod = is_admin or await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'moderator'", (user_id,)
+    )).fetchone() is not None
+
+    items, pay_minutes = [], []
+    for r in rows:
+        remaining = round(r["amount"] - r["paid_amount"], 2)
+        end = _game_end(r)
+        paid_at = _local_paid_at(r["paid_at"]) if r["paid_amount"] > 0 else None
+        done = None
+        if paid_at and end and remaining <= 0:
+            done = int((paid_at - end).total_seconds() // 60)
+            if r["game_status"] == "completed":
+                pay_minutes.append(max(done, 0))
+        items.append({
+            "game_id": r["game_id"],
+            "game_name": r["series_name"] or r["title"],
+            "title": r["title"],
+            "game_date": r["game_date"],
+            "game_time": r["game_time"],
+            "game_status": r["game_status"],
+            "amount": r["amount"],
+            "paid_amount": r["paid_amount"],
+            "remaining": remaining,
+            "paid_at": paid_at.strftime("%Y-%m-%d %H:%M") if paid_at else None,
+            "paid_via": r["paid_via"] or "",
+            "done_minutes": done,
+            "can_settle": bool(is_mod and remaining != 0 and (is_admin or await can_moderate_game(user_id, r["game_id"], db))),
+        })
+    owed = round(sum(i["amount"] for i in items), 2)
+    paid = round(sum(i["paid_amount"] for i in items), 2)
+    return {
+        "player_id": player_id,
+        "series": series,
+        "summary": {
+            "owed": owed,
+            "paid": paid,
+            "due": round(sum(i["remaining"] for i in items if i["remaining"] > 0), 2),
+            "excess": round(-sum(i["remaining"] for i in items if i["remaining"] < 0), 2),
+            "outstanding": round(owed - paid, 2),
+            "avg_pay_minutes": round(sum(pay_minutes) / len(pay_minutes)) if pay_minutes else None,
+        },
+        "items": items,
+    }
+
+
+async def _history_payment(db: aiosqlite.Connection, user_id: int, player_id: int, game_id: int):
+    from .games_router import require_game_moderator
+    await require_game_moderator(user_id, game_id, db)
+    game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    row = await (await db.execute(
+        "SELECT amount, COALESCE(paid_amount, 0) AS paid_amount FROM payments WHERE game_id = ? AND user_id = ?",
+        (game_id, player_id)
+    )).fetchone()
+    if not game or not row:
+        raise HTTPException(status_code=404, detail="No payment for this player in that game")
+    return game, row
+
+
+@router.post("/history/{player_id}/settle")
+async def settle_offline(
+    player_id: int,
+    req: HistoryActionRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Moderator confirms a due (player paid offline) or an excess (returned offline) is settled; remaining becomes 0."""
+    game, row = await _history_payment(db, user_id, player_id, req.game_id)
+    diff = round(row["amount"] - row["paid_amount"], 2)
+    if diff == 0:
+        raise HTTPException(status_code=400, detail="Nothing to settle: this payment is already even")
+    now = datetime.now(timezone.utc).isoformat()
+    if diff > 0:
+        await db.execute(
+            "UPDATE payments SET status = 'paid', paid_amount = amount, paid_at = ?, paid_by = ?, paid_via = 'offline' "
+            "WHERE game_id = ? AND user_id = ?",
+            (now, user_id, req.game_id, player_id)
+        )
+        await db.execute(
+            "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?", (req.game_id, player_id)
+        )
+        what = f"due of {diff:.0f}"
+    else:
+        await db.execute(
+            "UPDATE payments SET paid_amount = amount WHERE game_id = ? AND user_id = ?", (req.game_id, player_id)
+        )
+        what = f"excess of {-diff:.0f}"
+    comment = req.comment.strip()[:300]
+    await db.execute(
+        "INSERT INTO payment_settlements (game_id, user_id, moderator_id, comment, action_date) VALUES (?, ?, ?, ?, ?)",
+        (req.game_id, player_id, user_id, f"Settled offline: {what}" + (f". {comment}" if comment else ""), now)
+    )
+    mod = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
+    await db.execute(
+        "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_confirmed', ?)",
+        (player_id, req.game_id,
+         f"{mod['name'] if mod else 'Moderator'} confirmed your {what} for {game['title']} ({game['game_date']}) was settled offline.")
+    )
+    await db.commit()
+    return {"message": f"Settled {what}"}
+
+
+@router.post("/history/{player_id}/remind")
+async def remind_payment(
+    player_id: int,
+    req: HistoryActionRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    game, row = await _history_payment(db, user_id, player_id, req.game_id)
+    due = round(row["amount"] - row["paid_amount"], 2)
+    if due <= 0:
+        raise HTTPException(status_code=400, detail="Nothing is due for this game")
+    await db.execute(
+        "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_reminder', ?)",
+        (player_id, req.game_id,
+         f"Reminder: please pay {due:.0f} for {game['title']} on {game['game_date']}.")
+    )
+    await db.commit()
+    return {"message": "Reminder sent"}

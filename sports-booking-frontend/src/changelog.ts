@@ -2,6 +2,12 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.19', date: '2026-10-27', changes: [
+    'Player info popup has a Payment tab: Outstanding, Paid, Due and average paying time, with a sortable table of Date, Owed, Paid, Left and Done in (time after the game ended)',
+    'Opened from a game, the Payment tab shows only that game series (e.g. only "Wed Blr united" games)',
+    'My Profile → My Payments shows the same for all your games, with a Game column',
+    'Moderators can confirm a due or excess was settled offline (Left becomes 0) and send a payment reminder from each row',
+  ] },
   { version: '1.18', date: '2026-10-26', changes: [
     'Ground Mgmt → Groups: a group can sit under a parent group (e.g. "Lobo Sun Mod" under "Lobo Mod Gang"); loops are blocked',
     'A slot allotted to a parent group covers everyone in its sub-groups; a sub-group slot covers only that sub-group',

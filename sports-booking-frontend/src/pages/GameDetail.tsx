@@ -2128,7 +2128,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
         {/* Player Profile Modal */}
         {profileUserId && (
-          <PlayerProfileDialog userId={profileUserId} sport={game.sport_type} onClose={() => setProfileUserId(null)} />
+          <PlayerProfileDialog userId={profileUserId} sport={game.sport_type} gameId={game.id} onClose={() => setProfileUserId(null)} />
         )}
       </div>
     </div>

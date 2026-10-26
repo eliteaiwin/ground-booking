@@ -342,6 +342,15 @@ export const api = {
     return request(`/api/payments/summary${qs ? `?${qs}` : ''}`);
   },
 
+  getPaymentHistory: (userId: number, gameId?: number) =>
+    request(`/api/payments/history/${userId}${gameId ? `?game_id=${gameId}` : ''}`),
+
+  settlePaymentOffline: (userId: number, gameId: number, comment = '') =>
+    request(`/api/payments/history/${userId}/settle`, { method: 'POST', body: JSON.stringify({ game_id: gameId, comment }) }),
+
+  remindPayment: (userId: number, gameId: number) =>
+    request(`/api/payments/history/${userId}/remind`, { method: 'POST', body: JSON.stringify({ game_id: gameId }) }),
+
   settleExcess: (gameId: number, userId: number) =>
     request(`/api/games/${gameId}/settle-excess`, { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
   markPaidWithComment: (gameId: number, userId: number, comment: string) =>

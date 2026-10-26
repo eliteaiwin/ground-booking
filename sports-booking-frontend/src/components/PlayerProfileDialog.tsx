@@ -6,6 +6,8 @@ import { api } from '../services/api';
 import { PlayerAvatar } from './PlayerAvatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { sportIconChar, sportLabel } from '../lib/sportIcon';
+import { useAuth } from '../context/AuthContext';
+import PaymentHistory from './PaymentHistory';
 
 export interface PlayerSummary {
   id: number;
@@ -35,6 +37,8 @@ interface Props {
   onClose: () => void;
   /** Sport of the game the popup was opened from; that sport's photo becomes the main photo. */
   sport?: string;
+  /** Game the popup was opened from; the Payment tab then shows only that game's series. */
+  gameId?: number;
   /** Extra context-specific content shown at the bottom of the Info tab . */
   children?: ReactNode;
 }
@@ -59,7 +63,9 @@ const Row = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-export default function PlayerProfileDialog({ userId, onClose, sport, children }: Props) {
+export default function PlayerProfileDialog({ userId, onClose, sport, gameId, children }: Props) {
+  const { user } = useAuth();
+  const canSeePayments = !!user && (user.id === userId || user.roles.some(r => r === 'admin' || r === 'moderator'));
   const [summary, setSummary] = useState<PlayerSummary | null>(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('info');
@@ -129,6 +135,7 @@ export default function PlayerProfileDialog({ userId, onClose, sport, children }
                 <TabsTrigger value="insights" className="flex-1 gap-1">
                   <Sparkles size={14} className="text-purple-500" /> Insights
                 </TabsTrigger>
+                {canSeePayments && <TabsTrigger value="payments" className="flex-1">Payment</TabsTrigger>}
               </TabsList>
               <TabsContent value="info">
                 <div className="space-y-2 text-sm">
@@ -222,6 +229,11 @@ export default function PlayerProfileDialog({ userId, onClose, sport, children }
                   </ul>
                 )}
               </TabsContent>
+              {canSeePayments && (
+                <TabsContent value="payments">
+                  {tab === 'payments' && <PaymentHistory userId={userId} gameId={gameId} showGame={!gameId} />}
+                </TabsContent>
+              )}
             </Tabs>
           </>
         )}
