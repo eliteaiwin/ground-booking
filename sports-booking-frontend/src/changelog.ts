@@ -3,6 +3,7 @@ export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
   { version: '1.36', date: '2026-10-29', changes: [
+    'A moderator who owes for a game now sees just one Mark as paid on their own name',
     'New app icon: the same turf with a football, bat and ball, shuttle and basketball',
     'Short pages no longer scroll on iPhone (the app was taller than the screen)',
     'The page header stays on top and shrinks to one line while you scroll, like messaging apps',

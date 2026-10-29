@@ -2065,7 +2065,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         )}
 
                         {/* When Payment Details checkbox IS checked: show Mark as Paid + Pay columns */}
-                        {showPaymentDetails && player.payment_confirmed !== 1 && (isModerator || isAdmin) && (
+                        {showPaymentDetails && player.payment_confirmed !== 1 && (isModerator || isAdmin) && player.user_id !== user?.id && (
                           <>
                             <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-green-600 border-green-300"
                               onClick={() => {
