@@ -803,7 +803,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     cursor = await db.execute(
         """SELECT gp.*, u.name, u.phone, u.display_name, u.gender, u.always_prepay FROM game_players gp 
            JOIN users u ON gp.user_id = u.id 
-           WHERE gp.game_id = ? ORDER BY gp.joined_at""",
+           WHERE gp.game_id = ? ORDER BY COALESCE(gp.list_at, gp.joined_at), gp.id""",
         (game_id,)
     )
     players_rows = await cursor.fetchall()
@@ -1571,7 +1571,7 @@ async def edit_game(
     # Recompute selected/waiting if max_players changed
     if req.max_players is not None:
         cursor2 = await db.execute(
-            "SELECT id, user_id FROM game_players WHERE game_id = ? AND status = 'selected' ORDER BY joined_at DESC",
+            "SELECT id, user_id FROM game_players WHERE game_id = ? AND status = 'selected' ORDER BY COALESCE(list_at, joined_at) DESC, id DESC",
             (game_id,)
         )
         selected = await cursor2.fetchall()
@@ -1874,11 +1874,12 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
         )
         next_player = await cursor.fetchone()
         if next_player:
+            # The promoted player takes the leaver's place in the confirmed list.
             await db.execute(
-                "UPDATE game_players SET status = 'selected' WHERE id = ?",
-                (next_player["id"],)
+                "UPDATE game_players SET status = 'selected', list_at = ? WHERE id = ?",
+                (player["list_at"] or player["joined_at"], next_player["id"])
             )
-            await log_event(db, game_id, "promoted", user_id=next_player["user_id"])
+            await log_event(db, game_id, "promoted", user_id=next_player["user_id"], note=f"place:{user_id}")
             # If player who quit had a team, assign promoted player to that team
             if old_team_id:
                 await db.execute(
@@ -2837,7 +2838,7 @@ async def broadcast_game_status(
     cursor = await db.execute(
         """SELECT gp.*, u.name FROM game_players gp 
            JOIN users u ON gp.user_id = u.id 
-           WHERE gp.game_id = ? ORDER BY gp.joined_at""",
+           WHERE gp.game_id = ? ORDER BY COALESCE(gp.list_at, gp.joined_at), gp.id""",
         (game_id,)
     )
     players_rows = await cursor.fetchall()

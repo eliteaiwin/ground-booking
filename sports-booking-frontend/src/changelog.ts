@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.31', date: '2026-10-29', changes: [
+    'When a confirmed player quits, the first waiting player takes their exact place in the list; the Log shows "X is confirmed from WL in Y\'s place"',
+    'Game Log times now include seconds (e.g. 1-Jan 10:10:10 AM)',
+    'Game Log for older games lists joins in the order people arrived: the first ones in the game, later ones on the waiting list',
+  ] },
   { version: '1.30', date: '2026-10-29', changes: [
     'Game page: Current / Log tabs above Confirmed Players. Log shows everything that happened in the game (joins, quits, start, finish, POTD, payments and how long after the game they were paid); tap a heading to sort',
   ] },

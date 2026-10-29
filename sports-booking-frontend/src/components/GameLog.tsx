@@ -50,10 +50,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 /** `at` is already in the grounds' local time ("2026-10-13T19:00:00"), so format it without timezone shifts. */
 export const logDateTime = (at: string): string => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(at);
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(at);
   if (!m) return '';
   const hour = Number(m[4]);
-  return `${m[3]}-${MONTHS[Number(m[2]) - 1]}-${m[1].slice(2)} ${String(hour % 12 || 12).padStart(2, '0')}:${m[5]} ${hour < 12 ? 'AM' : 'PM'}`;
+  return `${Number(m[3])}-${MONTHS[Number(m[2]) - 1]} ${hour % 12 || 12}:${m[5]}:${m[6] ?? '00'} ${hour < 12 ? 'AM' : 'PM'}`;
 };
 
 type SortKey = 'event' | 'player' | 'description' | 'date';
@@ -118,7 +118,7 @@ export default function GameLog({ gameId }: { gameId: number }) {
                   <PlayerAvatar photo={r.profile_pic} gender={r.gender} alt={r.user_name} />
                 </td>
                 <td className="py-1.5 px-1 text-gray-800">{r.description}</td>
-                <td className="py-1.5 px-1 text-gray-500 leading-tight">{logDateTime(r.at)}</td>
+                <td className="py-1.5 px-1 text-[10px] text-gray-500 leading-tight whitespace-nowrap">{logDateTime(r.at)}</td>
               </tr>
             );
           })}

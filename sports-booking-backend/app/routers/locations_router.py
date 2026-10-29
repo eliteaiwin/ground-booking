@@ -531,7 +531,7 @@ async def get_ground_players(
         players_cursor = await db.execute(
             """SELECT gp.status, gp.position, u.name, u.id as user_id
                FROM game_players gp JOIN users u ON gp.user_id = u.id
-               WHERE gp.game_id = ? ORDER BY gp.joined_at""",
+               WHERE gp.game_id = ? ORDER BY COALESCE(gp.list_at, gp.joined_at), gp.id""",
             (g["id"],)
         )
         players = await players_cursor.fetchall()

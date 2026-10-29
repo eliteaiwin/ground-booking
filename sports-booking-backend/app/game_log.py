@@ -80,6 +80,7 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
                        "created_at": game["created_at"]})
     # Rebuild joins in arrival order: the first max_players got spots, later ones queued, whatever they are now.
     end_sched = end
+    moved_up = {e["user_id"] for e in events if e["kind"] == "promoted"}
     for slot, p in enumerate(await (await db.execute(
         "SELECT user_id, status, nominated_by, joined_at FROM game_players WHERE game_id = ? ORDER BY joined_at, id",
         (game_id,),
@@ -87,11 +88,11 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
         if p["user_id"] in joined:
             continue
         by_other = p["nominated_by"] not in (None, p["user_id"])
-        queued = p["status"] == "waiting" or slot >= game["max_players"]
+        queued = p["status"] == "waiting" or slot >= game["max_players"] or p["user_id"] in moved_up
         kind = ("nominated_waiting" if queued else "nominated") if by_other else ("waiting" if queued else "joined")
         events.append({"kind": kind, "user_id": p["user_id"], "actor_id": p["nominated_by"], "amount": None,
                        "note": "", "created_at": p["joined_at"]})
-        if queued and p["status"] != "waiting":
+        if queued and p["status"] != "waiting" and p["user_id"] not in moved_up:
             if game["status"] == "completed" and end_sched:
                 events.append({"kind": "played_added", "user_id": p["user_id"], "actor_id": creator, "amount": None,
                                "note": "", "created_at": _utc_iso(end_sched + timedelta(seconds=2))})
@@ -133,7 +134,11 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
     if not see_all_payments:
         events = [e for e in events if e["kind"] not in PAYMENT_KINDS or e["user_id"] == viewer_id]
 
-    ids = {i for e in events for i in (e["user_id"], e["actor_id"]) if i} | {creator}
+    def place_of(e) -> Optional[int]:
+        note = e["note"] or ""
+        return int(note[6:]) if note.startswith("place:") and note[6:].isdigit() else None
+
+    ids = {i for e in events for i in (e["user_id"], e["actor_id"], place_of(e)) if i} | {creator}
     people = {}
     if ids:
         marks = ",".join("?" * len(ids))
@@ -173,7 +178,8 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
             "nominated_waiting": f"{a} adds {u} to the waiting list",
             "pay_first": f"{u} asks to join (pays first)",
             "admitted": f"{u} is added after paying",
-            "promoted": f"{u} moves up from the waiting list",
+            "promoted": f"{u} is confirmed from WL in {nm(place_of(e))}'s place" if place_of(e)
+                        else f"{u} moves up from the waiting list",
             "demoted": f"{u} moves to the waiting list (fewer spots)",
             "quit": f"{u} quit the game{pays}",
             "quit_waiting": f"{u} left the waiting list",
