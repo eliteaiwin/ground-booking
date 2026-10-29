@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.26', date: '2026-10-28', changes: [
+    'Refer a friend (profile menu): share a link or QR code to the app on WhatsApp, or copy it',
+    'Invite to this game: a link / QR code that opens the game straight away (after login) so friends can nominate themselves',
+    'Admin → App Links: add the Google Play and App Store links once the apps are live; invite links then offer the install button on phones',
+  ] },
   { version: '1.25', date: '2026-10-28', changes: [
     'Jerseys: Blue and Black count as the same colour, so if one team wears Blue, Black, Blue/Black or Black/White the other team picks something else (e.g. White)',
     'New jersey option "Bibs - Green or Red". The other team then can\'t pick Green or Red',

@@ -25,6 +25,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import DeleteAccount from './pages/DeleteAccount';
 import { api } from './services/api';
 import { gameIdFromOrderId } from './lib/cashfree';
+import { captureInviteFromUrl, takePendingJoinGame } from '@/lib/invite';
+import { GetAppBanner } from '@/components/GetAppBanner';
 
 type Page = 'dashboard' | 'game-detail' | 'create-game' | 'create-series' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
 
@@ -48,6 +50,16 @@ function AppContent() {
   useEffect(() => {
     if (!user && !loading) {
       setAuthMode('login');
+    }
+  }, [user, loading]);
+
+  // Opened from an invite link (?join=<gameId>): open that game once logged in
+  useEffect(() => {
+    if (!user || loading) return;
+    const gameId = takePendingJoinGame();
+    if (gameId) {
+      setSelectedGameId(gameId);
+      setCurrentPage('game-detail');
     }
   }, [user, loading]);
 
@@ -196,9 +208,12 @@ function ThemedApp() {
   return (
     <ThemeProvider activeRole={activeRole || 'user'}>
       <AppContent />
+      <GetAppBanner />
     </ThemeProvider>
   );
 }
+
+captureInviteFromUrl();
 
 function App() {
   // Public route: #delete-account (Play Store requirement)

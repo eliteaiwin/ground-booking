@@ -545,6 +545,11 @@ export const api = {
   deleteMedia: (mediaId: number) =>
     request(`/api/discussions/media/${mediaId}`, { method: 'DELETE' }),
 
+  getAppLinks: () => request('/api/preferences/app-links'),
+
+  updateAppLinks: (links: { play_store_url: string; app_store_url: string }) =>
+    request('/api/preferences/app-links', { method: 'PUT', body: JSON.stringify(links) }),
+
   getDiscussionStorage: () =>
     request('/api/discussions/storage'),
 

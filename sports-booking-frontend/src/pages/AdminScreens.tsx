@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3, Palette, RotateCcw, HardDrive } from 'lucide-react';
+import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3, Palette, RotateCcw, HardDrive, Smartphone } from 'lucide-react';
 import DiscussionStorage from '@/components/DiscussionStorage';
+import AppLinksSettings from '@/components/AppLinksSettings';
 
 interface UserItem {
   id: number;
@@ -48,7 +49,7 @@ interface Props {
 }
 
 export default function AdminScreens({ onBack }: Props) {
-  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles' | 'themes' | 'storage'>('locations');
+  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles' | 'themes' | 'storage' | 'app-links'>('locations');
   const { themes, refreshThemes } = useTheme();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -400,6 +401,15 @@ export default function AdminScreens({ onBack }: Props) {
             data-testid="tab-storage"
           >
             <HardDrive size={14} className="mr-1" /> Chat Storage
+          </Button>
+          <Button
+            variant={activeTab === 'app-links' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('app-links')}
+            className={activeTab === 'app-links' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+            size="sm"
+            data-testid="tab-app-links"
+          >
+            <Smartphone size={14} className="mr-1" /> App Links
           </Button>
         </div>
 
@@ -944,6 +954,7 @@ export default function AdminScreens({ onBack }: Props) {
           </>
         )}
         {activeTab === 'storage' && <DiscussionStorage />}
+        {activeTab === 'app-links' && <AppLinksSettings />}
       </div>
     </div>
   );

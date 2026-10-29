@@ -8,9 +8,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays, Share2 } from 'lucide-react';
 import { WhatsNew } from '@/components/WhatsNew';
 import { AboutDialog } from '@/components/AboutDialog';
+import { InviteDialog } from '@/components/InviteDialog';
+import { inviteUrl } from '@/lib/invite';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 
 interface Game {
@@ -119,6 +121,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const [activeTab, setActiveTab] = useState('games');
   const [archivePeriod, setArchivePeriod] = useState<ArchivePeriod>('week');
   const [showAbout, setShowAbout] = useState(false);
+  const [showRefer, setShowRefer] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [showSwitchRole, setShowSwitchRole] = useState(false);
@@ -173,6 +176,8 @@ export default function Dashboard({ onNavigate }: Props) {
   return (
     <div className="min-h-screen bg-gray-50">
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
+      {showRefer && <InviteDialog title="Refer a friend" url={inviteUrl(user?.id)}
+        message="Join me on Elite Turf Booking to book and play games:" onClose={() => setShowRefer(false)} />}
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -323,6 +328,15 @@ export default function Dashboard({ onNavigate }: Props) {
                       >
                         <UserPlus size={16} className="text-gray-400" />
                         Add User
+                      </button>
+
+                      <button
+                        onClick={() => { setShowUserMenu(false); setShowRefer(true); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        data-testid="refer-friend"
+                      >
+                        <Share2 size={16} className="text-gray-400" />
+                        Refer a friend
                       </button>
 
                       <button

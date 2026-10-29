@@ -25,6 +25,8 @@ import PlayerProfileDialog from '@/components/PlayerProfileDialog';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { InviteDialog } from '@/components/InviteDialog';
+import { inviteUrl } from '@/lib/invite';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 
@@ -439,6 +441,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [proofGameOpen, setProofGameOpen] = useState(false);
   const [proofUrl, setProofUrl] = useState('');
   const [showStatus, setShowStatus] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [editGroundCost, setEditGroundCost] = useState('');
   const [editNoteBefore, setEditNoteBefore] = useState('');
@@ -2174,6 +2177,17 @@ export default function GameDetail({ gameId, onBack }: Props) {
               ))}
             </CardContent>
           </Card>
+        )}
+
+        {game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived && (
+          <>
+            <Button variant="outline" className="w-full" data-testid="open-invite" onClick={() => setShowInvite(true)}>
+              <Users size={16} className="mr-2" /> Invite to this game (link / QR)
+            </Button>
+            {showInvite && <InviteDialog title="Invite to this game" url={inviteUrl(user?.id, game.id)}
+              message={`Join "${game.title}" on ${game.game_date}${game.game_time ? ` at ${game.game_time}` : ''}. Tap to open the game and nominate yourself:`}
+              onClose={() => setShowInvite(false)} />}
+          </>
         )}
 
         {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress') && (

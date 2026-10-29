@@ -143,6 +143,42 @@ async def update_game_defaults(
     return await game_defaults(db)
 
 
+class AppLinksRequest(BaseModel):
+    play_store_url: Optional[str] = None
+    app_store_url: Optional[str] = None
+
+
+async def app_links(db: aiosqlite.Connection) -> dict:
+    return {
+        "play_store_url": await get_app_setting(db, "play_store_url", "") or "",
+        "app_store_url": await get_app_setting(db, "app_store_url", "") or "",
+    }
+
+
+@router.get("/app-links")
+async def get_app_links(db: aiosqlite.Connection = Depends(get_db)):
+    """Public: store links shown when someone opens an invite link."""
+    return await app_links(db)
+
+
+@router.put("/app-links")
+async def update_app_links(
+    req: AppLinksRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_admin(user_id, db)
+    for key in ("play_store_url", "app_store_url"):
+        val = getattr(req, key)
+        if val is None:
+            continue
+        val = val.strip()
+        if val and not val.startswith("https://"):
+            raise HTTPException(status_code=400, detail="Store links must start with https://")
+        await set_app_setting(db, key, val)
+    return await app_links(db)
+
+
 @router.get("/pay-first-players")
 async def list_pay_first_players(
     user_id: int = Depends(get_current_user_id),
