@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { SportTile } from '@/components/SportTile';
 import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,15 +19,6 @@ interface Payment {
   status: string;
   paid_at: string | null;
 }
-
-const sportIcon = (type: string) => {
-  if (type === 'soccer' || type === 'football') return <span>&#9917;</span>;
-  if (type === 'cricket') return <span>&#127951;</span>;
-  if (type === 'badminton') return <span>&#127992;</span>;
-  if (type === 'basketball') return <span>&#127936;</span>;
-  if (type === 'hockey') return <span>&#127954;</span>;
-  return <span>&#127941;</span>;
-};
 
 interface Props {
   onBack: () => void;
@@ -89,7 +81,7 @@ export default function MyPayments({ onBack }: Props) {
             <Card key={payment.id}>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl">{sportIcon(payment.sport_type)}</span>
+                  <SportTile sport={payment.sport_type} />
                   <div className="flex-1">
                     <h4 className="font-semibold text-gray-800">{payment.game_title}</h4>
                     <p className="text-xs text-gray-500">{payment.ground_name} - {payment.game_date}</p>

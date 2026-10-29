@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SportTile } from '@/components/SportTile';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
 import { Badge } from '@/components/ui/badge';
@@ -143,7 +144,7 @@ export default function GroundPage({ groundId, onBack, onViewGame }: Props) {
               return (
                 <Card key={sport}><CardContent className="p-0">
                   <button className="w-full flex items-center gap-3 p-3 text-left" onClick={() => setOpenSport(open ? '' : sport)}>
-                    <span className="text-2xl">{sportIcon(sport)}</span>
+                    <SportTile sport={sport} />
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-800">{sportLabel(sport)}</p>
                       <p className="text-xs text-gray-500 truncate">

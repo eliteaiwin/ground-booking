@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Trophy, Medal, Star, Target } from 'lucide-react';
 import { useSports } from '../lib/sports';
 import { formatPlayerDisplay } from '@/lib/player';
+import { PlayerAvatar } from '@/components/PlayerAvatar';
+import PlayerProfileDialog from '@/components/PlayerProfileDialog';
 
 interface Ranking {
   rank: number;
@@ -14,6 +16,8 @@ interface Ranking {
   name: string;
   first_name: string;
   phone: string;
+  photo?: string | null;
+  gender?: string | null;
   potd_points: number;
   first_pref_wins: number;
   total_goals: number;
@@ -28,6 +32,7 @@ interface Props {
 
 export default function HallOfFame({ onBack }: Props) {
   const enabledSports = useSports();
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
   const [rankings, setRankings] = useState<Ranking[]>([]);
   const [sportFilter, setSportFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -117,31 +122,34 @@ export default function HallOfFame({ onBack }: Props) {
                 <CardContent className="p-3">
                   <div className="flex items-center gap-3">
                     {getRankIcon(r.rank)}
+                    <button type="button" data-profile-trigger data-testid="hof-avatar" aria-label={`View ${r.name}`} className="shrink-0" onClick={() => setProfileUserId(r.user_id)}>
+                      <PlayerAvatar photo={r.photo} gender={r.gender} alt={r.name} size="md" />
+                    </button>
                     <div className="flex-1 min-w-0">
                       <p className={`font-semibold truncate ${r.rank <= 3 ? 'text-gray-800' : 'text-gray-600'}`}>
                         {formatPlayerDisplay(r.name, r.phone)}
                       </p>
-                      <div className="flex gap-3 mt-0.5">
-                        <span className="text-xs text-yellow-600 flex items-center gap-0.5">
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                        <span className="text-xs text-yellow-600 flex items-center gap-0.5 whitespace-nowrap">
                           <Star size={10} /> {r.potd_points} POTD pts
                         </span>
-                        <span className="text-xs text-green-600 flex items-center gap-0.5">
+                        <span className="text-xs text-green-600 flex items-center gap-0.5 whitespace-nowrap">
                           <Target size={10} /> {r.total_goals} goals
                         </span>
                         <span className="text-xs text-amber-600 whitespace-nowrap">
                           POTD {r.potd_wins ?? 0}/{r.games_played}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-400 whitespace-nowrap">
                           {r.games_played} games
                         </span>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
                       <Badge className={r.rank === 1 ? 'bg-yellow-500 text-white' : r.rank <= 3 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}>
                         {r.combined_score} pts
                       </Badge>
                       {r.first_pref_wins > 0 && (
-                        <p className="text-xs text-yellow-600 mt-0.5">{r.first_pref_wins}x 1st pick</p>
+                        <p className="text-xs text-yellow-600 mt-0.5 whitespace-nowrap">{r.first_pref_wins}x 1st pick</p>
                       )}
                     </div>
                   </div>
@@ -151,6 +159,7 @@ export default function HallOfFame({ onBack }: Props) {
           </div>
         )}
       </div>
+      {profileUserId !== null && <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)} />}
     </div>
   );
 }

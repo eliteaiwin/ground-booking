@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { SportTile } from '@/components/SportTile';
 import { formatPhone, setPhoneHomeCountry } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { FeeBreakdownTable } from '@/components/CostBreakdown';
@@ -234,8 +235,10 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
       {tip && (
         <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
           {text}
-          {hasReceiver && paid > 0 && !online && (
-            <span className="block mt-1 text-gray-300">{received ? '✓ Receiver confirmed it was received' : 'Waiting for the receiver to confirm'}</span>
+          {received && !online && (
+            <span className="block mt-1 text-green-300" data-testid="received-note">
+              ✓ {pd?.received_by_name?.split(' ')[0] || 'The receiver'} verified the receiving of payment too.
+            </span>
           )}
           {onReceived && paid > 0 && !received && (
             <span className="flex gap-2 mt-1">
@@ -316,6 +319,7 @@ interface PaymentDetail {
   paid_via?: string;
   has_proof?: boolean;
   received_amount?: number;
+  received_by_name?: string;
 }
 
 interface Game {
@@ -413,15 +417,6 @@ interface POTDData {
   voting_open: boolean;
   voting_deadline: string | null;
 }
-
-const sportIcon = (type: string) => {
-  if (type === 'soccer' || type === 'football') return <span className="text-3xl">&#9917;</span>;
-  if (type === 'cricket') return <span className="text-3xl">&#127951;</span>;
-  if (type === 'badminton') return <span className="text-3xl">&#127992;</span>;
-  if (type === 'basketball') return <span className="text-3xl">&#127936;</span>;
-  if (type === 'hockey') return <span className="text-3xl">&#127954;</span>;
-  return <span className="text-3xl">&#127941;</span>;
-};
 
 const statusColor = (status: string) => {
   switch (status) {
@@ -843,7 +838,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <ArrowLeft size={16} /> Back to Games
           </button>
           <div className="flex items-center gap-3">
-            {sportIcon(game.sport_type)}
+            <SportTile sport={game.sport_type} className="w-12 h-12 ring-2 ring-white/60" />
             <div>
               <h1 className="text-xl font-bold">{game.ground_name}</h1>
               {game.title && <p className="text-sm font-medium text-white/90">{game.title}</p>}

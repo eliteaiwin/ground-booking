@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { SportTile } from '@/components/SportTile';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
@@ -292,7 +293,7 @@ export default function SearchGrounds({ onBack, onViewGame }: Props) {
                   {g.main_photo ? (
                     <img src={api.getGroundPhotoUrl(g.main_photo)} alt={g.name} className="w-24 h-24 object-cover shrink-0" />
                   ) : (
-                    <div className="w-24 h-24 shrink-0 bg-green-50 flex items-center justify-center text-3xl">{sportIconChar(g.sport_types[0] || '')}</div>
+                    <SportTile sport={g.sport_types[0]} className="w-24 h-24 !rounded-none" />
                   )}
                   <div className="flex-1 min-w-0 p-3">
                     <div className="flex items-start justify-between gap-2">

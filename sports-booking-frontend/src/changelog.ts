@@ -2,6 +2,13 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.35', date: '2026-10-29', changes: [
+    'New full-screen turf app icon (no white border)',
+    'Each sport now shows the same green turf with its own equipment on top: football, bat and ball, shuttle, basketball and more',
+    'Hall of Fame shows each player\'s photo; tap it to open their profile',
+    'Adding a player after the game raises Max players too, so it reads 17/17, never 17/16',
+    'A paid cash icon looks the same with or without the receiver tick; the tooltip says who verified it',
+  ] },
   { version: '1.34', date: '2026-10-29', changes: [
     'New Payment Receiver role: each wallet belongs to an app user, who can switch to this role to see every game paying to the wallet',
     'Settle Offline: the receiver confirms each player\'s payment (Received / Not received); confirmed payments show a tick on the green cash icon',

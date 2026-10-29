@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { SportTile } from '@/components/SportTile';
 import { maskedPhoneText } from '@/lib/player';
 import { formatPhone } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
@@ -616,7 +617,7 @@ export default function Dashboard({ onNavigate }: Props) {
               >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className="mt-1">{sportIcon(game.sport_type)}</div>
+                    <SportTile sport={game.sport_type} className="w-10 h-10 mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-gray-800 truncate">{game.ground_name}</h3>
@@ -682,7 +683,7 @@ export default function Dashboard({ onNavigate }: Props) {
               >
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className="mt-1">{sportIcon(game.sport_type)}</div>
+                    <SportTile sport={game.sport_type} className="w-10 h-10 mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-gray-800 truncate">{game.ground_name}</h3>

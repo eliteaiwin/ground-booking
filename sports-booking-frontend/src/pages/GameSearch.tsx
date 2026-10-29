@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { SportTile } from '@/components/SportTile';
 import { maskedPhoneText } from '@/lib/player';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -98,15 +99,6 @@ const formatNamePhone = (name: string, phone?: string) => {
   const firstName = (name || '').split(' ')[0];
   const masked = maskedPhoneText(phone);
   return masked ? `${firstName} - ${masked}` : firstName;
-};
-
-const sportIcon = (type: string) => {
-  if (type === 'soccer' || type === 'football') return '\u26BD';
-  if (type === 'cricket') return '\uD83C\uDFCF';
-  if (type === 'badminton') return '\uD83C\uDFF8';
-  if (type === 'basketball') return '\uD83C\uDFC0';
-  if (type === 'hockey') return '\uD83C\uDFD2';
-  return '\uD83C\uDFC5';
 };
 
 const statusColor = (status: string) => {
@@ -364,7 +356,7 @@ export default function GameSearch({ onBack, onViewGame }: Props) {
                 onClick={() => setExpandedGame(expandedGame === game.id ? null : game.id)}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl mt-1">{sportIcon(game.sport_type)}</span>
+                    <SportTile sport={game.sport_type} className="w-10 h-10 mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-gray-800 truncate">{game.title || game.ground_name}</h3>

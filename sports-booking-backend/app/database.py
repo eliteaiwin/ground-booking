@@ -566,6 +566,9 @@ async def init_db():
         "ALTER TABLE payments ADD COLUMN received_amount REAL NOT NULL DEFAULT 0",
         "ALTER TABLE payments ADD COLUMN received_at TIMESTAMP",
         "ALTER TABLE payments ADD COLUMN received_by INTEGER",
+        """UPDATE games SET max_players = (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = games.id AND gp.played = 1)
+           WHERE status = 'completed'
+             AND (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = games.id AND gp.played = 1) > max_players""",
         """CREATE TABLE IF NOT EXISTS payment_orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id TEXT NOT NULL UNIQUE,

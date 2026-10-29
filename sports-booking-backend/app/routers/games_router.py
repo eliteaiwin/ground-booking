@@ -326,6 +326,9 @@ async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Option
 
     ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     max_players = game["max_players"]
+    if game["status"] == "completed" and selected_count > max_players:
+        # Extra players added after the game raise the limit, so it reads 17/17, not 17/16.
+        await db.execute("UPDATE games SET max_players = ? WHERE id = ?", (selected_count, game_id))
     new_cost = _per_person_amount(ground_cost, selected_count if game["status"] == "completed" else 0, max_players)
 
     await db.execute(
@@ -462,7 +465,9 @@ async def _build_rankings(
 
     # POTD points
     cursor = await db.execute(
-        f"""SELECT pv.player_id, u.name, u.display_name, u.first_name, u.phone,
+        f"""SELECT pv.player_id, u.name, u.display_name, u.first_name, u.phone, COALESCE((SELECT up.filename FROM user_photos up WHERE up.user_id = u.id AND up.purpose = 'profile' LIMIT 1),
+                            NULLIF(u.profile_pic, ''),
+                            (SELECT up.filename FROM user_photos up WHERE up.user_id = u.id ORDER BY up.id LIMIT 1), '') AS photo, u.gender,
                    SUM(CASE WHEN pv.preference = 1 THEN 3
                             WHEN pv.preference = 2 THEN 2
                             WHEN pv.preference = 3 THEN 1 ELSE 0 END) as potd_points,
@@ -480,7 +485,9 @@ async def _build_rankings(
 
     # Goals (net of own goals)
     cursor = await db.execute(
-        f"""SELECT gs.user_id, u.name, u.display_name, u.first_name, u.phone,
+        f"""SELECT gs.user_id, u.name, u.display_name, u.first_name, u.phone, COALESCE((SELECT up.filename FROM user_photos up WHERE up.user_id = u.id AND up.purpose = 'profile' LIMIT 1),
+                            NULLIF(u.profile_pic, ''),
+                            (SELECT up.filename FROM user_photos up WHERE up.user_id = u.id ORDER BY up.id LIMIT 1), '') AS photo, u.gender,
                    SUM(gs.goals - gs.own_goals) as total_goals,
                    COUNT(DISTINCT gs.game_id) as games_scored_in
             FROM goal_scorers gs
@@ -525,6 +532,7 @@ async def _build_rankings(
             "display_name": r["display_name"] or "",
             "first_name": r["first_name"],
             "phone": r["phone"],
+            "photo": r["photo"], "gender": r["gender"],
             "potd_points": r["potd_points"],
             "first_pref_wins": r["first_pref_wins"],
             "potd_wins": potd_wins.get(pid, 0),
@@ -542,6 +550,7 @@ async def _build_rankings(
                 "display_name": r["display_name"] or "",
                 "first_name": r["first_name"],
                 "phone": r["phone"],
+                "photo": r["photo"], "gender": r["gender"],
                 "potd_points": 0,
                 "first_pref_wins": 0,
                 "potd_wins": potd_wins.get(pid, 0),
@@ -983,10 +992,11 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
         """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, u.name, p.received_amount,
-                  p.paid_by, p.paid_via, m.name AS paid_by_name
+                  p.paid_by, p.paid_via, m.name AS paid_by_name, rv.name AS received_by_name
            FROM payments p
            JOIN users u ON p.user_id = u.id
            LEFT JOIN users m ON m.id = p.paid_by
+           LEFT JOIN users rv ON rv.id = p.received_by
            JOIN game_players gp ON p.user_id = gp.user_id AND p.game_id = gp.game_id
            WHERE p.game_id = ? AND (gp.status = 'selected' OR gp.played = 1)""",
         (game_id,)
@@ -1007,6 +1017,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "paid_via": pr["paid_via"] or "",
             "has_proof": bool(pr["proof_file"]),
             "received_amount": pr["received_amount"] or 0,
+            "received_by_name": pr["received_by_name"] or "",
         }
         for pr in payment_rows
     ]
@@ -2336,6 +2347,7 @@ async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameReques
     game = await _get_game(db, game_id)
     base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     per_person_amount = _per_person_amount(base_ground_cost, len(played_user_ids), game["max_players"])
+    await db.execute("UPDATE games SET max_players = MAX(max_players, ?) WHERE id = ?", (len(played_user_ids), game_id))
 
     # Insert pending payments for played players that do not yet have one.
     for uid in played_user_ids:
@@ -2516,6 +2528,7 @@ async def edit_completed_game_result(
     # Recalculate per-player cost and payment amounts.
     base_ground_cost = game["ground_cost"] if game["ground_cost"] is not None else (game["cost_per_person"] * game["max_players"])
     per_person = _per_person_amount(base_ground_cost, len(played_user_ids), game["max_players"])
+    await db.execute("UPDATE games SET max_players = MAX(max_players, ?) WHERE id = ?", (len(played_user_ids), game_id))
 
     await db.execute(
         "UPDATE games SET cost_per_person = ?, ground_cost = ? WHERE id = ?",
