@@ -8,6 +8,7 @@ export const CHANGELOG: Release[] = [
     '"Player of the Day nominations have closed" line removed',
     'Discussion is now two collapsed rows, Chat and Photos, with an unread count when there is something new',
     'Pending amount of 0 shows in grey instead of red',
+    'Remind Unpaid via WhatsApp now shows every player with a tick (paid) or box (due) and the amount, ready to share or copy',
   ] },
   { version: '1.36', date: '2026-10-29', changes: [
     'A moderator who owes for a game now sees just one Mark as paid on their own name',

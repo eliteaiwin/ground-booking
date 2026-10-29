@@ -477,6 +477,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [payPreview, setPayPreview] = useState<FeeBreakdown | null>(null);
   const [proofUrl, setProofUrl] = useState('');
   const [showStatus, setShowStatus] = useState(false);
+  const [showRemind, setShowRemind] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [editGroundCost, setEditGroundCost] = useState('');
@@ -768,6 +769,31 @@ export default function GameDetail({ gameId, onBack }: Props) {
       });
     }
 
+    return msg;
+  };
+
+  const generateRemindMsg = () => {
+    const g = game!;
+    const per = g.per_person_amount ?? g.cost_per_person;
+    const byUser = new Map((g.payment_details || []).map(pd => [pd.user_id, pd]));
+    let msg = `Payment Reminder\n`;
+    msg += `Ground: ${g.ground_name}${g.title ? ` (${g.title})` : ''}\n`;
+    msg += `Date: ${formatGameDate(g.game_date)}, ${formatTime12h(g.game_time)}\n`;
+    msg += `Per Person: ${formatMoney(per.toFixed(0), currency)}\n\n`;
+    let paid = 0;
+    let due = 0;
+    g.selected_players.forEach((pl, i) => {
+      const pd = byUser.get(pl.user_id);
+      const pending = pd ? Math.max(0, Math.ceil(pd.pending - 0.001)) : 0;
+      const isPaid = !!pd && pending === 0;
+      if (isPaid) paid += 1;
+      due += pending;
+      const name = formatPlayerDisplay(pl.name, pl.phone, undefined, pl.display_name);
+      msg += `${i + 1}. ${isPaid ? '\u2705' : '\u2B1C'} ${name} - ${isPaid ? 'Paid' : `Due ${formatMoney(pending.toFixed(0), currency)}`}\n`;
+    });
+    msg += `\nPaid: ${paid}/${g.selected_players.length} | Pending: ${formatMoney(due.toFixed(0), currency)}\n`;
+    if (g.receiver) msg += `\nPay to: ${g.receiver.nick_name}\n${g.receiver.methods.map(m => m.value).join('\n')}\n`;
+    else if (g.payee) msg += `\nPay to: ${g.payee.name} (${formatPhone(g.payee.phone)})\n`;
     return msg;
   };
 
@@ -1902,16 +1928,30 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
               {unpaidPlayers.length > 0 && (isModerator || isAdmin || game.is_receiver) && (
                 <div>
-                  <Button className="w-full bg-green-600 hover:bg-green-700"
-                    onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${formatMoney(perPerson.toFixed(0), currency)}\nTotal outstanding: ${formatMoney(totalOutstanding.toFixed(0), currency)}\n\nPlease make the payment at the earliest.${game.receiver ? `\nPay to: ${game.receiver.nick_name}\n${game.receiver.methods.map(m => m.value).join('\n')}` : game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
-                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-                      handleAction('remind', () => api.remindUnpaid(game.id));
-                    }}
-                    disabled={actionLoading === 'remind'}>
-                    <MessageCircle size={16} className="mr-2" />
-                    {actionLoading === 'remind' ? 'Sending...' : 'Remind Unpaid via WhatsApp'}
+                  <Button className="w-full bg-green-600 hover:bg-green-700" data-testid="open-remind" onClick={() => setShowRemind(true)}>
+                    <MessageCircle size={16} className="mr-2" /> Remind Unpaid via WhatsApp
                   </Button>
+                  <Dialog open={showRemind} onOpenChange={setShowRemind}>
+                    <DialogContent className="max-w-sm" data-testid="remind-dialog">
+                      <DialogHeader><DialogTitle className="flex items-center gap-2"><Bell size={16} /> Payment Reminder</DialogTitle></DialogHeader>
+                      <div className="bg-white rounded-lg p-3 text-sm font-mono whitespace-pre-wrap mb-3 border max-h-[50vh] overflow-y-auto">
+                        {generateRemindMsg()}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button className="flex-1 bg-green-600 hover:bg-green-700"
+                          onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(generateRemindMsg())}`, '_blank')}>
+                          <MessageCircle size={16} className="mr-2" /> Share on WhatsApp
+                        </Button>
+                        <Button variant="outline" onClick={() => navigator.clipboard.writeText(generateRemindMsg())}>Copy</Button>
+                      </div>
+                      <Button variant="outline" className="w-full mt-2 border-green-300 text-green-700"
+                        onClick={() => handleAction('remind', () => api.remindUnpaid(game.id))}
+                        disabled={actionLoading === 'remind'}>
+                        <Bell size={16} className="mr-2" />
+                        {actionLoading === 'remind' ? 'Sending...' : 'Send In-App Reminder to Unpaid'}
+                      </Button>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               )}
             </CardContent>
