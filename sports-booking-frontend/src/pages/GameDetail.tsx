@@ -507,6 +507,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [showEditResultDialog, setShowEditResultDialog] = useState(false);
   const [pendingPlayedUserIds, setPendingPlayedUserIds] = useState<number[] | null>(null);
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
+  // A player who still owes on a completed game sees Payment Details ticked (with their Mark as paid); once paid it goes back to unticked.
+  const myDue = !!game && game.status === 'completed'
+    && game.selected_players.some(p => p.user_id === user?.id && p.payment_confirmed !== 1);
+  const myDueKey = game ? `${game.id}:${myDue}` : '';
+  const lastDueKey = useRef('');
+  useEffect(() => {
+    if (!myDueKey || myDueKey === lastDueKey.current) return;
+    lastDueKey.current = myDueKey;
+    setShowPaymentDetails(myDue);
+  }, [myDueKey, myDue]);
   const [playersTab, setPlayersTab] = useState<'current' | 'log'>('current');
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
