@@ -24,6 +24,7 @@ import { pitchLabel } from '@/lib/grounds';
 import PlayerProfileDialog from '@/components/PlayerProfileDialog';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 
@@ -406,6 +407,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editPaymentCollection, setEditPaymentCollection] = useState('offline');
   const [proofGameOpen, setProofGameOpen] = useState(false);
   const [proofUrl, setProofUrl] = useState('');
+  const [showStatus, setShowStatus] = useState(false);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [editGroundCost, setEditGroundCost] = useState('');
   const [editNoteBefore, setEditNoteBefore] = useState('');
@@ -2117,10 +2119,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
         )}
 
         {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress') && (
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="p-4">
-              <h4 className="font-semibold text-green-800 mb-2 flex items-center gap-2"><Share2 size={16} /> Send Current Status</h4>
-              <div className="bg-white rounded-lg p-3 text-sm font-mono whitespace-pre-wrap mb-3 border">
+          <>
+            <Button variant="outline" className="w-full border-green-300 text-green-700 bg-green-50" data-testid="open-status"
+              onClick={() => setShowStatus(true)}>
+              <Share2 size={16} className="mr-2" /> Send Current Status
+            </Button>
+            <Dialog open={showStatus} onOpenChange={setShowStatus}>
+              <DialogContent className="max-w-sm" data-testid="status-dialog">
+                <DialogHeader><DialogTitle className="flex items-center gap-2"><Share2 size={16} /> Send Current Status</DialogTitle></DialogHeader>
+
+              <div className="bg-white rounded-lg p-3 text-sm font-mono whitespace-pre-wrap mb-3 border max-h-[50vh] overflow-y-auto">
                 {generateStatusMsg()}
               </div>
               <div className="flex gap-2">
@@ -2139,8 +2147,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <Bell size={16} className="mr-2" />
                 {actionLoading === 'broadcast' ? 'Sending...' : 'Send as In-App Notification'}
               </Button>
-            </CardContent>
-          </Card>
+              </DialogContent>
+            </Dialog>
+          </>
         )}
 
         {/* Discussion Section - Always active */}

@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.23', date: '2026-10-28', changes: [
+    'Game page: "Send Current Status" is now a button that opens a popup with the message, Share on WhatsApp, Copy and Send as In-App Notification, so the page is shorter',
+  ] },
   { version: '1.22', date: '2026-10-28', changes: [
     'Create Game and Edit Game: choose "Pay through App" or "Settle Offline" with radio buttons',
     'Settle Offline: each player gets a "Mark as paid" button next to their name, before or after the game. It asks for a payment screenshot and tells the moderator',
