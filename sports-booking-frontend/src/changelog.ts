@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.34', date: '2026-10-29', changes: [
+    'New Payment Receiver role: each wallet belongs to an app user, who can switch to this role to see every game paying to the wallet',
+    'Settle Offline: the receiver confirms each player\'s payment (Received / Not received); confirmed payments show a tick on the green cash icon',
+    'Receivers can send payment reminders like moderators',
+  ] },
   { version: '1.33', date: '2026-10-29', changes: [
     'New Payment Receivers page (Dashboard → Receivers): a nick name plus one or more UPI IDs or Paytm / PhonePe / Google Pay numbers, tagged to grounds',
     'Create / Edit Game: choose who players pay ("Pay to"); players see only the nick name and a wallet popup with every way to pay and copy buttons',

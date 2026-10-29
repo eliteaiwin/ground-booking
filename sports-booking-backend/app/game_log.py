@@ -9,7 +9,7 @@ import aiosqlite
 from .currency import ground_currency
 
 APP_TZ = ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Kolkata"))
-PAYMENT_KINDS = {"paid", "paid_online", "marked_paid", "settled", "excess_settled", "reminder", "refund"}
+PAYMENT_KINDS = {"paid", "paid_online", "marked_paid", "settled", "excess_settled", "reminder", "refund", "received", "not_received"}
 JOIN_KINDS = {"joined", "waiting", "nominated", "nominated_waiting", "pay_first", "played_added"}
 
 
@@ -89,7 +89,7 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
     )).fetchall()]
     kinds = {e["kind"] for e in events}
     joined = {e["user_id"] for e in events if e["kind"] in JOIN_KINDS}
-    paid_logged = {e["user_id"] for e in events if e["kind"] in PAYMENT_KINDS - {"reminder"}}
+    paid_logged = {e["user_id"] for e in events if e["kind"] in PAYMENT_KINDS - {"reminder", "received", "not_received"}}
     creator = game["created_by"]
 
     if "created" not in kinds:
@@ -229,7 +229,9 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
             "marked_paid": f"{a} marked {u}'s {money(e['amount'])} as paid{timing(at)}",
             "settled": f"{a} settled {u}'s {'excess' if note == 'excess' else 'due'} of {money(e['amount'])} offline{timing(at)}",
             "excess_settled": f"{a} returned {u}'s excess of {money(e['amount'])}",
-            "reminder": f"{a} sent {u} a payment reminder" + (f" ({money(e['amount'])} due)" if e["amount"] else ""),
+            "received": f"{note or a} confirmed receiving {u}'s {money(e['amount'])}",
+            "not_received": f"{note or a} says {u}'s {money(e['amount'])} was not received",
+            "reminder": f"{note or a} sent {u} a payment reminder" + (f" ({money(e['amount'])} due)" if e["amount"] else ""),
             "refund": f"{u}'s {money(e['amount'])} is marked for refund",
         }.get(k, k)
         who = e["user_id"] or e["actor_id"] or creator

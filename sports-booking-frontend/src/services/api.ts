@@ -656,11 +656,15 @@ export const api = {
   listReceivers: () => request('/api/receivers'),
   receiversForGround: (groundName: string) =>
     request(`/api/receivers/for-ground?ground_name=${encodeURIComponent(groundName)}`),
-  createReceiver: (data: { nick_name: string; methods: { kind: string; value: string }[]; ground_ids: number[] }) =>
+  createReceiver: (data: { nick_name: string; methods: { kind: string; value: string }[]; ground_ids: number[]; user_id?: number }) =>
     request('/api/receivers', { method: 'POST', body: JSON.stringify(data) }),
-  updateReceiver: (id: number, data: { nick_name: string; methods: { kind: string; value: string }[]; ground_ids: number[] }) =>
+  updateReceiver: (id: number, data: { nick_name: string; methods: { kind: string; value: string }[]; ground_ids: number[]; user_id?: number }) =>
     request(`/api/receivers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteReceiver: (id: number) => request(`/api/receivers/${id}`, { method: 'DELETE' }),
+  searchReceiverUsers: (q: string) => request(`/api/receivers/users?q=${encodeURIComponent(q)}`),
+  myReceiverGames: () => request('/api/receivers/my-games'),
+  confirmReceived: (gameId: number, playerId: number, received: boolean) =>
+    request(`/api/receivers/games/${gameId}/players/${playerId}/received`, { method: 'POST', body: JSON.stringify({ received }) }),
 
   // Enhanced POTD voting (ranked)
   voteRankedPOTD: (gameId: number, first: number, second?: number, third?: number) =>

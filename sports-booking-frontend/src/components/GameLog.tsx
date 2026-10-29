@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Sparkles, LogIn, Hourglass, UserPlus, ArrowUpCircle, ArrowDownCircle, LogOut, UserMinus, PlayCircle, Flag,
   XCircle, Award, Trophy, Banknote, CreditCard, CheckCircle, Bell, Undo2, ArrowUp, ArrowDown, Activity, User,
-  type LucideIcon,
+  type LucideIcon, CheckCheck, CircleSlash,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -43,6 +43,8 @@ const EVENTS: Record<string, { icon: LucideIcon; label: string; color: string }>
   settled: { icon: CheckCircle, label: 'Settled', color: 'text-emerald-600' },
   excess_settled: { icon: Undo2, label: 'Excess returned', color: 'text-emerald-600' },
   reminder: { icon: Bell, label: 'Reminder', color: 'text-orange-500' },
+  received: { icon: CheckCheck, label: 'Received', color: 'text-emerald-600' },
+  not_received: { icon: CircleSlash, label: 'Not received', color: 'text-red-600' },
   refund: { icon: Undo2, label: 'Refund', color: 'text-red-600' },
 };
 

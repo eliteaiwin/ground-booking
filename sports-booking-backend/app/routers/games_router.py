@@ -15,7 +15,7 @@ from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency
 from ..game_log import log_event, build_log, log_join_before_leaving
-from .receivers_router import check_receiver, public_receiver
+from .receivers_router import check_receiver, public_receiver, is_game_receiver
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -982,7 +982,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
-        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, u.name,
+        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, u.name, p.received_amount,
                   p.paid_by, p.paid_via, m.name AS paid_by_name
            FROM payments p
            JOIN users u ON p.user_id = u.id
@@ -1006,6 +1006,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "paid_by_name": pr["paid_by_name"] or "",
             "paid_via": pr["paid_via"] or "",
             "has_proof": bool(pr["proof_file"]),
+            "received_amount": pr["received_amount"] or 0,
         }
         for pr in payment_rows
     ]
@@ -1364,6 +1365,7 @@ async def get_game(
     await _auto_progress_games(db)
     result = await get_game_dict(db, game_id)
     result["can_moderate"] = await can_moderate_game(user_id, game_id, db)
+    result["is_receiver"] = await is_game_receiver(db, user_id, game_id)
     result["ground_country_code"] = await _ground_country_code(db, result.get("ground_name") or "")
     result["ground_map_url"] = await _ground_map_url(db, result.get("ground_name") or "")
     sees_contacts = (await (await db.execute(

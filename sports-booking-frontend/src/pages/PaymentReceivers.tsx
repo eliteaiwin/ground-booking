@@ -15,7 +15,9 @@ interface Receiver {
   nick_name: string;
   methods: ReceiverMethod[];
   grounds: { id: number; display_name: string }[];
+  owner?: Owner | null;
 }
+interface Owner { id: number; name: string; phone: string }
 interface GroundOption { id: number; display_name: string }
 
 const KINDS: ReceiverMethodKind[] = ['upi', 'paytm', 'phonepe', 'gpay'];
@@ -33,6 +35,9 @@ export default function PaymentReceivers({ onBack }: { onBack: () => void }) {
   const [nick, setNick] = useState('');
   const [methods, setMethods] = useState<ReceiverMethod[]>([blankMethod()]);
   const [groundIds, setGroundIds] = useState<number[]>([]);
+  const [owner, setOwner] = useState<Owner | null>(null);
+  const [ownerQuery, setOwnerQuery] = useState('');
+  const [ownerResults, setOwnerResults] = useState<Owner[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -51,11 +56,14 @@ export default function PaymentReceivers({ onBack }: { onBack: () => void }) {
     setNick(r?.nick_name || '');
     setMethods(r?.methods.length ? r.methods.map(m => ({ ...m })) : [blankMethod()]);
     setGroundIds(r?.grounds.map(g => g.id) || []);
+    setOwner(r?.owner || null);
+    setOwnerQuery('');
+    setOwnerResults([]);
   };
 
   const save = async () => {
     setSaving(true); setError('');
-    const body = { nick_name: nick, methods: methods.filter(m => m.value.trim()), ground_ids: groundIds };
+    const body = { nick_name: nick, methods: methods.filter(m => m.value.trim()), ground_ids: groundIds, user_id: owner?.id };
     try {
       if (editing === 'new') await api.createReceiver(body);
       else if (editing) await api.updateReceiver(editing, body);
@@ -83,6 +91,32 @@ export default function PaymentReceivers({ onBack }: { onBack: () => void }) {
           <Label>Nick Name</Label>
           <Input value={nick} onChange={e => setNick(e.target.value)} placeholder="Tittle Wallet" maxLength={40} data-testid="receiver-nick" />
           <p className="text-xs text-gray-500">Players only see this name.</p>
+        </div>
+        <div className="space-y-1">
+          <Label>Receiver (app user)</Label>
+          {owner ? (
+            <div className="flex items-center justify-between border rounded-md px-3 py-2 text-sm" data-testid="receiver-owner">
+              <span>{owner.name} <span className="text-gray-500">{owner.phone}</span></span>
+              <button type="button" className="text-xs text-blue-600" onClick={() => setOwner(null)}>Change</button>
+            </div>
+          ) : (
+            <>
+              <Input value={ownerQuery} placeholder="Search name or mobile" data-testid="receiver-owner-search"
+                onChange={e => {
+                  const q = e.target.value;
+                  setOwnerQuery(q);
+                  if (q.trim().length >= 2) api.searchReceiverUsers(q).then(setOwnerResults).catch(() => setOwnerResults([]));
+                  else setOwnerResults([]);
+                }} />
+              {ownerResults.map(u => (
+                <button type="button" key={u.id} className="block w-full text-left text-sm px-3 py-1.5 hover:bg-gray-50 border-b"
+                  onClick={() => { setOwner(u); setOwnerResults([]); setOwnerQuery(''); }}>
+                  {u.name} <span className="text-gray-500">{u.phone}</span>
+                </button>
+              ))}
+            </>
+          )}
+          <p className="text-xs text-gray-500">Gets the Payment Receiver role to confirm payments. Players never see this name.</p>
         </div>
         <div className="space-y-2">
           <Label>Ways to pay</Label>
@@ -154,7 +188,10 @@ export default function PaymentReceivers({ onBack }: { onBack: () => void }) {
           <Card key={r.id} data-testid="receiver-card">
             <CardContent className="p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold">{r.nick_name}</h3>
+                <div className="min-w-0">
+                  <h3 className="font-semibold">{r.nick_name}</h3>
+                  {r.owner && <p className="text-xs text-gray-500">{r.owner.name} · {r.owner.phone}</p>}
+                </div>
                 <div className="flex gap-1">
                   <button aria-label="Edit" onClick={() => startEdit(r)} className="p-1.5 text-gray-500 hover:text-blue-600"><Pencil size={16} /></button>
                   <button aria-label="Remove" onClick={() => remove(r)} className="p-1.5 text-gray-500 hover:text-red-600"><Trash2 size={16} /></button>

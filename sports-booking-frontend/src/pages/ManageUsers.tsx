@@ -332,6 +332,7 @@ export default function ManageUsers({ onBack }: Props) {
       case 'admin': return 'bg-red-100 text-red-700';
       case 'moderator': return 'bg-blue-100 text-blue-700';
       case 'ground_management': return 'bg-purple-100 text-purple-700';
+      case 'payment_receiver': return 'bg-teal-100 text-teal-700';
       case 'user': return 'bg-gray-100 text-gray-700';
       case 'readonly': return 'bg-yellow-100 text-yellow-700';
       default: return 'bg-gray-100 text-gray-700';
@@ -496,7 +497,7 @@ export default function ManageUsers({ onBack }: Props) {
                     </div>
                   </div>
                   <div className="md:hidden mt-2 flex flex-wrap gap-1">
-                    {['admin', 'moderator', 'ground_management', 'user'].map(role => (
+                    {['admin', 'moderator', 'ground_management', 'payment_receiver', 'user'].map(role => (
                       <Button key={role} size="sm"
                         variant={u.roles.includes(role) ? 'default' : 'outline'}
                         className={`text-[10px] h-6 px-2 ${u.roles.includes(role)
@@ -590,7 +591,7 @@ export default function ManageUsers({ onBack }: Props) {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Global Roles</label>
                 <div className="flex flex-wrap gap-2">
-                  {['admin', 'moderator', 'ground_management', 'user', 'readonly'].map(role => (
+                  {['admin', 'moderator', 'ground_management', 'payment_receiver', 'user', 'readonly'].map(role => (
                     <Button key={role} size="sm"
                       variant={editUser.roles.includes(role) ? 'default' : 'outline'}
                       className={`text-xs h-7 ${editUser.roles.includes(role)

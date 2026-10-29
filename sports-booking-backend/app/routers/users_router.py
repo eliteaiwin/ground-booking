@@ -331,7 +331,7 @@ async def update_user_roles(
 ):
     await require_admin(user_id, db)
 
-    valid_roles = {"admin", "ground_management", "moderator", "user", "readonly"}
+    valid_roles = {"admin", "ground_management", "moderator", "payment_receiver", "user", "readonly"}
     for r in req.roles:
         if r not in valid_roles:
             raise HTTPException(status_code=400, detail="Invalid role: " + r)

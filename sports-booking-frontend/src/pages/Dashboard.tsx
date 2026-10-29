@@ -107,13 +107,19 @@ interface Props {
 const roleDisplayNames: Record<string, string> = {
   admin: 'Admin',
   ground_management: 'Ground Management',
+  payment_receiver: 'Payment Receiver',
   moderator: 'Moderator',
   user: 'User',
   readonly: 'User (Read Only)',
 };
 
+interface ReceiverGame {
+  id: number; title: string; series_name: string; game_date: string; status: string; nick_name: string; currency: string;
+  players: number; owed: number; paid: number; confirmed: number; to_confirm: number; unpaid: number;
+}
+
 export default function Dashboard({ onNavigate }: Props) {
-  const { user, logout, isAdmin, isModerator, isGroundManagement, isReadOnly, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
+  const { user, logout, isAdmin, isModerator, isGroundManagement, isReceiver, isReadOnly, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
   const { activeTheme } = useTheme();
   const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -123,6 +129,10 @@ export default function Dashboard({ onNavigate }: Props) {
   const [showAbout, setShowAbout] = useState(false);
   const [showRefer, setShowRefer] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [receiverGames, setReceiverGames] = useState<ReceiverGame[]>([]);
+  useEffect(() => {
+    if (isReceiver) api.myReceiverGames().then(setReceiverGames).catch(() => setReceiverGames([]));
+  }, [isReceiver]);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [showSwitchRole, setShowSwitchRole] = useState(false);
 
@@ -550,6 +560,33 @@ export default function Dashboard({ onNavigate }: Props) {
             </button>
           )}
         </div>
+
+        {isReceiver && (
+          <Card className="mb-4" data-testid="receiver-games">
+            <CardContent className="p-3 space-y-2">
+              <h2 className="font-semibold flex items-center gap-2"><Wallet size={16} /> Payments to my wallet</h2>
+              {receiverGames.length === 0 && <p className="text-sm text-gray-500">No games pay to your wallet yet.</p>}
+              {receiverGames.map(g => (
+                <button key={g.id} type="button" onClick={() => onNavigate('game-detail', g.id)} data-testid="receiver-game"
+                  className="w-full text-left p-2 border rounded-lg hover:bg-gray-50">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-medium text-sm truncate">{g.series_name || g.title}</span>
+                    <span className="text-xs text-gray-500 shrink-0">{g.game_date}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    {g.nick_name} · Paid {formatMoney(Math.round(g.paid), g.currency)} of {formatMoney(Math.round(g.owed), g.currency)} · Confirmed {formatMoney(Math.round(g.confirmed), g.currency)}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {g.to_confirm > 0 && <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-[10px]">{g.to_confirm} to confirm</Badge>}
+                    {g.status === 'completed' && g.unpaid > 0 && <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px]">{g.unpaid} unpaid</Badge>}
+                    {g.status === 'completed' && g.players > 0 && g.to_confirm === 0 && g.unpaid === 0 && <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-[10px]">Fully settled</Badge>}
+                    {g.status !== 'completed' && <Badge variant="outline" className="text-[10px]">Upcoming</Badge>}
+                  </div>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>

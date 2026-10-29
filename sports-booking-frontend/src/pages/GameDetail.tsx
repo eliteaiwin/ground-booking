@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy, X } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy, X, Check } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -187,11 +187,14 @@ const shortDateTime = (iso?: string | null): string => {
 
 // Cash icon beside a player: red = due, green = paid, amber = paid too little or too much.
 // Hover (desktop) or tap (phone) shows the details.
-function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof }: {
+function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasReceiver = false, onReceived }: {
   pd?: PaymentDetail; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void; onViewProof?: () => void;
+  hasReceiver?: boolean; onReceived?: (ok: boolean) => void;
 }) {
   const [tip, setTip] = useState(false);
   const paid = pd?.paid_amount || 0;
+  const online = pd?.paid_via === 'online';
+  const received = hasReceiver && paid > 0 && (online || (pd?.received_amount || 0) >= paid - 0.001);
   const excess = pd?.excess || 0;
   const pending = pd?.pending || 0;
   const rs = (n: number) => `${formatMoney(Math.ceil(n - 0.001), currency)}`;
@@ -219,11 +222,29 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof }: {
   return (
     <span className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
       <button type="button" className={color} data-testid="payment-icon" aria-label={text} onClick={() => setTip(t => !t)}>
-        <Banknote size={16} />
+        <span className="relative inline-flex">
+          <Banknote size={16} />
+          {received && (
+            <span className="absolute -top-1.5 -right-1.5 bg-green-600 text-white rounded-full p-[1px]" data-testid="received-tick">
+              <Check size={8} strokeWidth={4} />
+            </span>
+          )}
+        </span>
       </button>
       {tip && (
         <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
           {text}
+          {hasReceiver && paid > 0 && !online && (
+            <span className="block mt-1 text-gray-300">{received ? '✓ Receiver confirmed it was received' : 'Waiting for the receiver to confirm'}</span>
+          )}
+          {onReceived && paid > 0 && !received && (
+            <span className="flex gap-2 mt-1">
+              <button type="button" className="px-2 py-0.5 rounded bg-green-600 font-medium" data-testid="confirm-received"
+                onClick={(e) => { e.stopPropagation(); setTip(false); onReceived(true); }}>Received ✓</button>
+              <button type="button" className="px-2 py-0.5 rounded bg-red-600 font-medium" data-testid="not-received"
+                onClick={(e) => { e.stopPropagation(); setTip(false); onReceived(false); }}>Not received</button>
+            </span>
+          )}
           {pd?.has_proof && onViewProof && (
             <button type="button" className="block mt-1 underline font-medium text-green-300" data-testid="view-proof"
               onClick={(e) => { e.stopPropagation(); setTip(false); onViewProof(); }}>
@@ -294,6 +315,7 @@ interface PaymentDetail {
   paid_by_name?: string;
   paid_via?: string;
   has_proof?: boolean;
+  received_amount?: number;
 }
 
 interface Game {
@@ -341,6 +363,7 @@ interface Game {
   awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
   receiver?: PublicReceiver | null;
+  is_receiver?: boolean;
   created_by: number;
   created_by_name: string;
   created_at?: string;
@@ -1865,11 +1888,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <div><p className="text-2xl font-bold text-red-600">{game.payment_summary.pending}</p><p className="text-xs text-gray-500">Pending</p></div>
               </div>
 
-              {unpaidPlayers.length > 0 && (isModerator || isAdmin) && (
+              {unpaidPlayers.length > 0 && (isModerator || isAdmin || game.is_receiver) && (
                 <div>
                   <Button className="w-full bg-green-600 hover:bg-green-700"
                     onClick={() => {
-                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${formatMoney(perPerson.toFixed(0), currency)}\nTotal outstanding: ${formatMoney(totalOutstanding.toFixed(0), currency)}\n\nPlease make the payment at the earliest.${game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
+                      const msg = `Payment Reminder\n\nGame: ${game.title}\nGround: ${game.ground_name}\nAmount per person: ${formatMoney(perPerson.toFixed(0), currency)}\nTotal outstanding: ${formatMoney(totalOutstanding.toFixed(0), currency)}\n\nPlease make the payment at the earliest.${game.receiver ? `\nPay to: ${game.receiver.nick_name}\n${game.receiver.methods.map(m => m.value).join('\n')}` : game.payee ? `\nPay to: ${game.payee.name} (${formatPhone(game.payee.phone)})` : ''}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
                       handleAction('remind', () => api.remindUnpaid(game.id));
                     }}
@@ -1883,13 +1906,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-          <Card>
+          <Card className="relative mt-8 rounded-tl-none">
             <CardHeader className="pb-2">
-              <div className="flex gap-1 mb-2" role="tablist">
+              <div className="absolute bottom-full -left-px flex gap-1" role="tablist">
                 {(['current', 'log'] as const).map(t => (
                   <button key={t} type="button" role="tab" aria-selected={playersTab === t} data-testid={`players-tab-${t}`}
                     onClick={() => setPlayersTab(t)}
-                    className={`px-3 py-0.5 rounded-full text-xs border ${playersTab === t ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                    className={`-mb-px px-4 py-1 rounded-t-lg text-xs border ${playersTab === t
+                      ? 'relative z-10 bg-white text-green-700 font-semibold border-gray-200 border-t-2 border-t-green-600 border-b-white'
+                      : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
                     {t === 'current' ? 'Current' : 'Log'}
                   </button>
                 ))}
@@ -2013,7 +2038,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               confirmed={player.payment_confirmed === 1}
                               due={game.status === 'completed' || game.payment_timing === 'before' || !!player.must_prepay}
                               currency={currency}
-                              onViewProof={(isModerator || isAdmin || player.user_id === user?.id)
+                              hasReceiver={!!game.receiver}
+                              onReceived={(game.is_receiver || (isAdmin && !!game.receiver)) ? (ok) => {
+                                if (ok || window.confirm(`Not received from ${player.name}? Their payment is cleared and they are asked to pay again.`)) {
+                                  handleAction(ok ? 'received' : 'not-received', () => api.confirmReceived(game.id, player.user_id, ok));
+                                }
+                              } : undefined}
+                              onViewProof={(isModerator || isAdmin || game.is_receiver || player.user_id === user?.id)
                                 ? () => { api.getPaymentProof(game.id, player.user_id).then(setProofUrl).catch((e: Error) => setError(e.message)); }
                                 : undefined}
                               onSettle={(isModerator || isAdmin) ? (amt) => {

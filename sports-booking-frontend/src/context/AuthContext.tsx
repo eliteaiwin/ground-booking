@@ -68,6 +68,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isModerator: boolean;
   isGroundManagement: boolean;
+  isReceiver: boolean;
   isReadOnly: boolean;
   // Active role switching
   activeRole: string;
@@ -356,11 +357,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isModerator = effectiveRole === 'moderator' || effectiveRole === 'admin';
   const isGroundManagement = effectiveRole === 'ground_management' || effectiveRole === 'admin';
   const isReadOnly = effectiveRole === 'readonly';
+  const isReceiver = effectiveRole === 'payment_receiver';
 
   return (
     <AuthContext.Provider value={{
       user, loading, login, loginWithOTP, requestOTP, loginWithGoogle, loginWithApple,
-      register, logout, refreshUser, isAdmin, isModerator, isGroundManagement, isReadOnly,
+      register, logout, refreshUser, isAdmin, isModerator, isGroundManagement, isReceiver, isReadOnly,
       activeRole: effectiveRole, switchRole,
       storedAccounts, switchAccount, addAccount, removeAccount,
       isAddingAccount, setIsAddingAccount,

@@ -11,6 +11,7 @@ from .. import cashfree
 from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 from ..currency import ground_currency
+from .receivers_router import is_game_receiver, receiver_owner
 from ..game_log import log_event
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
@@ -155,7 +156,7 @@ async def record_payment_with_proof(
     )
 
     game = await (await db.execute(
-        "SELECT title, game_date, ground_name, created_by, payee_user_id, cost_per_person FROM games WHERE id = ?", (game_id,)
+        "SELECT title, game_date, ground_name, created_by, payee_user_id, receiver_id, cost_per_person FROM games WHERE id = ?", (game_id,)
     )).fetchone()
     payer = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
     if game:
@@ -165,7 +166,7 @@ async def record_payment_with_proof(
         amount = _money(await ground_currency(db, game["ground_name"]), owed)
         message = (f"{payer['name'] if payer else 'A player'} marked {amount} as paid for {game['title']} "
                    f"({_short_date(game['game_date'])}) and uploaded a payment screenshot.")
-        for mod_id in {game["created_by"], game["payee_user_id"]} - {None, user_id}:
+        for mod_id in {game["created_by"], game["payee_user_id"], await receiver_owner(db, game["receiver_id"])} - {None, user_id}:
             await db.execute(
                 "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_proof', ?)",
                 (mod_id, game_id, message)
@@ -550,7 +551,9 @@ def _local_paid_at(value) -> Optional[datetime]:
 
 
 async def _require_history_viewer(viewer_id: int, player_id: int, db: aiosqlite.Connection):
-    if viewer_id != player_id:
+    if viewer_id != player_id and not await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'payment_receiver'", (viewer_id,)
+    )).fetchone():
         await require_admin_or_moderator(viewer_id, db)
 
 
@@ -624,7 +627,9 @@ async def payment_history(
             "paid_via": r["paid_via"] or "",
             "done_minutes": done,
             "can_pay": user_id == player_id and remaining > 0,
-            "can_settle": bool(is_mod and user_id != player_id and remaining != 0 and (is_admin or await can_moderate_game(user_id, r["game_id"], db))),
+            "can_settle": bool(user_id != player_id and remaining != 0 and (
+                (is_mod and (is_admin or await can_moderate_game(user_id, r["game_id"], db)))
+                or await is_game_receiver(db, user_id, r["game_id"]))),
         })
     owed = round(sum(i["amount"] for i in items), 2)
     paid = round(sum(i["paid_amount"] for i in items), 2)
@@ -645,7 +650,8 @@ async def payment_history(
 
 async def _history_payment(db: aiosqlite.Connection, user_id: int, player_id: int, game_id: int):
     from .games_router import require_game_moderator
-    await require_game_moderator(user_id, game_id, db)
+    if not await is_game_receiver(db, user_id, game_id):
+        await require_game_moderator(user_id, game_id, db)
     game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
     row = await (await db.execute(
         "SELECT amount, COALESCE(paid_amount, 0) AS paid_amount FROM payments WHERE game_id = ? AND user_id = ?",
@@ -684,6 +690,11 @@ async def settle_offline(
             "UPDATE payments SET paid_amount = amount WHERE game_id = ? AND user_id = ?", (req.game_id, player_id)
         )
         what = f"excess of {-diff:.0f}"
+    if await is_game_receiver(db, user_id, req.game_id):
+        await db.execute(
+            "UPDATE payments SET received_amount = paid_amount, received_at = ?, received_by = ? WHERE game_id = ? AND user_id = ?",
+            (now, user_id, req.game_id, player_id)
+        )
     comment = req.comment.strip()[:300]
     await db.execute(
         "INSERT INTO payment_settlements (game_id, user_id, moderator_id, comment, action_date) VALUES (?, ?, ?, ?, ?)",
@@ -717,6 +728,11 @@ async def remind_payment(
         (player_id, req.game_id,
          f"Reminder: please pay {due:.0f} for {game['title']} on {game['game_date']}.")
     )
-    await log_event(db, req.game_id, "reminder", user_id=player_id, actor_id=user_id, amount=due)
+    nick = await (await db.execute(
+        """SELECT r.nick_name FROM games g JOIN payment_receivers r ON r.id = g.receiver_id
+           WHERE g.id = ? AND r.user_id = ?""", (req.game_id, user_id)
+    )).fetchone()
+    await log_event(db, req.game_id, "reminder", user_id=player_id, actor_id=user_id, amount=due,
+                    note=nick["nick_name"] if nick else "")
     await db.commit()
     return {"message": "Reminder sent"}

@@ -21,6 +21,7 @@ const DEFAULT_THEMES: RoleThemes = {
   admin: { primary_color: '#7f1d1d', header_bg: '#7f1d1d', button_bg: '#7f1d1d', button_hover: '#991b1b', accent_color: '#7f1d1d' },
   moderator: { primary_color: '#1d4ed8', header_bg: '#1d4ed8', button_bg: '#1d4ed8', button_hover: '#1e40af', accent_color: '#1d4ed8' },
   ground_management: { primary_color: '#6b7280', header_bg: '#6b7280', button_bg: '#6b7280', button_hover: '#4b5563', accent_color: '#6b7280' },
+  payment_receiver: { primary_color: '#0f766e', header_bg: '#0f766e', button_bg: '#0f766e', button_hover: '#115e59', accent_color: '#0f766e' },
   user: { primary_color: '#16a34a', header_bg: '#16a34a', button_bg: '#16a34a', button_hover: '#15803d', accent_color: '#16a34a' },
   readonly: { primary_color: '#16a34a', header_bg: '#16a34a', button_bg: '#16a34a', button_hover: '#15803d', accent_color: '#16a34a' },
 };
