@@ -2,14 +2,17 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.28', date: '2026-10-29', changes: [
+    'App fee on online payments is now 3%, shown as "App Fee (3%)" in the payment popup',
+    'A player who has paid can no longer be removed or unjoin',
+    'Adding or removing a player after the game warns how each player\'s share changes',
+    'Players of a completed game lock 3 days after it (change the days in Preferences)',
+    'Completed games without a score now have "Edit who played"',
+  ] },
   { version: '1.27', date: '2026-10-28', changes: [
     'Before paying online, a popup shows where the money goes: receiver, Elizoph app fee and Cashfree fee',
     'Saving your UPI ID in Profile now also sets it up with Cashfree, so online payments reach you',
     'Online payment is offered only for India (₹) grounds; other grounds settle offline',
-    'Elizoph app fee on online payments is now 3% by default',
-    'A player who has paid can no longer be removed or unjoin',
-    'Adding or removing a player after the game warns how each player\'s share changes',
-    'Players of a completed game lock 3 days after it (change the days in Preferences)',
   ] },
   { version: '1.26', date: '2026-10-28', changes: [
     'Refer a friend (profile menu): share a link or QR code to the app on WhatsApp, or copy it',
