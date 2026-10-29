@@ -14,7 +14,7 @@ from ..auth import get_current_user_id
 from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency
-from ..game_log import log_event, build_log
+from ..game_log import log_event, build_log, log_join_before_leaving
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -1845,6 +1845,7 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
         except Exception:
             pass
 
+    await log_join_before_leaving(db, game_id, player)
     if must_pay:
         # Don't remove payment record - user must still pay
         # Remove from game players but keep payment obligation

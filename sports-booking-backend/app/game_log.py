@@ -50,6 +50,23 @@ async def log_event(db: aiosqlite.Connection, game_id: int, kind: str, user_id: 
     )
 
 
+async def log_join_before_leaving(db: aiosqlite.Connection, game_id: int, player) -> None:
+    """A leaver's game_players row is deleted, so keep their original join in the log first."""
+    if await (await db.execute(
+        f"SELECT 1 FROM game_events WHERE game_id = ? AND user_id = ? AND kind IN ({','.join('?' * len(JOIN_KINDS))})",
+        (game_id, player["user_id"], *JOIN_KINDS),
+    )).fetchone():
+        return
+    queued = player["status"] == "waiting" or bool(player["list_at"])
+    by_other = player["nominated_by"] not in (None, player["user_id"])
+    kind = ("nominated_waiting" if queued else "nominated") if by_other else ("waiting" if queued else "joined")
+    at = _parse_utc(player["joined_at"]) or datetime.now(timezone.utc)
+    await db.execute(
+        "INSERT INTO game_events (game_id, kind, user_id, actor_id, amount, note, created_at) VALUES (?, ?, ?, ?, ?, '', ?)",
+        (game_id, kind, player["user_id"], player["nominated_by"] or player["user_id"], None, at.isoformat()),
+    )
+
+
 def _duration(minutes: float) -> str:
     m = int(round(minutes))
     d, rem = divmod(m, 1440)
@@ -78,17 +95,33 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
     if "created" not in kinds:
         events.append({"kind": "created", "user_id": None, "actor_id": creator, "amount": None, "note": "",
                        "created_at": game["created_at"]})
-    # Rebuild joins in arrival order: the first max_players got spots, later ones queued, whatever they are now.
+    # Rebuild joins in arrival order: a join gets a spot only while fewer than max_players hold one.
     end_sched = end
     moved_up = {e["user_id"] for e in events if e["kind"] == "promoted"}
-    for slot, p in enumerate(await (await db.execute(
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    seat_moves = sorted(
+        ((_parse_utc(e["created_at"]) or epoch, e["kind"], e["user_id"]) for e in events
+         if e["kind"] in ("joined", "nominated", "promoted", "quit", "removed", "demoted")),
+        key=lambda m: m[0],
+    )
+    seated: set = set()
+    rows = await (await db.execute(
         "SELECT user_id, status, nominated_by, joined_at FROM game_players WHERE game_id = ? ORDER BY joined_at, id",
         (game_id,),
-    )).fetchall()):
+    )).fetchall()
+    i = 0
+    for p in rows:
         if p["user_id"] in joined:
             continue
+        t = _parse_utc(p["joined_at"]) or epoch
+        while i < len(seat_moves) and seat_moves[i][0] <= t:
+            _, k, uid = seat_moves[i]
+            (seated.add if k in ("joined", "nominated", "promoted") else seated.discard)(uid)
+            i += 1
         by_other = p["nominated_by"] not in (None, p["user_id"])
-        queued = p["status"] == "waiting" or slot >= game["max_players"] or p["user_id"] in moved_up
+        queued = p["status"] == "waiting" or len(seated) >= game["max_players"] or p["user_id"] in moved_up
+        if not queued:
+            seated.add(p["user_id"])
         kind = ("nominated_waiting" if queued else "nominated") if by_other else ("waiting" if queued else "joined")
         events.append({"kind": kind, "user_id": p["user_id"], "actor_id": p["nominated_by"], "amount": None,
                        "note": "", "created_at": p["joined_at"]})
