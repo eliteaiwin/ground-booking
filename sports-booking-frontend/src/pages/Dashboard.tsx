@@ -164,6 +164,13 @@ export default function Dashboard({ onNavigate }: Props) {
     setUnreadCount(0);
   };
 
+  const markOneRead = (n: Notification) => {
+    if (n.is_read) return;
+    api.markRead(n.id).catch(() => {});
+    setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, is_read: true } : x)));
+    setUnreadCount(c => Math.max(0, c - 1));
+  };
+
   const openFromNotification = (n: Notification) => {
     if (!n.game_id) return;
     const start = new Date(`${n.game_date}T${(n.game_time || '00:00').slice(0, 5)}`).getTime();
@@ -729,7 +736,9 @@ export default function Dashboard({ onNavigate }: Props) {
             {notifications.map(notif => (
               <Card
                 key={notif.id}
-                className={`${!notif.is_read ? 'border-l-4 border-l-green-500 bg-green-50/50' : ''}`}
+                data-testid="notif-card"
+                onClick={() => markOneRead(notif)}
+                className={`${!notif.is_read ? 'border-l-4 border-l-green-500 bg-green-50/50 cursor-pointer' : ''}`}
               >
                 <CardContent className="p-3">
                   <div className="flex items-start gap-2">

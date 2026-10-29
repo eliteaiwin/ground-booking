@@ -5,6 +5,7 @@ export const CHANGELOG: Release[] = [
   { version: '1.36', date: '2026-10-29', changes: [
     'Short pages no longer scroll on iPhone (the app was taller than the screen)',
     'The page header stays on top and shrinks to one line while you scroll, like messaging apps',
+    'Tapping a notification marks it read and lowers the count',
   ] },
   { version: '1.35', date: '2026-10-29', changes: [
     'New full-screen turf app icon (no white border)',
