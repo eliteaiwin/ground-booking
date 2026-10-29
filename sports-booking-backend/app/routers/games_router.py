@@ -3085,6 +3085,12 @@ async def check_quit_penalty(
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
+    me = await (await db.execute(
+        "SELECT status FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+    )).fetchone()
+    if not me or me["status"] != "selected":
+        # Waiting-list players can always leave for free.
+        return {"has_penalty": False, "quit_penalty_hours": 0, "must_pay": False}
 
     quit_penalty_hours = 0
     try:

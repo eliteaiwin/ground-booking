@@ -601,7 +601,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
       setLateQuitWarning(true);
       return;
     }
-    if (game?.status === 'in_progress' && game?.quit_penalty_hours > 0) {
+    if (confirmed && game?.status === 'in_progress' && game?.quit_penalty_hours > 0) {
       try {
         const info = await api.checkQuitPenalty(game.id);
         setQuitPenaltyInfo(info);

@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.32', date: '2026-10-29', changes: [
+    'Waiting-list players can leave a game any time, even just before or during it, with no warning or quit fee',
+  ] },
   { version: '1.31', date: '2026-10-29', changes: [
     'When a confirmed player quits, the first waiting player takes their exact place in the list; the Log shows "X is confirmed from WL in Y\'s place"',
     'Game Log times now include seconds (e.g. 1-Jan 10:10:10 AM)',
