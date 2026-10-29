@@ -121,7 +121,7 @@ export default function AdminSummary({ onBack }: Props) {
     api.getAppSettings().then(setAppSettings).catch(() => setAppSettings({
       payments_enabled: false,
       payment_surcharge_percent: 2,
-      payment_dev_share_percent: 4,
+      payment_dev_share_percent: 3,
       payment_gst_percent: 18,
       payment_app_fee_gst_percent: 0,
     }));

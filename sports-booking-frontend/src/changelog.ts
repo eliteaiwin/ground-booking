@@ -6,6 +6,7 @@ export const CHANGELOG: Release[] = [
     'Before paying online, a popup shows where the money goes: receiver, Elizoph app fee and Cashfree fee',
     'Saving your UPI ID in Profile now also sets it up with Cashfree, so online payments reach you',
     'Online payment is offered only for India (₹) grounds; other grounds settle offline',
+    'Elizoph app fee on online payments is now 3% by default',
   ] },
   { version: '1.26', date: '2026-10-28', changes: [
     'Refer a friend (profile menu): share a link or QR code to the app on WhatsApp, or copy it',
