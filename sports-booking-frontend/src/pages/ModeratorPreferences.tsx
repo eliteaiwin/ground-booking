@@ -25,6 +25,7 @@ interface GameDefaults {
   pay_first_enabled: boolean;
   default_payment_collection?: string;
   roster_edit_days?: number;
+  late_quit_hours?: number;
 }
 
 type UserLite = { id: number; name: string; phone: string };
@@ -89,6 +90,7 @@ function GameDefaultsCard() {
   const [potd, setPotd] = useState('1440');
   const [quit, setQuit] = useState('0');
   const [rosterDays, setRosterDays] = useState('3');
+  const [lateQuit, setLateQuit] = useState('2');
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<{ id: number; name: string; phone: string }[]>([]);
   const [message, setMessage] = useState('');
@@ -99,6 +101,7 @@ function GameDefaultsCard() {
       setPotd(String(d.default_potd_delay_minutes));
       setQuit(String(d.default_quit_penalty_hours));
       setRosterDays(String(d.roster_edit_days ?? 3));
+      setLateQuit(String(d.late_quit_hours ?? 2));
     }).catch(() => {});
   }, []);
 
@@ -168,6 +171,12 @@ function GameDefaultsCard() {
           <Input type="number" min="1" max="365" value={rosterDays} onChange={e => setRosterDays(e.target.value)}
             data-testid="roster-edit-days" onBlur={() => save({ roster_edit_days: parseInt(rosterDays) || 3 })} />
           <p className="text-xs text-gray-500">After this, players of a completed game are locked.</p>
+        </div>
+        <div className="space-y-2 max-w-[50%]">
+          <Label>Players can't quit themselves within (hours before game)</Label>
+          <Input type="number" min="0" max="72" value={lateQuit} onChange={e => setLateQuit(e.target.value)}
+            data-testid="late-quit-hours" onBlur={() => save({ late_quit_hours: parseInt(lateQuit) || 0 })} />
+          <p className="text-xs text-gray-500">They're asked to contact a moderator instead. 0 turns this off.</p>
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="rounded border-gray-300" checked={defaults.allow_position_selection}

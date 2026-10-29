@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.29', date: '2026-10-29', changes: [
+    'Confirmed players can\'t unjoin in the last 2 hours before the game (change it in Preferences); they\'re asked to contact a moderator',
+    'If a moderator removes a late quitter and nobody is waiting to take the spot, the player still pays',
+  ] },
   { version: '1.28', date: '2026-10-29', changes: [
     'App fee on online payments is now 3%, shown as "App Fee (3%)" in the payment popup',
     'A player who has paid can no longer be removed or unjoin',

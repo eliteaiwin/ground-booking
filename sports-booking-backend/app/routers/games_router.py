@@ -684,6 +684,37 @@ async def _roster_locked(db: aiosqlite.Connection, game) -> bool:
     return end is not None and _local_now() >= end + timedelta(days=days)
 
 
+LATE_QUIT_DETAIL = (
+    "You are quitting late, please liaise with the moderator to remove your name. "
+    "If someone from the waiting list gets confirmed in your place then fine, "
+    "else you still pay for today's game."
+)
+
+
+async def _late_quit_hours(db: aiosqlite.Connection) -> int:
+    return int(await get_app_setting(db, "late_quit_hours", "2") or 0)
+
+
+async def _is_late_quit(db: aiosqlite.Connection, game) -> bool:
+    """Confirmed players can't quit themselves within late_quit_hours of the start."""
+    hours = await _late_quit_hours(db)
+    if hours <= 0:
+        return False
+    try:
+        start = datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return False
+    return _local_now() >= start - timedelta(hours=hours)
+
+
+async def _is_game_moderator(user_id: int, game_id: int, db: aiosqlite.Connection) -> bool:
+    try:
+        await require_game_moderator(user_id, game_id, db)
+        return True
+    except HTTPException:
+        return False
+
+
 ROSTER_LOCKED_DETAIL = "Players can't be added or removed any more: the game ended more than {} days ago"
 
 
@@ -1032,6 +1063,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "is_past": _game_has_ended(game),
         "roster_locked": await _roster_locked(db, game),
         "roster_edit_days": int(await get_app_setting(db, "roster_edit_days", "3") or 3),
+        "late_quit_hours": await _late_quit_hours(db),
+        "late_quit_now": await _is_late_quit(db, game),
         "created_by": game["created_by"],
         "created_by_name": creator["name"] if creator else None,
         "created_at": game["created_at"],
@@ -1744,6 +1777,10 @@ async def quit_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    return await _quit_game(game_id, user_id, db, by_moderator=await _is_game_moderator(user_id, game_id, db))
+
+
+async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_moderator: bool = False):
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
@@ -1761,6 +1798,14 @@ async def quit_game(
     was_selected = player["status"] == "selected"
     old_team_id = player["team_id"]
     must_pay = False
+    late = was_selected and await _is_late_quit(db, game)
+    if late and not by_moderator:
+        raise HTTPException(status_code=400, detail=LATE_QUIT_DETAIL)
+    if late:
+        waiting = await (await db.execute(
+            "SELECT 1 FROM game_players WHERE game_id = ? AND status = 'waiting' LIMIT 1", (game_id,)
+        )).fetchone()
+        must_pay = waiting is None
 
     # Check quit penalty
     quit_penalty_hours = 0
@@ -1769,7 +1814,7 @@ async def quit_game(
     except Exception:
         pass
 
-    if quit_penalty_hours > 0 and was_selected:
+    if quit_penalty_hours > 0 and was_selected and not late:
         # Check if within penalty window.
         # Design: if the game is already in_progress (hours_until_game < 0),
         # penalty still applies — quitting a live game should require payment.
@@ -1879,9 +1924,10 @@ async def remove_player(
     )).fetchone()
     if not row:
         raise HTTPException(status_code=400, detail="Player is not in this game")
-    if player_user_id != user_id and row["nominated_by"] != user_id:
+    is_mod = await _is_game_moderator(user_id, game_id, db)
+    if not is_mod and player_user_id != user_id and row["nominated_by"] != user_id:
         await require_game_moderator(user_id, game_id, db)
-    result = await quit_game(game_id, user_id=player_user_id, db=db)
+    result = await _quit_game(game_id, player_user_id, db, by_moderator=is_mod)
     if player_user_id != user_id:
         remover = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
         await create_notification(

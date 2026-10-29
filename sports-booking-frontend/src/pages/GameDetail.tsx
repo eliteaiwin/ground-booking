@@ -330,6 +330,8 @@ interface Game {
   is_past?: boolean;
   roster_locked?: boolean;
   roster_edit_days?: number;
+  late_quit_hours?: number;
+  late_quit_now?: boolean;
   allow_position_selection?: boolean;
   ground_map_url?: string;
   show_quit_penalty?: boolean;
@@ -464,6 +466,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [dragPlayer, setDragPlayer] = useState<Player | null>(null);
   const [quitPenaltyInfo, setQuitPenaltyInfo] = useState<{has_penalty: boolean; must_pay: boolean; hours_until_game?: number; quit_penalty_hours?: number} | null>(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [lateQuitWarning, setLateQuitWarning] = useState(false);
   const [firstTimeAlert, setFirstTimeAlert] = useState<string | null>(null);
   const [showCancelPreview, setShowCancelPreview] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -590,6 +593,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
   };
 
   const handleQuitClick = async () => {
+    const confirmed = !!game?.selected_players.some(p => p.user_id === user?.id);
+    if (game?.late_quit_now && confirmed && !(isModerator || isAdmin)) {
+      setShowQuitConfirm(false);
+      setLateQuitWarning(true);
+      return;
+    }
     if (game?.status === 'in_progress' && game?.quit_penalty_hours > 0) {
       try {
         const info = await api.checkQuitPenalty(game.id);
@@ -942,6 +951,22 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <CreditCard size={14} className="mr-1" /> Understood, I will pay
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {lateQuitWarning && (
+          <Card className="border-amber-300 bg-amber-50" data-testid="late-quit-warning">
+            <CardContent className="p-4">
+              <h4 className="font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                <AlertTriangle size={16} /> Quitting late
+              </h4>
+              <p className="text-sm text-amber-800 mb-3">
+                You are quitting late (less than {game.late_quit_hours} hours before the game), please liaise with the
+                moderator to remove your name. If someone from the waiting list gets confirmed in your place then fine,
+                else you still pay for today's game.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => setLateQuitWarning(false)}>OK</Button>
             </CardContent>
           </Card>
         )}
@@ -1991,12 +2016,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                               }}>
                               Mark as Paid
                             </Button>
-                            {game.payments_enabled && (
-                              <Button size="sm" variant="outline" className="h-6 px-2 text-xs text-blue-600 border-blue-300"
-                                onClick={() => alert('Pay feature — Yet to come')}>
-                                <Wallet size={12} className="mr-0.5" /> Pay
-                              </Button>
-                            )}
                           </>
                         )}
                         {showPaymentDetails && player.payment_confirmed === 1 && (

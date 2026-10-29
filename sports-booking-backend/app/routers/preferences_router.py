@@ -77,6 +77,7 @@ class GameDefaultsRequest(BaseModel):
     pay_first_enabled: Optional[bool] = None
     default_payment_collection: Optional[str] = None
     roster_edit_days: Optional[int] = None
+    late_quit_hours: Optional[int] = None
 
 
 async def game_defaults(db: aiosqlite.Connection) -> dict:
@@ -104,6 +105,7 @@ async def game_defaults(db: aiosqlite.Connection) -> dict:
         "pay_first_enabled": (await get_app_setting(db, "pay_first_enabled", "false")) == "true",
         "default_payment_collection": (await get_app_setting(db, "default_payment_collection", "offline")) or "offline",
         "roster_edit_days": int(await get_app_setting(db, "roster_edit_days", "3") or 3),
+        "late_quit_hours": int(await get_app_setting(db, "late_quit_hours", "2") or 0),
     }
 
 
@@ -146,6 +148,10 @@ async def update_game_defaults(
         if not 1 <= req.roster_edit_days <= 365:
             raise HTTPException(status_code=400, detail="Days to edit players must be 1-365")
         await set_app_setting(db, "roster_edit_days", str(req.roster_edit_days))
+    if req.late_quit_hours is not None:
+        if not 0 <= req.late_quit_hours <= 72:
+            raise HTTPException(status_code=400, detail="Late quit hours must be 0-72")
+        await set_app_setting(db, "late_quit_hours", str(req.late_quit_hours))
     return await game_defaults(db)
 
 
