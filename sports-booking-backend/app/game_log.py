@@ -78,16 +78,27 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
     if "created" not in kinds:
         events.append({"kind": "created", "user_id": None, "actor_id": creator, "amount": None, "note": "",
                        "created_at": game["created_at"]})
-    for p in await (await db.execute(
-        "SELECT user_id, status, nominated_by, joined_at FROM game_players WHERE game_id = ?", (game_id,)
-    )).fetchall():
+    # Rebuild joins in arrival order: the first max_players got spots, later ones queued, whatever they are now.
+    end_sched = end
+    for slot, p in enumerate(await (await db.execute(
+        "SELECT user_id, status, nominated_by, joined_at FROM game_players WHERE game_id = ? ORDER BY joined_at, id",
+        (game_id,),
+    )).fetchall()):
         if p["user_id"] in joined:
             continue
         by_other = p["nominated_by"] not in (None, p["user_id"])
-        waiting = p["status"] == "waiting"
-        kind = ("nominated_waiting" if waiting else "nominated") if by_other else ("waiting" if waiting else "joined")
+        queued = p["status"] == "waiting" or slot >= game["max_players"]
+        kind = ("nominated_waiting" if queued else "nominated") if by_other else ("waiting" if queued else "joined")
         events.append({"kind": kind, "user_id": p["user_id"], "actor_id": p["nominated_by"], "amount": None,
                        "note": "", "created_at": p["joined_at"]})
+        if queued and p["status"] != "waiting":
+            if game["status"] == "completed" and end_sched:
+                events.append({"kind": "played_added", "user_id": p["user_id"], "actor_id": creator, "amount": None,
+                               "note": "", "created_at": _utc_iso(end_sched + timedelta(seconds=2))})
+            else:
+                moved = (_parse_utc(p["joined_at"]) or datetime.now(timezone.utc)) + timedelta(seconds=1)
+                events.append({"kind": "promoted", "user_id": p["user_id"], "actor_id": None, "amount": None,
+                               "note": "", "created_at": moved.isoformat()})
     for p in await (await db.execute(
         "SELECT user_id, amount, paid_amount, paid_at, paid_by, paid_via FROM payments "
         "WHERE game_id = ? AND paid_at IS NOT NULL AND COALESCE(paid_amount, 0) > 0", (game_id,)
