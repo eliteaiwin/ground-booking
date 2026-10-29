@@ -601,6 +601,17 @@ async def init_db():
         )""",
         "CREATE INDEX IF NOT EXISTS idx_allotments_ground_date ON ground_allotments(ground_id, allot_date)",
         "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')",
+        """CREATE TABLE IF NOT EXISTS game_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            user_id INTEGER,
+            actor_id INTEGER,
+            amount REAL,
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_game_events_game ON game_events(game_id)",
         """CREATE TABLE IF NOT EXISTS ground_register_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),

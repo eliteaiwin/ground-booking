@@ -13,6 +13,7 @@ from .. import cashfree
 from ..auth import get_current_user_id
 from ..database import get_db, get_app_setting
 from ..currency import ground_currency
+from ..game_log import log_event
 from .games_router import online_breakdown, payment_fee_settings, _admit_paid_pay_first_player, PAY_FIRST_STATUS
 
 router = APIRouter(prefix="/api/payments", tags=["payment-gateway"])
@@ -286,6 +287,7 @@ async def _confirm_order(db: aiosqlite.Connection, row: aiosqlite.Row, cf_paymen
                 "UPDATE payments SET status = 'paid' WHERE game_id = ? AND user_id = ? AND paid_amount >= amount",
                 (row["game_id"], row["user_id"]),
             )
+            await log_event(db, row["game_id"], "paid_online", user_id=row["user_id"], amount=row["base_amount"])
             await db.execute(
                 "UPDATE game_players SET payment_confirmed = 1 WHERE game_id = ? AND user_id = ?",
                 (row["game_id"], row["user_id"]),

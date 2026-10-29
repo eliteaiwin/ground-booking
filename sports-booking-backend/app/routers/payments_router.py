@@ -11,6 +11,7 @@ from .. import cashfree
 from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 from ..currency import ground_currency
+from ..game_log import log_event
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -75,6 +76,8 @@ async def record_payment(
         "WHERE game_id = ? AND user_id = ?",
         (now, user_id, req.game_id, user_id)
     )
+    await log_event(db, req.game_id, "paid", user_id=user_id, actor_id=user_id,
+                    amount=payment["amount"] - (payment["paid_amount"] or 0))
 
     # Update player payment_confirmed so frontend shows correct status
     await db.execute(
@@ -146,6 +149,10 @@ async def record_payment_with_proof(
     with open(os.path.join(PROOF_DIR, name), "wb") as f:
         f.write(content)
     await db.execute("UPDATE payments SET proof_file = ? WHERE game_id = ? AND user_id = ?", (name, game_id, user_id))
+    await db.execute(
+        "UPDATE game_events SET note = 'screenshot' WHERE id = (SELECT MAX(id) FROM game_events "
+        "WHERE game_id = ? AND user_id = ? AND kind = 'paid')", (game_id, user_id)
+    )
 
     game = await (await db.execute(
         "SELECT title, game_date, ground_name, created_by, payee_user_id, cost_per_person FROM games WHERE id = ?", (game_id,)
@@ -425,6 +432,10 @@ async def mark_paid_with_comment(
             (now, user_id, req.game_id, req.user_id)
         )
 
+    if not payment or (payment["paid_amount"] or 0) < payment["amount"]:
+        owed = game["cost_per_person"] if not payment else payment["amount"] - (payment["paid_amount"] or 0)
+        await log_event(db, req.game_id, "marked_paid", user_id=req.user_id, actor_id=user_id, amount=owed)
+
     # Always update player payment_confirmed (fixes inconsistency if payment was
     # already 'paid' but payment_confirmed was still 0 from a prior partial failure)
     await db.execute(
@@ -678,6 +689,8 @@ async def settle_offline(
         "INSERT INTO payment_settlements (game_id, user_id, moderator_id, comment, action_date) VALUES (?, ?, ?, ?, ?)",
         (req.game_id, player_id, user_id, f"Settled offline: {what}" + (f". {comment}" if comment else ""), now)
     )
+    await log_event(db, req.game_id, "settled", user_id=player_id, actor_id=user_id, amount=abs(diff),
+                    note="due" if diff > 0 else "excess")
     mod = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_confirmed', ?)",
@@ -704,5 +717,6 @@ async def remind_payment(
         (player_id, req.game_id,
          f"Reminder: please pay {due:.0f} for {game['title']} on {game['game_date']}.")
     )
+    await log_event(db, req.game_id, "reminder", user_id=player_id, actor_id=user_id, amount=due)
     await db.commit()
     return {"message": "Reminder sent"}

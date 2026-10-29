@@ -1,0 +1,192 @@
+"""Game "Log" tab: events are recorded as they happen; older history is rebuilt from stored timestamps."""
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+import aiosqlite
+
+from .currency import ground_currency
+
+APP_TZ = ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Kolkata"))
+PAYMENT_KINDS = {"paid", "paid_online", "marked_paid", "settled", "excess_settled", "reminder", "refund"}
+JOIN_KINDS = {"joined", "waiting", "nominated", "nominated_waiting", "pay_first", "played_added"}
+
+
+def _utc_iso(local: datetime) -> str:
+    return local.replace(tzinfo=APP_TZ).astimezone(timezone.utc).isoformat()
+
+
+def _parse_utc(value) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00").replace(" ", "T", 1))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _schedule(game) -> tuple[Optional[datetime], Optional[datetime]]:
+    try:
+        start = datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return None, None
+    return start, start + timedelta(minutes=game["duration_minutes"] or 90)
+
+
+async def log_event(db: aiosqlite.Connection, game_id: int, kind: str, user_id: Optional[int] = None,
+                    actor_id: Optional[int] = None, amount: Optional[float] = None, note: str = "",
+                    at_local: Optional[datetime] = None):
+    """Record a game event. `at_local` (games' local time) caps the time, e.g. a game auto-completed
+    when someone next opens the app is logged at its scheduled end."""
+    now = datetime.now(timezone.utc)
+    at = now
+    if at_local is not None:
+        at = min(now, at_local.replace(tzinfo=APP_TZ).astimezone(timezone.utc))
+    await db.execute(
+        "INSERT INTO game_events (game_id, kind, user_id, actor_id, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (game_id, kind, user_id, actor_id, amount, note or "", at.isoformat()),
+    )
+
+
+def _duration(minutes: float) -> str:
+    m = int(round(minutes))
+    d, rem = divmod(m, 1440)
+    h, mm = divmod(rem, 60)
+    if d:
+        return f"{d}d {h}h" if h else f"{d}d"
+    if h:
+        return f"{h}h {mm}m" if mm else f"{h}h"
+    return f"{mm}m"
+
+
+async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_payments: bool) -> list[dict]:
+    game_id = game["id"]
+    cur = await ground_currency(db, game["ground_name"])
+    start, end = _schedule(game)
+    end_utc = end.replace(tzinfo=APP_TZ).astimezone(timezone.utc) if end else None
+    events = [dict(r) for r in await (await db.execute(
+        "SELECT kind, user_id, actor_id, amount, note, created_at FROM game_events WHERE game_id = ? ORDER BY id",
+        (game_id,),
+    )).fetchall()]
+    kinds = {e["kind"] for e in events}
+    joined = {e["user_id"] for e in events if e["kind"] in JOIN_KINDS}
+    paid_logged = {e["user_id"] for e in events if e["kind"] in PAYMENT_KINDS - {"reminder"}}
+    creator = game["created_by"]
+
+    if "created" not in kinds:
+        events.append({"kind": "created", "user_id": None, "actor_id": creator, "amount": None, "note": "",
+                       "created_at": game["created_at"]})
+    for p in await (await db.execute(
+        "SELECT user_id, status, nominated_by, joined_at FROM game_players WHERE game_id = ?", (game_id,)
+    )).fetchall():
+        if p["user_id"] in joined:
+            continue
+        by_other = p["nominated_by"] not in (None, p["user_id"])
+        waiting = p["status"] == "waiting"
+        kind = ("nominated_waiting" if waiting else "nominated") if by_other else ("waiting" if waiting else "joined")
+        events.append({"kind": kind, "user_id": p["user_id"], "actor_id": p["nominated_by"], "amount": None,
+                       "note": "", "created_at": p["joined_at"]})
+    for p in await (await db.execute(
+        "SELECT user_id, amount, paid_amount, paid_at, paid_by, paid_via FROM payments "
+        "WHERE game_id = ? AND paid_at IS NOT NULL AND COALESCE(paid_amount, 0) > 0", (game_id,)
+    )).fetchall():
+        if p["user_id"] in paid_logged:
+            continue
+        kind = {"online": "paid_online", "moderator": "marked_paid", "offline": "settled"}.get(p["paid_via"] or "", "paid")
+        events.append({"kind": kind, "user_id": p["user_id"], "actor_id": p["paid_by"], "amount": p["paid_amount"],
+                       "note": "due" if kind == "settled" else "", "created_at": p["paid_at"]})
+    status = game["status"]
+    now_local = datetime.now(APP_TZ).replace(tzinfo=None)
+    if start and status in ("in_progress", "completed") and "started" not in kinds:
+        events.append({"kind": "started", "user_id": None, "actor_id": None, "amount": None, "note": "",
+                       "created_at": _utc_iso(start)})
+    if end and status == "completed":
+        if "completed" not in kinds:
+            events.append({"kind": "completed", "user_id": None, "actor_id": None, "amount": None, "note": "",
+                           "created_at": _utc_iso(end)})
+        events.append({"kind": "potd_open", "user_id": None, "actor_id": None, "amount": None, "note": "",
+                       "created_at": _utc_iso(end + timedelta(seconds=1))})
+        deadline = end + timedelta(minutes=game["potd_congrats_delay_minutes"] or 1440)
+        if now_local >= deadline:
+            top = await (await db.execute(
+                """SELECT player_id, SUM(CASE preference WHEN 1 THEN 3 WHEN 2 THEN 2 WHEN 3 THEN 1 ELSE 0 END) AS pts,
+                          SUM(CASE WHEN preference = 1 THEN 1 ELSE 0 END) AS firsts
+                   FROM potd_votes WHERE game_id = ? GROUP BY player_id ORDER BY pts DESC, firsts DESC LIMIT 1""",
+                (game_id,),
+            )).fetchone()
+            events.append({"kind": "potd_final", "user_id": top["player_id"] if top else None, "actor_id": None,
+                           "amount": None, "note": "", "created_at": _utc_iso(deadline)})
+
+    if not see_all_payments:
+        events = [e for e in events if e["kind"] not in PAYMENT_KINDS or e["user_id"] == viewer_id]
+
+    ids = {i for e in events for i in (e["user_id"], e["actor_id"]) if i} | {creator}
+    people = {}
+    if ids:
+        marks = ",".join("?" * len(ids))
+        for u in await (await db.execute(
+            f"SELECT id, name, display_name, gender, profile_pic FROM users WHERE id IN ({marks})", tuple(ids)
+        )).fetchall():
+            people[u["id"]] = dict(u)
+
+    def nm(uid) -> str:
+        u = people.get(uid)
+        if not u:
+            return "Someone"
+        return (u["display_name"] or (u["name"] or "").split(" ")[0] or "Someone").strip()
+
+    def money(v) -> str:
+        text = f"{(v or 0):,.0f}"
+        return f"{cur} {text}" if cur[-1:].isalpha() else f"{cur}{text}"
+
+    def timing(at: Optional[datetime]) -> str:
+        if not at or not end_utc:
+            return ""
+        mins = (at - end_utc).total_seconds() / 60
+        return f", {_duration(mins)} after the game ended" if mins >= 0 else ", before the game ended"
+
+    out = []
+    for e in events:
+        at = _parse_utc(e["created_at"])
+        if not at:
+            continue
+        u, a, k, note = nm(e["user_id"]), nm(e["actor_id"]), e["kind"], e["note"]
+        pays = " (still pays, nobody was waiting)" if note == "pays" else ""
+        text = {
+            "created": f"Game is initiated by moderator {a}",
+            "joined": f"{u} joins the game",
+            "waiting": f"{u} joins the waiting list",
+            "nominated": f"{a} adds {u} to the game",
+            "nominated_waiting": f"{a} adds {u} to the waiting list",
+            "pay_first": f"{u} asks to join (pays first)",
+            "admitted": f"{u} is added after paying",
+            "promoted": f"{u} moves up from the waiting list",
+            "demoted": f"{u} moves to the waiting list (fewer spots)",
+            "quit": f"{u} quit the game{pays}",
+            "quit_waiting": f"{u} left the waiting list",
+            "removed": f"{a} removed {u}{pays}",
+            "played_added": f"{a} adds {u} as played",
+            "played_removed": f"{a} marks {u} as not played",
+            "started": "Game is started",
+            "completed": "Game is completed",
+            "cancelled": f"Game is cancelled by {a}",
+            "potd_open": "POTD voting started",
+            "potd_final": f"POTD finalized: {u}" if e["user_id"] else "POTD finalized (no votes)",
+            "paid": f"{u} paid {money(e['amount'])}{' with screenshot' if note == 'screenshot' else ''}{timing(at)}",
+            "paid_online": f"{u} paid {money(e['amount'])} online{timing(at)}",
+            "marked_paid": f"{a} marked {u}'s {money(e['amount'])} as paid{timing(at)}",
+            "settled": f"{a} settled {u}'s {'excess' if note == 'excess' else 'due'} of {money(e['amount'])} offline{timing(at)}",
+            "excess_settled": f"{a} returned {u}'s excess of {money(e['amount'])}",
+            "reminder": f"{a} sent {u} a payment reminder" + (f" ({money(e['amount'])} due)" if e["amount"] else ""),
+            "refund": f"{u}'s {money(e['amount'])} is marked for refund",
+        }.get(k, k)
+        who = e["user_id"] or e["actor_id"] or creator
+        p = people.get(who) or {}
+        out.append({
+            "kind": k, "at": at.astimezone(APP_TZ).replace(tzinfo=None).isoformat(timespec="seconds"), "description": text,
+            "user_id": who, "user_name": nm(who), "profile_pic": p.get("profile_pic"), "gender": p.get("gender"),
+        })
+    out.sort(key=lambda x: x["at"])
+    return out

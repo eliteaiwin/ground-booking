@@ -29,6 +29,7 @@ import { InviteDialog } from '@/components/InviteDialog';
 import { inviteUrl } from '@/lib/invite';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
+import GameLog from '@/components/GameLog';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -485,6 +486,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [showEditResultDialog, setShowEditResultDialog] = useState(false);
   const [pendingPlayedUserIds, setPendingPlayedUserIds] = useState<number[] | null>(null);
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
+  const [playersTab, setPlayersTab] = useState<'current' | 'log'>('current');
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
   const [profileUserId, setProfileUserId] = useState<number | null>(null);
@@ -1872,11 +1874,20 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
           <Card>
             <CardHeader className="pb-2">
+              <div className="flex gap-1 mb-2" role="tablist">
+                {(['current', 'log'] as const).map(t => (
+                  <button key={t} type="button" role="tab" aria-selected={playersTab === t} data-testid={`players-tab-${t}`}
+                    onClick={() => setPlayersTab(t)}
+                    className={`px-3 py-0.5 rounded-full text-xs border ${playersTab === t ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                    {t === 'current' ? 'Current' : 'Log'}
+                  </button>
+                ))}
+              </div>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Users size={16} /> Confirmed Players ({game.selected_players.length}/{game.max_players})
+                  <Users size={16} /> {playersTab === 'log' ? 'Game Log' : `Confirmed Players (${game.selected_players.length}/${game.max_players})`}
                 </CardTitle>
-                {game.status === 'completed' && (
+                {game.status === 'completed' && playersTab === 'current' && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={showPaymentDetails} onCheckedChange={(v) => setShowPaymentDetails(!!v)} />
                     <span className="text-xs text-gray-600">Payment Details</span>
@@ -1884,6 +1895,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 )}
               </div>
             </CardHeader>
+            {playersTab === 'log' ? (
+              <CardContent className="p-4 pt-0"><GameLog gameId={game.id} /></CardContent>
+            ) : (
             <CardContent className="p-4 pt-0 space-y-3">
               {game.note_before_players && (
                 <div className="text-sm text-gray-700 bg-yellow-50 p-2 rounded border border-yellow-100 whitespace-pre-wrap">
@@ -2078,6 +2092,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 </div>
               )}
             </CardContent>
+            )}
           </Card>
 
         {game.pay_first_enabled && (isModerator || isAdmin) && (game.awaiting_payment?.length ?? 0) > 0 && (

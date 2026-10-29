@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.30', date: '2026-10-29', changes: [
+    'Game page: Current / Log tabs above Confirmed Players. Log shows everything that happened in the game (joins, quits, start, finish, POTD, payments and how long after the game they were paid); tap a heading to sort',
+  ] },
   { version: '1.29', date: '2026-10-29', changes: [
     'Confirmed players can\'t unjoin in the last 2 hours before the game (change it in Preferences); they\'re asked to contact a moderator',
     'If a moderator removes a late quitter and nobody is waiting to take the spot, the player still pays',

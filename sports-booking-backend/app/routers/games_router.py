@@ -14,6 +14,7 @@ from ..auth import get_current_user_id
 from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency
+from ..game_log import log_event, build_log
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -659,6 +660,13 @@ def _local_now() -> datetime:
     return datetime.now(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None)
 
 
+def _game_start(game) -> Optional[datetime]:
+    try:
+        return datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return None
+
+
 def _game_end(game) -> Optional[datetime]:
     try:
         duration = game["duration_minutes"] or 90
@@ -743,6 +751,7 @@ async def _add_pay_first_player(db: aiosqlite.Connection, game, uid: int, nomina
         "INSERT INTO game_players (game_id, user_id, status, nominated_by, position) VALUES (?, ?, ?, ?, ?)",
         (game["id"], uid, PAY_FIRST_STATUS, nominated_by, position or ""),
     )
+    await log_event(db, game["id"], "pay_first", user_id=uid, actor_id=nominated_by)
     await db.execute(
         "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)", (game["id"], uid, due)
     )
@@ -776,6 +785,7 @@ async def _admit_paid_pay_first_player(db: aiosqlite.Connection, game_id: int, u
     )).fetchone())["cnt"]
     status = "selected" if count < game["max_players"] else "waiting"
     await db.execute("UPDATE game_players SET status = ?, payment_confirmed = 1 WHERE id = ?", (status, gp["id"]))
+    await log_event(db, game_id, "admitted", user_id=uid)
     await create_notification(
         db, uid, game_id, "payment_confirmed",
         f"Payment received. You're {'confirmed' if status == 'selected' else 'on the waiting list'} for {game['title']}."
@@ -1196,6 +1206,7 @@ async def create_game(
          slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
     )
     game_id = cursor.lastrowid
+    await log_event(db, game_id, "created", actor_id=user_id)
     await db.commit()
 
     return await get_game_dict(db, game_id)
@@ -1303,6 +1314,7 @@ async def create_game_series(
                  payee_id, quit_penalty, potd_delay, note_before, note_after, series_name, series_day,
                  slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
             )
+            await log_event(db, cursor.lastrowid, "created", actor_id=user_id)
             created_games.append(await get_game_dict(db, cursor.lastrowid))
 
     await db.commit()
@@ -1467,6 +1479,7 @@ async def _add_to_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, 
         "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
         (game_id, player_id, game["cost_per_person"])
     )
+    await log_event(db, game_id, "played_added", user_id=player_id, actor_id=moderator_id)
     await _recalc_game_cost(db, game_id)
     await _notify_share_change(db, game, "Number of players")
     share = (await (await db.execute(
@@ -1565,6 +1578,7 @@ async def edit_game(
         if len(selected) > req.max_players:
             for row in selected[:len(selected) - req.max_players]:
                 await db.execute("UPDATE game_players SET status = 'waiting' WHERE id = ?", (row["id"],))
+                await log_event(db, game_id, "demoted", user_id=row["user_id"], actor_id=user_id)
                 await db.execute("DELETE FROM payments WHERE game_id = ? AND user_id = ?", (game_id, row["user_id"]))
 
     # Recalculate per-player cost and payment records after any relevant change
@@ -1746,6 +1760,7 @@ async def vote_join_game(
         "INSERT INTO game_players (game_id, user_id, status, position, payment_confirmed) VALUES (?, ?, ?, ?, ?)",
         (game_id, user_id, player_status, position, payment_confirmed)
     )
+    await log_event(db, game_id, "joined" if player_status == "selected" else "waiting", user_id=user_id, actor_id=user_id)
 
     # If payment is before and player is selected, create payment record
     if player_status == "selected" and is_prepaid:
@@ -1777,10 +1792,12 @@ async def quit_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    return await _quit_game(game_id, user_id, db, by_moderator=await _is_game_moderator(user_id, game_id, db))
+    return await _quit_game(game_id, user_id, db, by_moderator=await _is_game_moderator(user_id, game_id, db),
+                            actor_id=user_id)
 
 
-async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_moderator: bool = False):
+async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_moderator: bool = False,
+                     actor_id: Optional[int] = None):
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
@@ -1843,6 +1860,12 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
         # Remove payment record if exists
         await db.execute("DELETE FROM payments WHERE game_id = ? AND user_id = ?", (game_id, user_id))
 
+    if actor_id is not None and actor_id != user_id:
+        await log_event(db, game_id, "removed", user_id=user_id, actor_id=actor_id, note="pays" if must_pay else "")
+    else:
+        kind = "quit" if was_selected else "quit_waiting"
+        await log_event(db, game_id, kind, user_id=user_id, actor_id=user_id, note="pays" if must_pay else "")
+
     # If was selected, promote first waiting player
     if was_selected:
         cursor = await db.execute(
@@ -1855,6 +1878,7 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
                 "UPDATE game_players SET status = 'selected' WHERE id = ?",
                 (next_player["id"],)
             )
+            await log_event(db, game_id, "promoted", user_id=next_player["user_id"])
             # If player who quit had a team, assign promoted player to that team
             if old_team_id:
                 await db.execute(
@@ -1927,7 +1951,7 @@ async def remove_player(
     is_mod = await _is_game_moderator(user_id, game_id, db)
     if not is_mod and player_user_id != user_id and row["nominated_by"] != user_id:
         await require_game_moderator(user_id, game_id, db)
-    result = await _quit_game(game_id, player_user_id, db, by_moderator=is_mod)
+    result = await _quit_game(game_id, player_user_id, db, by_moderator=is_mod, actor_id=user_id)
     if player_user_id != user_id:
         remover = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
         await create_notification(
@@ -2013,6 +2037,7 @@ async def nominate_player(
                     "INSERT OR IGNORE INTO payments (game_id, user_id, amount) VALUES (?, ?, ?)",
                     (game_id, req.user_id, game["cost_per_person"])
                 )
+                await log_event(db, game_id, "promoted", user_id=req.user_id, actor_id=user_id)
                 await db.commit()
                 return {"status": "selected", "message": "User promoted to selected"}
         raise HTTPException(status_code=400, detail="User already in this game")
@@ -2066,6 +2091,11 @@ async def nominate_player(
         "INSERT INTO game_players (game_id, user_id, status, nominated_by, position) VALUES (?, ?, ?, ?, ?)",
         (game_id, req.user_id, player_status, user_id, req.position)
     )
+    if req.user_id == user_id:
+        kind = "joined" if player_status == "selected" else "waiting"
+    else:
+        kind = "nominated" if player_status == "selected" else "nominated_waiting"
+    await log_event(db, game_id, kind, user_id=req.user_id, actor_id=user_id)
 
     # Always create a payment record for selected players (recalculates outstanding)
     if player_status == "selected":
@@ -2124,6 +2154,7 @@ async def _start_game(db: aiosqlite.Connection, game):
     cur = await db.execute("UPDATE games SET status = 'in_progress' WHERE id = ? AND status = 'voting_open'", (game_id,))
     if cur.rowcount == 0:
         return await get_game_dict(db, game_id)
+    await log_event(db, game_id, "started", at_local=_game_start(game))
 
     # Recompute cost per player before creating payment records
     await _recalc_game_cost(db, game_id)
@@ -2220,6 +2251,7 @@ async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameReques
     cur = await db.execute("UPDATE games SET status = 'completed' WHERE id = ? AND status = 'in_progress'", (game_id,))
     if cur.rowcount == 0:
         return await get_game_dict(db, game_id)
+    await log_event(db, game_id, "completed", at_local=_game_end(game))
 
     # Determine who actually played. Defaults to currently selected players for backward compatibility.
     cursor = await db.execute("SELECT user_id, status FROM game_players WHERE game_id = ?", (game_id,))
@@ -2371,9 +2403,10 @@ async def edit_completed_game_result(
     if game["status"] != "completed":
         raise HTTPException(status_code=400, detail="Only completed games can be edited")
 
-    cursor = await db.execute("SELECT user_id FROM game_players WHERE game_id = ?", (game_id,))
+    cursor = await db.execute("SELECT user_id, played FROM game_players WHERE game_id = ?", (game_id,))
     all_rows = await cursor.fetchall()
     all_player_ids = {r["user_id"] for r in all_rows}
+    played_before = {r["user_id"] for r in all_rows if r["played"]}
 
     if not req.played_user_ids:
         raise HTTPException(status_code=400, detail="At least one player must have played")
@@ -2392,6 +2425,10 @@ async def edit_completed_game_result(
         f"UPDATE game_players SET status = 'selected', played = 1 WHERE game_id = ? AND user_id IN ({placeholders})",
         (game_id, *played_user_ids)
     )
+    for uid in set(played_user_ids) - played_before:
+        await log_event(db, game_id, "played_added", user_id=uid, actor_id=user_id)
+    for uid in played_before - set(played_user_ids):
+        await log_event(db, game_id, "played_removed", user_id=uid, actor_id=user_id)
 
     # Apply team assignments for played users
     if req.team_assignments:
@@ -2568,6 +2605,7 @@ async def cancel_game(
         raise HTTPException(status_code=400, detail="Can't cancel a game that is already over")
 
     await db.execute("UPDATE games SET status = 'cancelled' WHERE id = ?", (game_id,))
+    await log_event(db, game_id, "cancelled", actor_id=user_id)
 
     cancel_detail = (
         f"Game '{game['title']}' on {game['game_date']} at {game['game_time']} "
@@ -2585,6 +2623,7 @@ async def cancel_game(
             "UPDATE payments SET status = 'pending', paid_amount = 0, paid_at = NULL WHERE game_id = ? AND user_id = ?",
             (game_id, pp["user_id"])
         )
+        await log_event(db, game_id, "refund", user_id=pp["user_id"], amount=pp["paid_amount"])
         await create_notification(
             db, pp["user_id"], game_id, "game_cancelled",
             f"{cancel_detail} Your payment of {pp['paid_amount']} has been marked for refund."
@@ -2827,6 +2866,19 @@ async def broadcast_game_status(
 
     await db.commit()
     return {"message": "Status broadcast sent to all users", "status_text": msg}
+
+
+@router.get("/{game_id}/log")
+async def get_game_log(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Everything that happened in a game. Players only see their own payments."""
+    game = await _get_game(db, game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return await build_log(db, game, user_id, await _is_game_moderator(user_id, game_id, db))
 
 
 @router.get("/{game_id}/potd")
@@ -3080,6 +3132,7 @@ async def settle_excess(
     await db.execute(
         "UPDATE payments SET paid_amount = amount WHERE game_id = ? AND user_id = ?", (game_id, req.user_id)
     )
+    await log_event(db, game_id, "excess_settled", user_id=req.user_id, actor_id=user_id, amount=excess)
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
         (req.user_id, game_id, f"Moderator settled your excess payment of {excess:.0f} for {game['title']}.")
@@ -3125,6 +3178,10 @@ async def mark_payment_made(
             "WHERE game_id = ? AND user_id = ?",
             (now, user_id, game_id, req.user_id)
         )
+
+    if not payment or (payment["paid_amount"] or 0) < payment["amount"]:
+        owed = game["cost_per_person"] if not payment else payment["amount"] - (payment["paid_amount"] or 0)
+        await log_event(db, game_id, "marked_paid", user_id=req.user_id, actor_id=user_id, amount=owed)
 
     # Always update player payment_confirmed (fixes inconsistency if payment was
     # already 'paid' but payment_confirmed was still 0 from a previous partial failure)

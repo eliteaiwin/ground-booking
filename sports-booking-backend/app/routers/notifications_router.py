@@ -403,6 +403,8 @@ async def track_payment_reminder(
            last_reminded_at = CURRENT_TIMESTAMP""",
         (target_user_id, game_id)
     )
+    from ..game_log import log_event
+    await log_event(db, game_id, "reminder", user_id=target_user_id, actor_id=user_id)
 
     # Check if 4th reminder reached
     cursor = await db.execute(

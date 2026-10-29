@@ -360,6 +360,8 @@ export const api = {
     return request(`/api/payments/summary${qs ? `?${qs}` : ''}`);
   },
 
+  getGameLog: (gameId: number) => request(`/api/games/${gameId}/log`),
+
   getPaymentHistory: (userId: number, gameId?: number) =>
     request(`/api/payments/history/${userId}${gameId ? `?game_id=${gameId}` : ''}`),
 
