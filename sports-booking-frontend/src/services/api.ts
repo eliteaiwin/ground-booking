@@ -119,6 +119,9 @@ const uploadHeaders = (): Record<string, string> => {
   return headers;
 };
 
+/** Absolute URL for a backend path such as an uploaded file. */
+export const backendUrl = (path: string) => `${API_URL}${path}`;
+
 export const api = {
   register: (data: {
     first_name: string; last_name: string; phone: string; email?: string;
@@ -511,14 +514,42 @@ export const api = {
     return request(`/api/discussions/messages${qs ? `?${qs}` : ''}`);
   },
 
-  postDiscussionMessage: (message: string, gameId?: number, parentId?: number) =>
+  postDiscussionMessage: (message: string, gameId?: number, parentId?: number, mentionUserIds: number[] = []) =>
     request('/api/discussions/messages', {
       method: 'POST',
-      body: JSON.stringify({ message, game_id: gameId ?? null, parent_id: parentId ?? null }),
+      body: JSON.stringify({ message, game_id: gameId ?? null, parent_id: parentId ?? null, mention_user_ids: mentionUserIds }),
     }),
 
   deleteDiscussionMessage: (messageId: number) =>
     request(`/api/discussions/messages/${messageId}`, { method: 'DELETE' }),
+
+  postMessageWithMedia: (file: File, message: string, gameId?: number, parentId?: number, addToGallery = false, mentionUserIds: number[] = []) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('message', message);
+    if (gameId) formData.append('game_id', String(gameId));
+    if (parentId) formData.append('parent_id', String(parentId));
+    formData.append('add_to_gallery', addToGallery ? 'true' : 'false');
+    formData.append('mention_user_ids', mentionUserIds.join(','));
+    return fetch(`${API_URL}/api/discussions/messages/with-media`, { method: 'POST', headers: uploadHeaders(), body: formData })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({ detail: 'Upload failed' }));
+        if (!res.ok) throw new Error(body.detail || 'Upload failed');
+        return body;
+      });
+  },
+
+  setMediaGallery: (mediaId: number, inGallery: boolean) =>
+    request(`/api/discussions/media/${mediaId}/gallery`, { method: 'PUT', body: JSON.stringify({ in_gallery: inGallery }) }),
+
+  deleteMedia: (mediaId: number) =>
+    request(`/api/discussions/media/${mediaId}`, { method: 'DELETE' }),
+
+  getDiscussionStorage: () =>
+    request('/api/discussions/storage'),
+
+  cleanupDiscussions: (body: { older_than_days?: number; game_id?: number; what: 'all' | 'messages' | 'media' }) =>
+    request('/api/discussions/cleanup', { method: 'POST', body: JSON.stringify(body) }),
 
   getDiscussionMedia: (gameId: number) =>
     request(`/api/discussions/media?game_id=${gameId}`),

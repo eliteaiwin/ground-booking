@@ -1,12 +1,41 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import PlayerProfileDialog from '@/components/PlayerProfileDialog';
-import { api } from '../services/api';
+import { api, backendUrl } from '../services/api';
+import { createPortal } from 'react-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { MessageCircle, Send, Image, Video, Upload, Smile, Reply, Trash2, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageCircle, Send, Image, Video, Upload, Smile, Reply, Trash2, X, ChevronDown, ChevronUp, Paperclip, Maximize2, Minimize2 } from 'lucide-react';
+
+const SMILEYS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤩', '🥳', '😇', '🙂', '😉', '😜', '🤔', '😮', '😢', '😭', '😡', '😴', '🤯', '🥵', '🥶', '😅', '🙏', '👍', '👎', '👏', '🙌', '💪', '🤝', '✌️', '👌', '🔥', '⭐', '❤️', '💯', '🎉', '⚽', '🏏', '🏆', '🥅', '⏰', '✅', '❌'];
+
+interface Member { id: number; name: string }
+
+interface MediaBrief { id: number; media_type: string; in_gallery: boolean; file_path: string; user_id: number }
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function MessageText({ text, members, className }: { text: string; members: Member[]; className: string }) {
+  if (!text) return null;
+  const names = [...members.map(m => m.name)].sort((a, b) => b.length - a.length).map(escapeRe);
+  const re = new RegExp(`(@(?:${names.length ? names.join('|') + '|' : ''}[^\\s@]+))`, 'g');
+  return (
+    <p className={className}>
+      {text.split(re).map((part, i) => (i % 2 === 1
+        ? <span key={i} className="text-blue-700 font-semibold">{part}</span>
+        : part))}
+    </p>
+  );
+}
+
+function ChatMedia({ media }: { media: MediaBrief }) {
+  const src = backendUrl(media.file_path);
+  return media.media_type === 'video'
+    ? <video src={src} controls className="mt-1 rounded-lg max-h-56 w-full bg-black" data-testid="chat-media" />
+    : <a href={src} target="_blank" rel="noreferrer"><img src={src} alt="Shared" className="mt-1 rounded-lg max-h-56 w-auto max-w-full object-contain" data-testid="chat-media" /></a>;
+}
 
 const EMOJI_OPTIONS = ['👍', '❤️', '😂', '🔥', '⚽', '🏆', '👏', '💪', '🎉', '😮'];
 
@@ -25,6 +54,7 @@ interface DiscussionMessage {
   created_at: string;
   reactions: Reaction[];
   replies: DiscussionMessage[];
+  media?: MediaBrief | null;
 }
 
 interface MediaItem {
@@ -55,6 +85,7 @@ interface MediaComment {
 interface Props {
   gameId?: number;
   gameStatus?: string;
+  members?: Member[];
 }
 
 function timeAgo(dateStr: string): string {
@@ -120,8 +151,17 @@ function ReactionBar({ reactions, targetType, targetId, userId, onReact }: {
   );
 }
 
-export default function Discussion({ gameId, gameStatus }: Props) {
-  const { user } = useAuth();
+export default function Discussion({ gameId, gameStatus, members = [] }: Props) {
+  const { user, isAdmin, isModerator } = useAuth();
+  const canModerate = isAdmin || isModerator;
+  const [fullscreen, setFullscreen] = useState(false);
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [addToGallery, setAddToGallery] = useState(false);
+  const [showSmileys, setShowSmileys] = useState(false);
+  const [mentions, setMentions] = useState<Member[]>([]);
+  const [chatError, setChatError] = useState('');
+  const attachRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -163,17 +203,44 @@ export default function Discussion({ gameId, gameStatus }: Props) {
     }
   };
 
+  const mentionQuery = /(?:^|\s)@([^\s@]*)$/.exec(newMessage)?.[1];
+  const mentionOptions = mentionQuery === undefined ? [] : members
+    .filter((m, i, all) => m.id !== user?.id && all.findIndex(x => x.id === m.id) === i)
+    .filter(m => m.name.toLowerCase().includes(mentionQuery.toLowerCase()))
+    .slice(0, 6);
+
+  const pickMention = (m: Member) => {
+    setNewMessage(t => t.replace(/@([^\s@]*)$/, `@${m.name} `));
+    setMentions(list => (list.some(x => x.id === m.id) ? list : [...list, m]));
+    inputRef.current?.focus();
+  };
+
+  const clearAttachment = () => {
+    setAttachFile(null);
+    setAddToGallery(false);
+    if (attachRef.current) attachRef.current.value = '';
+  };
+
   const handleSend = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() && !attachFile) return;
     setSending(true);
+    setChatError('');
     try {
-      await api.postDiscussionMessage(newMessage.trim(), gameId, replyTo?.id);
+      const text = newMessage.trim();
+      const ids = mentions.filter(m => text.includes(`@${m.name}`)).map(m => m.id);
+      if (attachFile) {
+        await api.postMessageWithMedia(attachFile, text, gameId, replyTo?.id, addToGallery, ids);
+        clearAttachment();
+      } else {
+        await api.postDiscussionMessage(text, gameId, replyTo?.id, ids);
+      }
       setNewMessage('');
+      setMentions([]);
       setReplyTo(null);
       await loadData();
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
-      console.error('Failed to send message:', err);
+      setChatError(err instanceof Error ? err.message : 'Failed to send');
     } finally {
       setSending(false);
     }
@@ -192,7 +259,29 @@ export default function Discussion({ gameId, gameStatus }: Props) {
     }
   };
 
+  const handleToggleGallery = async (m: MediaBrief) => {
+    try {
+      await api.setMediaGallery(m.id, !m.in_gallery);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to update images:', err);
+    }
+  };
+
+  const handleDeleteMedia = async (mediaId: number) => {
+    if (!window.confirm('Delete this photo/video permanently?')) return;
+    try {
+      await api.deleteMedia(mediaId);
+      setSelectedMedia(null);
+      setMediaComments([]);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to delete media:', err);
+    }
+  };
+
   const handleDelete = async (messageId: number) => {
+    if (!window.confirm('Delete this message permanently?')) return;
     try {
       await api.deleteDiscussionMessage(messageId);
       await loadData();
@@ -252,15 +341,19 @@ export default function Discussion({ gameId, gameStatus }: Props) {
     return <div className="text-center text-gray-400 py-8 text-sm">Loading discussion...</div>;
   }
 
-  return (
-    <Card>
+  const card = (
+    <Card className={fullscreen ? 'fixed inset-0 z-50 rounded-none flex flex-col overflow-hidden' : ''} data-testid="discussion">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2">
           <MessageCircle size={18} className="text-blue-600" />
           Discussion
+          <button type="button" onClick={() => setFullscreen(f => !f)} data-testid="discussion-fullscreen"
+            className="ml-auto p-1 rounded hover:bg-gray-100 text-gray-500" aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 pt-0">
+      <CardContent className={`p-3 pt-0 ${fullscreen ? 'flex-1 flex flex-col min-h-0 overflow-y-auto' : ''}`}>
         {/* Tabs: Chat | Media (only for game discussions) */}
         {gameId && (
           <div className="flex gap-1 mb-3">
@@ -281,9 +374,9 @@ export default function Discussion({ gameId, gameStatus }: Props) {
 
         {/* Chat Tab */}
         {activeTab === 'chat' && (
-          <div>
+          <div className={fullscreen ? 'flex-1 flex flex-col min-h-0' : ''}>
             {/* Messages */}
-            <div className="max-h-80 overflow-y-auto space-y-2 mb-3 pr-1">
+            <div className={`${fullscreen ? 'flex-1 min-h-0' : 'max-h-80'} overflow-y-auto space-y-2 mb-3 pr-1`}>
               {messages.length === 0 ? (
                 <p className="text-center text-gray-400 text-xs py-6">No messages yet. Start the conversation!</p>
               ) : (
@@ -296,6 +389,10 @@ export default function Discussion({ gameId, gameStatus }: Props) {
                     onReply={(id, name) => setReplyTo({ id, name })}
                     onDelete={handleDelete}
                     onOpenProfile={setProfileUserId}
+                    canModerate={canModerate}
+                    members={members}
+                    gameId={gameId}
+                    onToggleGallery={handleToggleGallery}
                   />
                 ))
               )}
@@ -313,17 +410,65 @@ export default function Discussion({ gameId, gameStatus }: Props) {
               </div>
             )}
 
+            {attachFile && (
+              <div className="mb-1 px-2 py-1.5 bg-gray-50 border rounded text-xs space-y-1" data-testid="chat-attachment">
+                <div className="flex items-center gap-2">
+                  {attachFile.type.startsWith('video/') ? <Video size={12} /> : <Image size={12} />}
+                  <span className="truncate flex-1">{attachFile.name}</span>
+                  <button type="button" onClick={clearAttachment} aria-label="Remove attachment"><X size={12} /></button>
+                </div>
+                {gameId && (
+                  <label className="flex items-center gap-2 text-gray-700">
+                    <input type="checkbox" checked={addToGallery} onChange={e => setAddToGallery(e.target.checked)} data-testid="add-to-gallery" />
+                    Add to today's game images
+                  </label>
+                )}
+              </div>
+            )}
+            {chatError && <p className="text-xs text-red-600 mb-1">{chatError}</p>}
+
             {/* Input */}
-            <div className="flex gap-2">
+            <div className="relative flex gap-1.5 items-center">
+              {mentionOptions.length > 0 && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto" data-testid="mention-list">
+                  {mentionOptions.map(m => (
+                    <button key={m.id} type="button" onMouseDown={e => e.preventDefault()} onClick={() => pickMention(m)}
+                      className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">@{m.name}</button>
+                  ))}
+                </div>
+              )}
+              {showSmileys && (
+                <div className="absolute bottom-full left-0 mb-1 bg-white border rounded-lg shadow-lg p-2 grid grid-cols-9 gap-0.5 z-20 w-full max-w-xs" data-testid="smiley-picker">
+                  {SMILEYS.map(e => (
+                    <button key={e} type="button" className="text-xl hover:bg-gray-100 rounded p-0.5"
+                      onClick={() => { setNewMessage(t => t + e); setShowSmileys(false); inputRef.current?.focus(); }}>{e}</button>
+                  ))}
+                </div>
+              )}
+              <button type="button" onClick={() => setShowSmileys(s => !s)} className="p-1.5 text-gray-500 hover:text-blue-600" aria-label="Smileys" data-testid="smiley-button">
+                <Smile size={18} />
+              </button>
+              <button type="button" onClick={() => attachRef.current?.click()} className="p-1.5 text-gray-500 hover:text-blue-600" aria-label="Attach photo or video" data-testid="attach-button">
+                <Paperclip size={18} />
+              </button>
+              <input ref={attachRef} type="file" accept="image/*,video/*" className="hidden" data-testid="attach-input"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setAttachFile(f); }} />
               <Input
+                ref={inputRef}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder="Type a message..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (mentionOptions.length > 0) pickMention(mentionOptions[0]); else handleSend();
+                  }
+                }}
+                placeholder="Type a message... (@ to tag)"
                 className="text-sm h-9"
                 disabled={sending}
+                data-testid="chat-input"
               />
-              <Button size="sm" onClick={handleSend} disabled={!newMessage.trim() || sending} className="h-9 px-3">
+              <Button size="sm" onClick={handleSend} disabled={(!newMessage.trim() && !attachFile) || sending} className="h-9 px-3" data-testid="chat-send">
                 <Send size={14} />
               </Button>
             </div>
@@ -377,7 +522,7 @@ export default function Discussion({ gameId, gameStatus }: Props) {
                   >
                     {item.media_type === 'photo' ? (
                       <img
-                        src={`${import.meta.env.VITE_API_URL || ''}${item.file_path}`}
+                        src={backendUrl(item.file_path)}
                         alt={item.caption || 'Photo'}
                         className="w-full h-28 object-cover"
                       />
@@ -412,22 +557,29 @@ export default function Discussion({ gameId, gameStatus }: Props) {
                   <p className="text-sm font-semibold">{selectedMedia.user_name}</p>
                   <p className="text-[10px] text-gray-400">{timeAgo(selectedMedia.created_at)}</p>
                 </div>
-                <button onClick={() => { setSelectedMedia(null); setMediaComments([]); }} className="p-1 hover:bg-gray-100 rounded">
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-1">
+                  {(selectedMedia.user_id === user?.id || canModerate) && (
+                    <button onClick={() => handleDeleteMedia(selectedMedia.id)} className="p-1 hover:bg-red-50 rounded text-red-500" aria-label="Delete permanently" data-testid="delete-media">
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                  <button onClick={() => { setSelectedMedia(null); setMediaComments([]); }} className="p-1 hover:bg-gray-100 rounded">
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* Media */}
               <div className="bg-gray-900">
                 {selectedMedia.media_type === 'photo' ? (
                   <img
-                    src={`${import.meta.env.VITE_API_URL || ''}${selectedMedia.file_path}`}
+                    src={backendUrl(selectedMedia.file_path)}
                     alt={selectedMedia.caption || 'Photo'}
                     className="w-full max-h-72 object-contain"
                   />
                 ) : (
                   <video
-                    src={`${import.meta.env.VITE_API_URL || ''}${selectedMedia.file_path}`}
+                    src={backendUrl(selectedMedia.file_path)}
                     controls
                     className="w-full max-h-72"
                   />
@@ -498,10 +650,15 @@ export default function Discussion({ gameId, gameStatus }: Props) {
       {profileUserId && <PlayerProfileDialog userId={profileUserId} onClose={() => setProfileUserId(null)} />}
     </Card>
   );
+  return fullscreen ? createPortal(card, document.body) : card;
 }
 
-function MessageBubble({ msg, userId, onReact, onReply, onDelete, onOpenProfile }: {
+function MessageBubble({ msg, userId, onReact, onReply, onDelete, onOpenProfile, canModerate, members, gameId, onToggleGallery }: {
   onOpenProfile: (userId: number) => void;
+  canModerate: boolean;
+  members: Member[];
+  gameId?: number;
+  onToggleGallery: (m: MediaBrief) => void;
   msg: DiscussionMessage;
   userId: number;
   onReact: (tt: string, ti: number, e: string) => void;
@@ -521,15 +678,24 @@ function MessageBubble({ msg, userId, onReact, onReply, onDelete, onOpenProfile 
           </button>
           <span className="text-[10px] text-gray-400">{timeAgo(msg.created_at)}</span>
         </div>
-        <p className="text-sm text-gray-800 whitespace-pre-wrap">{msg.message}</p>
+        <MessageText text={msg.message} members={members} className="text-sm text-gray-800 whitespace-pre-wrap break-words" />
+        {msg.media && <ChatMedia media={msg.media} />}
+        {msg.media && gameId && (
+          (isMine || canModerate) ? (
+            <label className="flex items-center gap-1.5 text-[11px] text-gray-600 mt-1">
+              <input type="checkbox" checked={msg.media.in_gallery} onChange={() => onToggleGallery(msg.media!)} data-testid="bubble-gallery" />
+              In today's game images
+            </label>
+          ) : msg.media.in_gallery ? <p className="text-[11px] text-gray-500 mt-1">In today's game images</p> : null
+        )}
 
         <div className="flex items-center gap-2 mt-1.5">
           <ReactionBar reactions={msg.reactions} targetType="message" targetId={msg.id} userId={userId} onReact={onReact} />
           <button onClick={() => onReply(msg.id, msg.user_name)} className="text-gray-400 hover:text-blue-600 p-0.5">
             <Reply size={12} />
           </button>
-          {isMine && (
-            <button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500 p-0.5">
+          {(isMine || canModerate) && (
+            <button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500 p-0.5" aria-label="Delete message" data-testid="delete-message">
               <Trash2 size={12} />
             </button>
           )}
@@ -552,8 +718,14 @@ function MessageBubble({ msg, userId, onReact, onReply, onDelete, onOpenProfile 
                 <button type="button" onClick={() => onOpenProfile(r.user_id)} className="text-[10px] font-semibold text-gray-600 hover:underline">{r.user_name}</button>
                 <span className="text-[9px] text-gray-400">{timeAgo(r.created_at)}</span>
               </div>
-              <p className="text-xs text-gray-700">{r.message}</p>
-              <ReactionBar reactions={r.reactions} targetType="message" targetId={r.id} userId={userId} onReact={onReact} />
+              <MessageText text={r.message} members={members} className="text-xs text-gray-700 break-words" />
+              {r.media && <ChatMedia media={r.media} />}
+              <div className="flex items-center gap-2">
+                <ReactionBar reactions={r.reactions} targetType="message" targetId={r.id} userId={userId} onReact={onReact} />
+                {(r.user_id === userId || canModerate) && (
+                  <button onClick={() => onDelete(r.id)} className="text-gray-300 hover:text-red-500 p-0.5" aria-label="Delete reply"><Trash2 size={11} /></button>
+                )}
+              </div>
             </div>
           ))}
         </div>

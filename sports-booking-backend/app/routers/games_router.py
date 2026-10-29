@@ -126,7 +126,13 @@ class TeamJerseyRequest(BaseModel):
     jersey_color: str = ""
 
 
-JERSEY_COLORS = ["Blue", "Green", "Yellow", "Red", "White", "Black", "Blue/Black", "Black/White"]
+JERSEY_COLORS = ["Blue", "Green", "Yellow", "Red", "White", "Black", "Blue/Black", "Black/White", "Bibs - Green or Red"]
+
+
+def _jersey_shades(color: str) -> set:
+    """Colours a jersey shows; Blue and Black look alike on the pitch, so they count as one."""
+    parts = color.replace("Bibs - ", "").replace(" or ", "/").split("/")
+    return {"Dark" if p in ("Blue", "Black") else p for p in parts if p}
 
 
 def _check_jerseys(colors: List[str]) -> List[str]:
@@ -135,8 +141,10 @@ def _check_jerseys(colors: List[str]) -> List[str]:
         if c and c not in JERSEY_COLORS:
             raise HTTPException(status_code=400, detail=f"Unknown jersey colour: {c}")
     picked = [c for c in cleaned if c]
-    if len(picked) != len(set(picked)):
-        raise HTTPException(status_code=400, detail="Two teams can't wear the same jersey colour")
+    for i, a in enumerate(picked):
+        for b in picked[i + 1:]:
+            if _jersey_shades(a) & _jersey_shades(b):
+                raise HTTPException(status_code=400, detail=f"{a} and {b} look too alike for two teams")
     return cleaned
 
 

@@ -2,6 +2,15 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.25', date: '2026-10-28', changes: [
+    'Jerseys: Blue and Black count as the same colour, so if one team wears Blue, Black, Blue/Black or Black/White the other team picks something else (e.g. White)',
+    'New jersey option "Bibs - Green or Red". The other team then can\'t pick Green or Red',
+    'Discussion: tag players with @ (they get a notification), add smileys, and attach a photo or video to a message',
+    'Discussion: tick "Add to today\'s game images" on a photo/video to show it in the game\'s Photos & Videos tab',
+    'Discussion: full-screen button',
+    'Admins, moderators and super admins can permanently delete any message, photo or video',
+    'Admin → Chat Storage: see how much space chats and photos/videos use, and clear older ones together or one by one',
+  ] },
   { version: '1.24', date: '2026-10-28', changes: [
     'Create Teams: the game page shows a short "16/16 confirmed – Create Teams" line, and the team options only open after tapping Create Teams',
     'Each team can pick a jersey colour (Blue, Green, Yellow, Red, White, Black, Blue/Black, Black/White). Two teams can never pick the same colour, and moderators can change it later',

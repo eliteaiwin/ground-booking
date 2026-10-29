@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3, Palette, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Shield, MapPin, Users, Trash2, Building, Plus, Search, Phone, Edit2, BarChart3, Palette, RotateCcw, HardDrive } from 'lucide-react';
+import DiscussionStorage from '@/components/DiscussionStorage';
 
 interface UserItem {
   id: number;
@@ -47,7 +48,7 @@ interface Props {
 }
 
 export default function AdminScreens({ onBack }: Props) {
-  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles' | 'themes'>('locations');
+  const [activeTab, setActiveTab] = useState<'locations' | 'grounds' | 'assign' | 'search-user' | 'roles' | 'themes' | 'storage'>('locations');
   const { themes, refreshThemes } = useTheme();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -390,6 +391,15 @@ export default function AdminScreens({ onBack }: Props) {
             size="sm"
           >
             <Palette size={14} className="mr-1" /> Themes
+          </Button>
+          <Button
+            variant={activeTab === 'storage' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('storage')}
+            className={activeTab === 'storage' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+            size="sm"
+            data-testid="tab-storage"
+          >
+            <HardDrive size={14} className="mr-1" /> Chat Storage
           </Button>
         </div>
 
@@ -933,6 +943,7 @@ export default function AdminScreens({ onBack }: Props) {
             </Card>
           </>
         )}
+        {activeTab === 'storage' && <DiscussionStorage />}
       </div>
     </div>
   );

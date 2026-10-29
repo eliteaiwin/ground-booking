@@ -52,14 +52,18 @@ interface Team {
   jersey_color?: string;
 }
 
-const JERSEY_COLORS = ['Blue', 'Green', 'Yellow', 'Red', 'White', 'Black', 'Blue/Black', 'Black/White'];
+const JERSEY_COLORS = ['Blue', 'Green', 'Yellow', 'Red', 'White', 'Black', 'Blue/Black', 'Black/White', 'Bibs - Green or Red'];
+/** Blue and Black look alike on the pitch, so they count as one shade. */
+const jerseyShades = (c: string) => c.replace('Bibs - ', '').replace(' or ', '/').split('/')
+  .filter(Boolean).map(p => (p === 'Blue' || p === 'Black' ? 'Dark' : p));
+const jerseysClash = (a: string, b: string) => jerseyShades(a).some(s => jerseyShades(b).includes(s));
 const JERSEY_HEX: Record<string, string> = {
   Blue: '#2563eb', Green: '#16a34a', Yellow: '#facc15', Red: '#dc2626', White: '#ffffff', Black: '#111827',
 };
 
 function JerseySwatch({ color }: { color?: string }) {
   if (!color) return null;
-  const [a, b = a] = color.split('/').map(c => JERSEY_HEX[c] || '#9ca3af');
+  const [a, b = a] = color.replace('Bibs - ', '').replace(' or ', '/').split('/').map(c => JERSEY_HEX[c] || '#9ca3af');
   return <span className="inline-block w-3.5 h-3.5 rounded-full border border-gray-400 shrink-0"
     style={{ background: `linear-gradient(90deg, ${a} 50%, ${b} 50%)` }} aria-hidden />;
 }
@@ -67,10 +71,10 @@ function JerseySwatch({ color }: { color?: string }) {
 function JerseyPicker({ value, taken, onChange, testId }: { value: string; taken: string[]; onChange: (v: string) => void; testId?: string }) {
   return (
     <Select value={value || 'none'} onValueChange={v => onChange(v === 'none' ? '' : v)}>
-      <SelectTrigger className="w-36 shrink-0" data-testid={testId}><SelectValue placeholder="Jersey" /></SelectTrigger>
+      <SelectTrigger className="w-40 shrink-0" data-testid={testId}><SelectValue placeholder="Jersey" /></SelectTrigger>
       <SelectContent>
         <SelectItem value="none">No jersey</SelectItem>
-        {JERSEY_COLORS.filter(c => c === value || !taken.includes(c)).map(c => (
+        {JERSEY_COLORS.filter(c => c === value || !taken.some(t => jerseysClash(c, t))).map(c => (
           <SelectItem key={c} value={c}><span className="flex items-center gap-2"><JerseySwatch color={c} /> {c}</span></SelectItem>
         ))}
       </SelectContent>
@@ -2207,7 +2211,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
         )}
 
         {/* Discussion Section - Always active */}
-        <Discussion gameId={game.id} gameStatus={game.status} />
+        <Discussion gameId={game.id} gameStatus={game.status}
+          members={[...game.selected_players, ...game.waiting_list].map(p => ({ id: p.user_id, name: p.display_name || p.name }))} />
 
         <Separator />
         <p className="text-xs text-gray-400 text-center pb-4">Game ID: {game.id}</p>
