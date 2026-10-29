@@ -12,14 +12,67 @@
 @layer base {
   html,
   body {
-    overflow-x: hidden;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
+  html {
+    overflow-x: hidden;
+  }
+  /* clip, not hidden: hidden would make body a scroll box and stop the sticky header from sticking. */
+  /* No scroll anchoring: it would jump the page when the header shrinks and make it flicker. */
+  html,
   body {
+    overflow-anchor: none;
+  }
+  body {
+    overflow-x: clip;
     background-color: theme("colors.gray.50");
-    padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+  }
+  body:not(:has(header)) {
+    padding-top: env(safe-area-inset-top);
+  }
+  /* Page headers stay on top while the page scrolls under them, and shrink once scrolled (html.compact). */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding-top: env(safe-area-inset-top);
+  }
+  html.compact header > div {
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+  }
+  html.compact header > div:has(> button.mb-2) {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  html.compact header > div > button.mb-2 {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+  html.compact header > div > :not(button) {
+    min-width: 0;
+  }
+  html.compact header p,
+  html.compact header .hide-when-compact {
+    display: none;
+  }
+  html.compact header h1 {
+    font-size: 1rem;
+    line-height: 1.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  html.compact header > div > div > div {
+    min-width: 0;
+  }
+  html.compact header > div > div > svg,
+  html.compact header [data-testid="sport-tile"] {
+    width: 1.75rem;
+    height: 1.75rem;
   }
   #root {
     width: 97%;
@@ -41,5 +94,15 @@
   textarea,
   select {
     font-size: 16px !important;
+  }
+}
+
+/* Full-screen pages fill the visible screen only (iPhone's 100vh is taller), so short pages don't scroll. */
+.min-h-screen {
+  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
 }

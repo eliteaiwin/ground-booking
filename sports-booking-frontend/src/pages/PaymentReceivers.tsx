@@ -169,7 +169,7 @@ export default function PaymentReceivers({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+      <header className="bg-white border-b"><div className="px-4 py-3 flex items-center gap-3">
         <button onClick={onBack} aria-label="Back"><ArrowLeft size={20} /></button>
         <h1 className="font-semibold flex items-center gap-2 flex-1"><Wallet size={18} /> Payment Receivers</h1>
         {editing === null && (
@@ -177,7 +177,7 @@ export default function PaymentReceivers({ onBack }: { onBack: () => void }) {
             <Plus size={14} className="mr-1" /> Add
           </Button>
         )}
-      </div>
+      </div></header>
       <div className="p-4 space-y-3 max-w-xl mx-auto">
         {editing === 'new' && form}
         {error && editing === null && <p className="text-sm text-red-600">{error}</p>}

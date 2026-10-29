@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.36', date: '2026-10-29', changes: [
+    'Short pages no longer scroll on iPhone (the app was taller than the screen)',
+    'The page header stays on top and shrinks to one line while you scroll, like messaging apps',
+  ] },
   { version: '1.35', date: '2026-10-29', changes: [
     'New full-screen turf app icon (no white border)',
     'Each sport now shows the same green turf with its own equipment on top: football, bat and ball, shuttle, basketball and more',

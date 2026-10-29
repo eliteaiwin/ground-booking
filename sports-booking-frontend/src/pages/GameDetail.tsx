@@ -843,7 +843,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
               <h1 className="text-xl font-bold">{game.ground_name}</h1>
               {game.title && <p className="text-sm font-medium text-white/90">{game.title}</p>}
               {game.game_code && <p className="text-xs font-mono text-white/70">{game.game_code}</p>}
-              <div className="flex gap-2 mt-1">
+              <div className="flex gap-2 mt-1 hide-when-compact">
                 {(!game.is_archived || ['completed', 'cancelled'].includes(game.status)) && (
                   <Badge className={`${statusColor(game.status)} mt-1`}>{statusLabel(game.status)}</Badge>
                 )}
