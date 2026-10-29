@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { MessageCircle, Send, Image, Video, Upload, Smile, Reply, Trash2, X, ChevronDown, ChevronUp, Paperclip, Maximize2, Minimize2 } from 'lucide-react';
+import { MessageCircle, Send, Image, Video, Upload, Smile, Reply, Trash2, X, ChevronDown, ChevronUp, Paperclip, Maximize2, Minimize2, ArrowLeft } from 'lucide-react';
 
 const SMILEYS = ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤩', '🥳', '😇', '🙂', '😉', '😜', '🤔', '😮', '😢', '😭', '😡', '😴', '🤯', '🥵', '🥶', '😅', '🙏', '👍', '👎', '👏', '🙌', '💪', '🤝', '✌️', '👌', '🔥', '⭐', '❤️', '💯', '🎉', '⚽', '🏏', '🏆', '🥅', '⏰', '✅', '❌'];
 
@@ -343,19 +343,46 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
 
   const card = (
     <Card className={fullscreen ? 'fixed inset-0 z-50 rounded-none flex flex-col overflow-hidden' : ''} data-testid="discussion">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2">
-          <MessageCircle size={18} className="text-blue-600" />
-          Discussion
-          <button type="button" onClick={() => setFullscreen(f => !f)} data-testid="discussion-fullscreen"
-            className="ml-auto p-1 rounded hover:bg-gray-100 text-gray-500" aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
-            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+      {fullscreen ? (
+        <div className="flex items-center gap-1 px-2 py-2 border-b shrink-0" data-testid="fullscreen-header">
+          <button type="button" onClick={() => setFullscreen(false)} className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">
+            <ArrowLeft size={18} />
           </button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className={`p-3 pt-0 ${fullscreen ? 'flex-1 flex flex-col min-h-0 overflow-y-auto' : ''}`}>
-        {/* Tabs: Chat | Media (only for game discussions) */}
-        {gameId && (
+          <span className="font-semibold text-base truncate">{activeTab === 'media' ? 'Photos & Videos' : 'Discussion'}</span>
+          <div className="ml-auto flex items-center">
+            <button type="button" onClick={() => setActiveTab('chat')} aria-label="Chat" data-testid="fs-chat"
+              className={`p-2 rounded ${activeTab === 'chat' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}>
+              <MessageCircle size={18} />
+            </button>
+            {gameId && (
+              <button type="button" onClick={() => setActiveTab('media')} aria-label="Photos and videos" data-testid="fs-media"
+                className={`p-2 rounded ${activeTab === 'media' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}>
+                <Image size={18} />
+              </button>
+            )}
+            <button type="button" onClick={() => setFullscreen(false)} className="p-2 rounded text-gray-500 hover:bg-gray-100" aria-label="Smaller view" data-testid="discussion-fullscreen">
+              <Minimize2 size={18} />
+            </button>
+            <button type="button" onClick={() => setFullscreen(false)} className="p-2 rounded text-gray-500 hover:bg-gray-100" aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MessageCircle size={18} className="text-blue-600" />
+            Discussion
+            <button type="button" onClick={() => setFullscreen(true)} data-testid="discussion-fullscreen"
+              className="ml-auto p-1 rounded hover:bg-gray-100 text-gray-500" aria-label="Full screen">
+              <Maximize2 size={16} />
+            </button>
+          </CardTitle>
+        </CardHeader>
+      )}
+      <CardContent className={fullscreen ? 'p-3 flex-1 flex flex-col min-h-0 overflow-y-auto' : 'p-3 pt-0'}>
+        {/* Tabs: Chat | Media (only for game discussions); icons in the header when full screen */}
+        {gameId && !fullscreen && (
           <div className="flex gap-1 mb-3">
             <button
               onClick={() => setActiveTab('chat')}

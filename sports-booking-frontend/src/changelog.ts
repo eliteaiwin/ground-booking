@@ -7,7 +7,7 @@ export const CHANGELOG: Release[] = [
     'New jersey option "Bibs - Green or Red". The other team then can\'t pick Green or Red',
     'Discussion: tag players with @ (they get a notification), add smileys, and attach a photo or video to a message',
     'Discussion: tick "Add to today\'s game images" on a photo/video to show it in the game\'s Photos & Videos tab',
-    'Discussion: full-screen button',
+    'Discussion: full-screen view with a single header line: Back, Chat, Images, Smaller view and Close icons',
     'Admins, moderators and super admins can permanently delete any message, photo or video',
     'Admin → Chat Storage: see how much space chats and photos/videos use, and clear older ones together or one by one',
   ] },
