@@ -769,8 +769,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
       });
     }
 
-    return msg;
+    return msg + shareFooter();
   };
+
+  const shareFooter = () =>
+    `\n${game!.game_code ? `Game Ref: ${game!.game_code}\n` : ''}Open in Elite Turf Booking: ${inviteUrl(user?.id, game!.id)}`;
 
   const generateRemindMsg = () => {
     const g = game!;
@@ -794,7 +797,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     msg += `\nPaid: ${paid}/${g.selected_players.length} | Pending: ${formatMoney(due.toFixed(0), currency)}\n`;
     if (g.receiver) msg += `\nPay to: ${g.receiver.nick_name}\n${g.receiver.methods.map(m => m.value).join('\n')}\n`;
     else if (g.payee) msg += `\nPay to: ${g.payee.name} (${formatPhone(g.payee.phone)})\n`;
-    return msg;
+    return msg + shareFooter();
   };
 
   const getTeamPlayers = (teamId: number) => game!.selected_players.filter(p => p.team_id === teamId);
