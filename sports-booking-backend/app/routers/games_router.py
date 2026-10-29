@@ -119,6 +119,25 @@ class VoteJoinRequest(BaseModel):
 
 class CreateTeamsRequest(BaseModel):
     team_names: List[str]  # e.g. ["Team A", "Team B"]
+    jersey_colors: Optional[List[str]] = None
+
+
+class TeamJerseyRequest(BaseModel):
+    jersey_color: str = ""
+
+
+JERSEY_COLORS = ["Blue", "Green", "Yellow", "Red", "White", "Black", "Blue/Black", "Black/White"]
+
+
+def _check_jerseys(colors: List[str]) -> List[str]:
+    cleaned = [(c or "").strip() for c in colors]
+    for c in cleaned:
+        if c and c not in JERSEY_COLORS:
+            raise HTTPException(status_code=400, detail=f"Unknown jersey colour: {c}")
+    picked = [c for c in cleaned if c]
+    if len(picked) != len(set(picked)):
+        raise HTTPException(status_code=400, detail="Two teams can't wear the same jersey colour")
+    return cleaned
 
 
 class MovePlayerRequest(BaseModel):
@@ -861,7 +880,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "SELECT * FROM game_teams WHERE game_id = ? ORDER BY team_order", (game_id,)
     )
     teams_rows = await cursor.fetchall()
-    teams = [{"id": t["id"], "team_name": t["team_name"], "team_order": t["team_order"]} for t in teams_rows]
+    teams = [{"id": t["id"], "team_name": t["team_name"], "team_order": t["team_order"],
+              "jersey_color": t["jersey_color"] if "jersey_color" in t.keys() else ""} for t in teams_rows]
 
     # Get quit_penalty_hours, duration, and potd delay
     quit_penalty_hours = 0
@@ -2824,6 +2844,9 @@ async def create_teams(
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
 
+    colors = _check_jerseys((req.jersey_colors or [])[:len(req.team_names)])
+    colors += [""] * (len(req.team_names) - len(colors))
+
     # Delete existing teams for this game
     await db.execute("UPDATE game_players SET team_id = NULL WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_teams WHERE game_id = ?", (game_id,))
@@ -2831,10 +2854,29 @@ async def create_teams(
     # Create new teams
     for i, name in enumerate(req.team_names):
         await db.execute(
-            "INSERT INTO game_teams (game_id, team_name, team_order) VALUES (?, ?, ?)",
-            (game_id, name, i)
+            "INSERT INTO game_teams (game_id, team_name, team_order, jersey_color) VALUES (?, ?, ?, ?)",
+            (game_id, name, i, colors[i])
         )
 
+    await db.commit()
+    return await get_game_dict(db, game_id)
+
+
+@router.put("/{game_id}/teams/{team_id}/jersey")
+async def set_team_jersey(
+    game_id: int,
+    team_id: int,
+    req: TeamJerseyRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await require_game_moderator(user_id, game_id, db)
+    cursor = await db.execute("SELECT id, jersey_color FROM game_teams WHERE game_id = ?", (game_id,))
+    rows = await cursor.fetchall()
+    if not any(r["id"] == team_id for r in rows):
+        raise HTTPException(status_code=404, detail="Team not found")
+    color = _check_jerseys([req.jersey_color] + [r["jersey_color"] for r in rows if r["id"] != team_id])[0]
+    await db.execute("UPDATE game_teams SET jersey_color = ? WHERE id = ?", (color, team_id))
     await db.commit()
     return await get_game_dict(db, game_id)
 

@@ -49,6 +49,33 @@ interface Team {
   id: number;
   team_name: string;
   team_order: number;
+  jersey_color?: string;
+}
+
+const JERSEY_COLORS = ['Blue', 'Green', 'Yellow', 'Red', 'White', 'Black', 'Blue/Black', 'Black/White'];
+const JERSEY_HEX: Record<string, string> = {
+  Blue: '#2563eb', Green: '#16a34a', Yellow: '#facc15', Red: '#dc2626', White: '#ffffff', Black: '#111827',
+};
+
+function JerseySwatch({ color }: { color?: string }) {
+  if (!color) return null;
+  const [a, b = a] = color.split('/').map(c => JERSEY_HEX[c] || '#9ca3af');
+  return <span className="inline-block w-3.5 h-3.5 rounded-full border border-gray-400 shrink-0"
+    style={{ background: `linear-gradient(90deg, ${a} 50%, ${b} 50%)` }} aria-hidden />;
+}
+
+function JerseyPicker({ value, taken, onChange, testId }: { value: string; taken: string[]; onChange: (v: string) => void; testId?: string }) {
+  return (
+    <Select value={value || 'none'} onValueChange={v => onChange(v === 'none' ? '' : v)}>
+      <SelectTrigger className="w-36 shrink-0" data-testid={testId}><SelectValue placeholder="Jersey" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">No jersey</SelectItem>
+        {JERSEY_COLORS.filter(c => c === value || !taken.includes(c)).map(c => (
+          <SelectItem key={c} value={c}><span className="flex items-center gap-2"><JerseySwatch color={c} /> {c}</span></SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 const NOMINATION_COLOR = { self: 'text-green-600', moderator: 'text-blue-600' } as const;
@@ -414,6 +441,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editNoteAfter, setEditNoteAfter] = useState('');
   const [teamCount, setTeamCount] = useState('2');
   const [teamNames, setTeamNames] = useState<string[]>(['Team A', 'Team B']);
+  const [teamColors, setTeamColors] = useState<string[]>(['', '']);
+  const [showTeamForm, setShowTeamForm] = useState(false);
   const [dragPlayer, setDragPlayer] = useState<Player | null>(null);
   const [quitPenaltyInfo, setQuitPenaltyInfo] = useState<{has_penalty: boolean; must_pay: boolean; hours_until_game?: number; quit_penalty_hours?: number} | null>(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
@@ -577,7 +606,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
 
   const handleCreateTeams = async () => {
     const names = teamNames.slice(0, parseInt(teamCount));
-    await handleAction('create-teams', () => api.createTeams(game!.id, names));
+    await handleAction('create-teams', () => api.createTeams(game!.id, names, teamColors.slice(0, names.length)));
   };
 
   const handleMovePlayer = async (playerUserId: number, teamId: number | null) => {
@@ -595,6 +624,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     const labels = ['Team A', 'Team B', 'Team C', 'Team D'];
     while (names.length < count) names.push(labels[names.length] || `Team ${names.length + 1}`);
     setTeamNames(names.slice(0, count));
+    setTeamColors(c => [...c, '', '', '', ''].slice(0, count));
   };
 
   const handleDragStart = useCallback((player: Player) => {
@@ -1580,12 +1610,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
         {canCreateTeams && game.teams.length === 0 && (
           <Card className="border-blue-200 bg-blue-50">
             <CardContent className="p-4">
-              <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                <Users size={16} /> Create Teams
-              </h4>
-              <p className="text-xs text-blue-600 mb-3">
-                {game.selected_players.length}/{game.max_players} players confirmed ({Math.round(game.selected_players.length / game.max_players * 100)}% capacity - teams available at 70%+)
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-blue-800 flex items-center gap-2">
+                  <Users size={16} /> {game.selected_players.length}/{game.max_players} confirmed
+                </p>
+                {!showTeamForm && (
+                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700" data-testid="open-team-form"
+                    onClick={() => setShowTeamForm(true)}>Create Teams</Button>
+                )}
+              </div>
+              {showTeamForm && (<div className="mt-3">
               <div className="space-y-2 mb-3">
                 <Label className="text-xs">Number of teams</Label>
                 <Select value={teamCount} onValueChange={handleTeamCountChange}>
@@ -1596,20 +1630,30 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     <SelectItem value="4">4 Teams</SelectItem>
                   </SelectContent>
                 </Select>
+                <Label className="text-xs">Team names and jersey colours</Label>
                 {teamNames.slice(0, parseInt(teamCount)).map((name, i) => (
-                  <Input key={i} value={name}
-                    onChange={e => {
-                      const updated = [...teamNames];
-                      updated[i] = e.target.value;
-                      setTeamNames(updated);
-                    }}
-                    placeholder={`Team ${i + 1} name`} />
+                  <div key={i} className="flex gap-2">
+                    <Input value={name} className="min-w-0"
+                      onChange={e => {
+                        const updated = [...teamNames];
+                        updated[i] = e.target.value;
+                        setTeamNames(updated);
+                      }}
+                      placeholder={`Team ${i + 1} name`} />
+                    <JerseyPicker value={teamColors[i] || ''} testId={`jersey-new-${i}`}
+                      taken={teamColors.slice(0, parseInt(teamCount)).filter((_, j) => j !== i)}
+                      onChange={v => setTeamColors(c => c.map((x, j) => (j === i ? v : x)))} />
+                  </div>
                 ))}
               </div>
-              <Button className="w-full bg-blue-600 hover:bg-blue-700"
-                onClick={handleCreateTeams} disabled={actionLoading === 'create-teams'}>
-                {actionLoading === 'create-teams' ? 'Creating...' : 'Create Teams'}
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowTeamForm(false)}>Cancel</Button>
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700" data-testid="create-teams-submit"
+                  onClick={handleCreateTeams} disabled={actionLoading === 'create-teams'}>
+                  {actionLoading === 'create-teams' ? 'Creating...' : 'Create Teams'}
+                </Button>
+              </div>
+              </div>)}
             </CardContent>
           </Card>
         )}
@@ -1636,7 +1680,17 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   className="bg-gray-50 rounded-lg p-3 border-2 border-dashed border-gray-200"
                   onDragOver={handleDragOver}
                   onDrop={() => handleDrop(team.id)}>
-                  <h5 className="font-semibold text-sm mb-2">{team.team_name}</h5>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h5 className="font-semibold text-sm flex items-center gap-2">
+                      <JerseySwatch color={team.jersey_color} /> {team.team_name}
+                      {team.jersey_color && !(isAdmin || isModerator) && <span className="text-xs font-normal text-gray-500">({team.jersey_color})</span>}
+                    </h5>
+                    {(isAdmin || isModerator) && (
+                      <JerseyPicker value={team.jersey_color || ''} testId={`jersey-${team.id}`}
+                        taken={game.teams.filter(t => t.id !== team.id).map(t => t.jersey_color || '').filter(Boolean)}
+                        onChange={v => handleAction(`jersey-${team.id}`, () => api.setTeamJersey(game.id, team.id, v))} />
+                    )}
+                  </div>
                   <div className="space-y-1">
                     {getTeamPlayers(team.id).map(player => (
                       <div key={player.id}

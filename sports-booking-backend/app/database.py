@@ -481,6 +481,7 @@ async def init_db():
         "ALTER TABLE games ADD COLUMN quit_penalty_hours INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE game_players ADD COLUMN position TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE game_players ADD COLUMN team_id INTEGER",
+        "ALTER TABLE game_teams ADD COLUMN jersey_color TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE game_players ADD COLUMN payment_confirmed INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN currency TEXT NOT NULL DEFAULT 'Rs'",
         "ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0",

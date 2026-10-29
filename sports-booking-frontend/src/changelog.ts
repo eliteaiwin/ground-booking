@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.24', date: '2026-10-28', changes: [
+    'Create Teams: the game page shows a short "16/16 confirmed – Create Teams" line, and the team options only open after tapping Create Teams',
+    'Each team can pick a jersey colour (Blue, Green, Yellow, Red, White, Black, Blue/Black, Black/White). Two teams can never pick the same colour, and moderators can change it later',
+  ] },
   { version: '1.23', date: '2026-10-28', changes: [
     'Game page: "Send Current Status" is now a button that opens a popup with the message, Share on WhatsApp, Copy and Send as In-App Notification, so the page is shorter',
   ] },

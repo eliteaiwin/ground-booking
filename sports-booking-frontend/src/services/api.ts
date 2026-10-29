@@ -324,8 +324,11 @@ export const api = {
     request(`/api/games/${gameId}/remind-unpaid`, { method: 'POST' }),
 
   // Teams
-  createTeams: (gameId: number, teamNames: string[]) =>
-    request(`/api/games/${gameId}/teams`, { method: 'POST', body: JSON.stringify({ team_names: teamNames }) }),
+  createTeams: (gameId: number, teamNames: string[], jerseyColors: string[] = []) =>
+    request(`/api/games/${gameId}/teams`, { method: 'POST', body: JSON.stringify({ team_names: teamNames, jersey_colors: jerseyColors }) }),
+
+  setTeamJersey: (gameId: number, teamId: number, jerseyColor: string) =>
+    request(`/api/games/${gameId}/teams/${teamId}/jersey`, { method: 'PUT', body: JSON.stringify({ jersey_color: jerseyColor }) }),
 
   movePlayerToTeam: (gameId: number, playerUserId: number, teamId: number | null) =>
     request(`/api/games/${gameId}/teams/move-player`, {
