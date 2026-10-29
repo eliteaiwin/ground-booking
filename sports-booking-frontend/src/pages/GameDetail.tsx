@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Award, Wallet, Trash2, Search, Plus, Copy, X, Check } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -467,6 +467,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [error, setError] = useState('');
   const [votePosition, setVotePosition] = useState('Anywhere');
   const [showEditGame, setShowEditGame] = useState(false);
+  const [confirmCompleted, setConfirmCompleted] = useState<'edit' | 'delete' | null>(null);
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
   const [editReceiverId, setEditReceiverId] = useState('0');
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
@@ -840,13 +841,65 @@ export default function GameDetail({ gameId, onBack }: Props) {
     ? allParticipants.filter(p => pendingPlayedUserIds.includes(p.user_id))
     : game.selected_players;
 
+  const canEditGame = (isModerator || isAdmin) && game.status !== 'cancelled';
+  const canDeleteGame = game.is_archived ? isAdmin : (isAdmin || isModerator || isGroundManagement) && !gameIsOver && (game.status === 'draft' || game.status === 'cancelled');
+  const reveal = (id: string) => setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  const openEditGame = () => {
+    setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
+                setEditReceiverId(game.receiver ? String(game.receiver.id) : '0');
+                setEditQuitPenalty(String(game.quit_penalty_hours || 0));
+                setEditPaymentMode(game.payment_timing === 'before' ? 'prepaid' : 'postpaid');
+                setEditPaymentCollection(game.payment_collection || 'offline');
+                setEditGroundCost(String(game.ground_cost));
+                setEditNoteBefore(game.note_before_players || '');
+                setEditNoteAfter(game.note_after_players || '');
+    setShowEditGame(true);
+    reveal('edit-game');
+  };
+  const openDeleteGame = () => { setShowDeleteConfirm(true); reveal('delete-game'); };
+  const completedAgo = () => {
+    const end = new Date(`${game.game_date}T${game.game_time}`).getTime() + (game.duration_minutes || 90) * 60000;
+    const d = Math.floor((Date.now() - end) / 86400000);
+    return d <= 0 ? 'today' : `${d}d ago`;
+  };
+  const guardCompleted = (what: 'edit' | 'delete') => {
+    if (game.status === 'completed') setConfirmCompleted(what);
+    else if (what === 'edit') openEditGame();
+    else openDeleteGame();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-green-600 text-white">
         <div className="max-w-lg mx-auto px-4 py-3">
-          <button onClick={onBack} className="flex items-center gap-1 text-sm mb-2 hover:underline">
-            <ArrowLeft size={16} /> Back to Games
-          </button>
+          <div className="flex items-center mb-2">
+            <button onClick={onBack} className="flex items-center gap-1 text-sm hover:underline">
+              <ArrowLeft size={16} /> Back to Games
+            </button>
+            <div className="ml-auto flex items-center gap-1">
+              {canEditGame && (
+                <button type="button" onClick={() => guardCompleted('edit')} aria-label="Edit game" title="Edit game" data-testid="hdr-edit"
+                  className="p-1.5 rounded-md hover:bg-white/20"><Pencil size={18} /></button>
+              )}
+              {canDeleteGame && (
+                <button type="button" onClick={() => guardCompleted('delete')} aria-label="Delete game" title="Delete game" data-testid="hdr-delete"
+                  className="p-1.5 rounded-md hover:bg-white/20"><Trash2 size={18} /></button>
+              )}
+            </div>
+          </div>
+          <Dialog open={!!confirmCompleted} onOpenChange={o => !o && setConfirmCompleted(null)}>
+            <DialogContent className="max-w-sm" data-testid="completed-confirm">
+              <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={16} className="text-orange-500" /> Game already completed</DialogTitle></DialogHeader>
+              <p className="text-sm text-gray-600">This game was completed {completedAgo()}. Do you want to {confirmCompleted === 'delete' ? 'delete' : 'modify'} it?</p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setConfirmCompleted(null)}>No</Button>
+                <Button className={confirmCompleted === 'delete' ? 'bg-red-700 hover:bg-red-800' : 'bg-green-600 hover:bg-green-700'}
+                  onClick={() => { const w = confirmCompleted; setConfirmCompleted(null); if (w === 'delete') openDeleteGame(); else openEditGame(); }}>
+                  Yes, {confirmCompleted === 'delete' ? 'delete' : 'modify'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <div className="flex items-center gap-3">
             <SportTile sport={game.sport_type} className="w-12 h-12 ring-2 ring-white/60" />
             <div>
@@ -889,33 +942,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
               </Button>
             )}
           </div>
-        )}
-
-        {/* Player of the Day Honor Display - Prominent on completed games */}
-        {game.status === 'completed' && game.player_of_the_day && (
-          <Card className="border-2 border-yellow-400 bg-gradient-to-br from-yellow-50 via-amber-50 to-orange-50 shadow-lg">
-            <CardContent className="p-5 text-center">
-              <div className="flex justify-center mb-3">
-                <div className="relative">
-                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center text-white text-4xl font-bold shadow-xl ring-4 ring-yellow-300">
-                    {game.player_of_the_day.name.charAt(0)}
-                  </div>
-                  <div className="absolute -top-2 -right-2 bg-yellow-500 rounded-full p-1.5 shadow-md">
-                    <Award size={18} className="text-white" />
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Badge className="bg-yellow-500 text-white px-3 py-1 text-xs">Player of the Day</Badge>
-                <h2 className="text-xl font-bold text-yellow-800 mt-2">{game.player_of_the_day.name}</h2>
-                <div className="flex items-center justify-center gap-1 text-yellow-600">
-                  <Trophy size={16} />
-                  <span className="text-sm font-medium">{game.player_of_the_day.votes} {game.player_of_the_day.votes === 1 ? 'vote' : 'votes'}</span>
-                </div>
-                <p className="text-xs text-yellow-600/70 mt-1">Honored as the best player of this game</p>
-              </div>
-            </CardContent>
-          </Card>
         )}
 
         {/* Game Score Display - for completed soccer games */}
@@ -1229,25 +1255,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {/* Edit Game - for Admin/Moderator on non-completed games */}
-          {(isModerator || isAdmin) && game.status !== 'cancelled' && (
-            <Card>
+          {canEditGame && showEditGame && (
+            <Card id="edit-game">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-sm font-semibold flex items-center gap-1"><Pencil size={14} /> Edit Game Settings</h4>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    setShowEditGame(!showEditGame);
-                    if (!showEditGame) {
-                      setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
-                      setEditReceiverId(game.receiver ? String(game.receiver.id) : '0');
-                      setEditQuitPenalty(String(game.quit_penalty_hours || 0));
-                      setEditPaymentMode(game.payment_timing === 'before' ? 'prepaid' : 'postpaid');
-                      setEditPaymentCollection(game.payment_collection || 'offline');
-                      setEditGroundCost(String(game.ground_cost));
-                      setEditNoteBefore(game.note_before_players || '');
-                      setEditNoteAfter(game.note_after_players || '');
-                    }
-                  }}>
-                    {showEditGame ? 'Cancel' : 'Edit'}
+                  <Button size="sm" variant="outline" onClick={() => setShowEditGame(false)}>
+                    Cancel
                   </Button>
                 </div>
                 {showEditGame && (
@@ -1412,17 +1426,10 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {/* Delete Game - archived games: Admin only; otherwise Admin/Moderator/Ground Management on upcoming draft or cancelled games */}
-          {(game.is_archived ? isAdmin : (isAdmin || isModerator || isGroundManagement) && !gameIsOver && (game.status === 'draft' || game.status === 'cancelled')) && (
+          {canDeleteGame && (
             <>
-              <Button variant="outline" className="w-full border-red-700 text-red-700 hover:bg-red-50"
-                disabled={actionLoading === 'delete'}
-                onClick={() => setShowDeleteConfirm(true)}>
-                <Trash2 size={16} className="mr-2" />
-                Delete Game
-              </Button>
-
               {showDeleteConfirm && (
-                <Card className="border-red-300 bg-red-50">
+                <Card id="delete-game" className="border-red-300 bg-red-50">
                   <CardContent className="p-4 space-y-3">
                     <h4 className="font-semibold text-red-800 flex items-center gap-2">
                       <Trash2 size={16} /> Delete Game Permanently
@@ -1890,7 +1897,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div><p className="text-2xl font-bold text-gray-800">{game.payment_summary.total}</p><p className="text-xs text-gray-500">Total Players</p></div>
                 <div><p className="text-2xl font-bold text-green-600">{game.payment_summary.paid}</p><p className="text-xs text-gray-500">Paid</p></div>
-                <div><p className="text-2xl font-bold text-red-600">{game.payment_summary.pending}</p><p className="text-xs text-gray-500">Pending</p></div>
+                <div><p className={`text-2xl font-bold ${game.payment_summary.pending > 0 ? 'text-red-600' : 'text-gray-400'}`}>{game.payment_summary.pending}</p><p className="text-xs text-gray-500">Pending</p></div>
               </div>
 
               {unpaidPlayers.length > 0 && (isModerator || isAdmin || game.is_receiver) && (
@@ -2294,39 +2301,32 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-        {game.status === 'completed' && !potdVotingOpen && isSelectedPlayer && !isReadOnly && (
-          <Card className="border-gray-200 bg-gray-50">
-            <CardContent className="p-4 text-center text-sm text-gray-500">
-              <Clock size={16} className="inline mr-1" /> Player of the Day nominations have closed
-            </CardContent>
-          </Card>
-        )}
-
         {game.status === 'completed' && potdResults.length > 0 && (
           <Card className="border-yellow-200">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2"><Trophy size={16} className="text-yellow-500" /> Player of the Day Rankings</CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-0">
-              {potdResults.map((r, idx) => (
-                <div key={r.player_id} className={`flex items-center gap-2 mb-2 p-2 rounded ${idx === 0 ? 'bg-yellow-50 border border-yellow-200' : ''}`}>
-                  {idx === 0 ? <Trophy size={20} className="text-yellow-500" /> :
-                   idx === 1 ? <span className="w-5 h-5 text-center text-sm text-gray-500 font-bold">2</span> :
-                   idx === 2 ? <span className="w-5 h-5 text-center text-sm text-gray-500 font-bold">3</span> :
-                   <span className="w-5 h-5 text-center text-xs text-gray-400">{idx + 1}</span>}
-                  <div className="flex-1">
-                    <span className={`${idx === 0 ? 'font-bold text-yellow-700' : 'text-gray-600'}`}>{r.name}</span>
-                    <div className="text-xs text-gray-400">
-                      {r.first_pref > 0 && <span className="mr-2">1st: {r.first_pref}</span>}
-                      {r.second_pref > 0 && <span className="mr-2">2nd: {r.second_pref}</span>}
-                      {r.third_pref > 0 && <span>3rd: {r.third_pref}</span>}
+              {potdResults.map((r, idx) => {
+                const p = [...game.selected_players, ...game.waiting_list].find(x => x.user_id === r.player_id);
+                return (
+                  <div key={r.player_id} className="flex items-center gap-2 mb-2 p-2 rounded" data-testid="potd-rank">
+                    <span className="w-6 text-center text-lg leading-none">{['\u{1F947}', '\u{1F948}', '\u{1F949}'][idx] ?? <span className="text-xs text-gray-400">{idx + 1}</span>}</span>
+                    <button type="button" onClick={() => setProfileUserId(r.player_id)} aria-label={`Open ${r.name}'s profile`} data-testid="potd-avatar">
+                      <PlayerAvatar photo={p?.photo} gender={p?.gender} size="md" alt={r.name} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-gray-800">{r.name}</span>
+                      <div className="text-xs text-gray-400">
+                        {r.first_pref > 0 && <span className="mr-2">1st: {r.first_pref}</span>}
+                        {r.second_pref > 0 && <span className="mr-2">2nd: {r.second_pref}</span>}
+                        {r.third_pref > 0 && <span>3rd: {r.third_pref}</span>}
+                      </div>
                     </div>
+                    <Badge variant="outline">{r.points} {r.points === 1 ? 'pt' : 'pts'}</Badge>
                   </div>
-                  <Badge variant={idx === 0 ? 'default' : 'outline'} className={idx === 0 ? 'bg-yellow-500' : ''}>
-                    {r.points} {r.points === 1 ? 'pt' : 'pts'}
-                  </Badge>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         )}

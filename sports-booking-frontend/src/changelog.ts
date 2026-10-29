@@ -2,6 +2,13 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.37', date: '2026-10-29', changes: [
+    'Game page: Edit and Delete are icons at the top right; on a completed game they ask "completed 2d ago, modify/delete it?" first',
+    'Player of the Day: big card at the top removed; Rankings show gold, silver and bronze medals with profile photos (tap for profile)',
+    '"Player of the Day nominations have closed" line removed',
+    'Discussion is now two collapsed rows, Chat and Photos, with an unread count when there is something new',
+    'Pending amount of 0 shows in grey instead of red',
+  ] },
   { version: '1.36', date: '2026-10-29', changes: [
     'A moderator who owes for a game now sees just one Mark as paid on their own name',
     'New app icon: the same turf with a football, bat and ball, shuttle and basketball',

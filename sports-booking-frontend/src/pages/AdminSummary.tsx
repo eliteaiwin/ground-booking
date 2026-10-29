@@ -289,8 +289,8 @@ export default function AdminSummary({ onBack }: Props) {
               <Card className="border-red-200 bg-red-50">
                 <CardContent className="p-4 text-center">
                   <AlertTriangle size={20} className="mx-auto text-red-600 mb-1" />
-                  <p className="text-2xl font-bold text-red-700">{totalPendingAmount}</p>
-                  <p className="text-xs text-red-600">Total Pending</p>
+                  <p className={`text-2xl font-bold ${/[1-9]/.test(String(totalPendingAmount)) ? 'text-red-700' : 'text-gray-400'}`}>{totalPendingAmount}</p>
+                  <p className={`text-xs ${/[1-9]/.test(String(totalPendingAmount)) ? 'text-red-600' : 'text-gray-400'}`}>Total Pending</p>
                 </CardContent>
               </Card>
             </div>

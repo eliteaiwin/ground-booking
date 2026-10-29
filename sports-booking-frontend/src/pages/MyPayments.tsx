@@ -61,8 +61,8 @@ export default function MyPayments({ onBack }: Props) {
           </Card>
           <Card className="border-red-200 bg-red-50">
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold text-red-700">{totalPending}</p>
-              <p className="text-xs text-red-600">Pending</p>
+              <p className={`text-2xl font-bold ${/[1-9]/.test(String(totalPending)) ? 'text-red-700' : 'text-gray-400'}`}>{totalPending}</p>
+              <p className={`text-xs ${/[1-9]/.test(String(totalPending)) ? 'text-red-600' : 'text-gray-400'}`}>Pending</p>
             </CardContent>
           </Card>
         </div>

@@ -170,6 +170,11 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'media'>('chat');
+  const [openRow, setOpenRow] = useState<'chat' | 'media' | null>(null);
+  const seenKey = `disc-seen-${gameId}`;
+  const [seen, setSeen] = useState<{ chat: number; media: number }>(() => {
+    try { return { chat: 0, media: 0, ...JSON.parse(localStorage.getItem(seenKey) || '{}') }; } catch { return { chat: 0, media: 0 }; }
+  });
   const [showUpload, setShowUpload] = useState(false);
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -337,18 +342,56 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
     }
   };
 
+  const allMsgs = messages.flatMap(m => [m, ...(m.replies || [])]);
+  const maxChat = Math.max(0, ...allMsgs.map(m => m.id));
+  const maxMedia = Math.max(0, ...media.map(m => m.id));
+  const unreadChat = allMsgs.filter(m => m.id > seen.chat && m.user_id !== user?.id).length;
+  const unreadMedia = media.filter(m => m.id > seen.media && m.user_id !== user?.id).length;
+  const rows = !!gameId && !fullscreen;
+  const showChat = rows ? openRow === 'chat' : activeTab === 'chat';
+  const showMedia = rows ? openRow === 'media' : activeTab === 'media';
+  const viewing = fullscreen ? activeTab : openRow;
+
+  useEffect(() => {
+    if (!gameId || !viewing) return;
+    const max = viewing === 'chat' ? maxChat : maxMedia;
+    if (max > seen[viewing]) {
+      const next = { ...seen, [viewing]: max };
+      setSeen(next);
+      localStorage.setItem(seenKey, JSON.stringify(next));
+    }
+  }, [gameId, viewing, maxChat, maxMedia, seen, seenKey]);
+
   if (loading) {
     return <div className="text-center text-gray-400 py-8 text-sm">Loading discussion...</div>;
   }
+
+  const rowButton = (tab: 'chat' | 'media', label: string, unread: number) => (
+    <div className={`flex items-center gap-2 ${tab === 'media' ? 'border-t pt-2 mt-1' : ''} ${openRow === tab ? 'mb-2' : ''}`}>
+      <button type="button" data-testid={`row-${tab}`} onClick={() => setOpenRow(openRow === tab ? null : tab)}
+        className="flex-1 flex items-center gap-2 py-1.5 text-sm font-semibold text-gray-800 text-left">
+        {tab === 'chat' ? <MessageCircle size={16} className="text-blue-600" /> : <Image size={16} className="text-blue-600" />}
+        {label}
+        {unread > 0 && <span className="text-xs font-semibold text-white bg-blue-600 rounded-full px-1.5 min-w-5 text-center" data-testid={`unread-${tab}`}>{unread}</span>}
+        <span className="ml-auto text-gray-400">{openRow === tab ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
+      </button>
+      {openRow === tab && (
+        <button type="button" onClick={() => { setActiveTab(tab); setFullscreen(true); }} data-testid="discussion-fullscreen"
+          className="p-1 rounded hover:bg-gray-100 text-gray-500" aria-label="Full screen">
+          <Maximize2 size={16} />
+        </button>
+      )}
+    </div>
+  );
 
   const card = (
     <Card className={fullscreen ? 'fixed inset-0 z-50 rounded-none flex flex-col overflow-hidden' : ''} data-testid="discussion">
       {fullscreen ? (
         <div className="flex items-center gap-1 px-2 py-2 border-b shrink-0" data-testid="fullscreen-header">
-          <button type="button" onClick={() => setFullscreen(false)} className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">
+          <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">
             <ArrowLeft size={18} />
           </button>
-          <span className="font-semibold text-base truncate">{activeTab === 'media' ? 'Photos & Videos' : 'Discussion'}</span>
+          <span className="font-semibold text-base truncate">{activeTab === 'media' ? 'Photos' : 'Chat'}</span>
           <div className="ml-auto flex items-center">
             <button type="button" onClick={() => setActiveTab('chat')} aria-label="Chat" data-testid="fs-chat"
               className={`p-2 rounded ${activeTab === 'chat' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}>
@@ -360,7 +403,7 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
                 <Image size={18} />
               </button>
             )}
-            <button type="button" onClick={() => setFullscreen(false)} className="p-2 rounded text-gray-500 hover:bg-gray-100" aria-label="Smaller view" data-testid="discussion-fullscreen">
+            <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 rounded text-gray-500 hover:bg-gray-100" aria-label="Smaller view" data-testid="discussion-fullscreen">
               <Minimize2 size={18} />
             </button>
             <button type="button" onClick={() => setFullscreen(false)} className="p-2 rounded text-gray-500 hover:bg-gray-100" aria-label="Close">
@@ -368,7 +411,7 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
             </button>
           </div>
         </div>
-      ) : (
+      ) : rows ? null : (
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
             <MessageCircle size={18} className="text-blue-600" />
@@ -380,27 +423,11 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
           </CardTitle>
         </CardHeader>
       )}
-      <CardContent className={fullscreen ? 'p-3 flex-1 flex flex-col min-h-0 overflow-y-auto' : 'p-3 pt-0'}>
-        {/* Tabs: Chat | Media (only for game discussions); icons in the header when full screen */}
-        {gameId && !fullscreen && (
-          <div className="flex gap-1 mb-3">
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === 'chat' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              <MessageCircle size={12} className="inline mr-1" /> Chat
-            </button>
-            <button
-              onClick={() => setActiveTab('media')}
-              className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${activeTab === 'media' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              <Image size={12} className="inline mr-1" /> Photos & Videos
-            </button>
-          </div>
-        )}
+      <CardContent className={fullscreen ? 'p-3 flex-1 flex flex-col min-h-0 overflow-y-auto' : rows ? 'p-3' : 'p-3 pt-0'}>
+        {rows && rowButton('chat', 'Chat', unreadChat)}
 
         {/* Chat Tab */}
-        {activeTab === 'chat' && (
+        {showChat && (
           <div className={fullscreen ? 'flex-1 flex flex-col min-h-0' : ''}>
             {/* Messages */}
             <div className={`${fullscreen ? 'flex-1 min-h-0' : 'max-h-80'} overflow-y-auto space-y-2 mb-3 pr-1`}>
@@ -502,8 +529,10 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
           </div>
         )}
 
+        {rows && rowButton('media', 'Photos', unreadMedia)}
+
         {/* Media Tab */}
-        {activeTab === 'media' && gameId && (
+        {showMedia && gameId && (
           <div>
             {/* Upload button */}
             {canUploadMedia ? (
