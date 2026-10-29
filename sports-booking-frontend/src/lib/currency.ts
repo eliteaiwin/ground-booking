@@ -33,3 +33,9 @@ export const sumByCurrency = <T,>(items: T[], currency: (i: T) => string | undef
   }
   return [...totals.entries()];
 };
+
+export function shareChangeText(groundCost: number, fromCount: number, toCount: number, currency: string): string {
+  const share = (n: number) => formatMoney((n > 0 ? Math.ceil(groundCost / n - 0.001) : 0).toFixed(0), currency);
+  const dir = toCount > fromCount ? 'decrease' : 'increase';
+  return `Per player share will ${dir} from ${share(fromCount)} to ${share(toCount)} (${toCount} players).`;
+}

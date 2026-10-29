@@ -24,6 +24,7 @@ interface GameDefaults {
   show_quit_penalty: boolean;
   pay_first_enabled: boolean;
   default_payment_collection?: string;
+  roster_edit_days?: number;
 }
 
 type UserLite = { id: number; name: string; phone: string };
@@ -87,6 +88,7 @@ function GameDefaultsCard() {
   const [defaults, setDefaults] = useState<GameDefaults | null>(null);
   const [potd, setPotd] = useState('1440');
   const [quit, setQuit] = useState('0');
+  const [rosterDays, setRosterDays] = useState('3');
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<{ id: number; name: string; phone: string }[]>([]);
   const [message, setMessage] = useState('');
@@ -96,6 +98,7 @@ function GameDefaultsCard() {
       setDefaults(d);
       setPotd(String(d.default_potd_delay_minutes));
       setQuit(String(d.default_quit_penalty_hours));
+      setRosterDays(String(d.roster_edit_days ?? 3));
     }).catch(() => {});
   }, []);
 
@@ -160,6 +163,12 @@ function GameDefaultsCard() {
           </div>
         </div>
         <p className="text-xs text-gray-500 -mt-2">Default 1440 minutes (24 hours) after the game ends, then the winner is announced.</p>
+        <div className="space-y-2 max-w-[50%]">
+          <Label>Add/remove players after the game (days)</Label>
+          <Input type="number" min="1" max="365" value={rosterDays} onChange={e => setRosterDays(e.target.value)}
+            data-testid="roster-edit-days" onBlur={() => save({ roster_edit_days: parseInt(rosterDays) || 3 })} />
+          <p className="text-xs text-gray-500">After this, players of a completed game are locked.</p>
+        </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="rounded border-gray-300" checked={defaults.allow_position_selection}
             onChange={e => save({ allow_position_selection: e.target.checked })} data-testid="allow-positions" />

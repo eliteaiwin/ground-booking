@@ -22,7 +22,7 @@ import EditCompletedGameDialog from './EditCompletedGameDialog';
 import { Player, formatPlayerDisplay } from '@/lib/player';
 import { pitchLabel } from '@/lib/grounds';
 import PlayerProfileDialog from '@/components/PlayerProfileDialog';
-import { formatMoney, currencySymbol } from '@/lib/currency';
+import { formatMoney, shareChangeText, currencySymbol } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { InviteDialog } from '@/components/InviteDialog';
@@ -155,7 +155,15 @@ function timeToStart(date: string, time: string): string {
 }
 
 // Red x removes the player; grey x means this user can't remove them.
-function RemovePlayerButton({ allowed, onRemove }: { allowed: boolean; onRemove: () => void }) {
+function RemovePlayerButton({ allowed, paid, onRemove }: { allowed: boolean; paid?: boolean; onRemove: () => void }) {
+  if (allowed && paid) {
+    return (
+      <button type="button" aria-label="Already paid" title="Already paid – can't remove" data-testid="remove-player-paid"
+        onClick={() => window.alert("This player has already paid, so their name can't be removed.")} className="text-gray-300">
+        <X size={15} />
+      </button>
+    );
+  }
   return allowed ? (
     <button type="button" aria-label="Remove player" data-testid="remove-player" onClick={onRemove} className="text-red-500 hover:text-red-700">
       <X size={15} />
@@ -320,6 +328,8 @@ interface Game {
   duration_minutes: number;
   is_archived: boolean;
   is_past?: boolean;
+  roster_locked?: boolean;
+  roster_edit_days?: number;
   allow_position_selection?: boolean;
   ground_map_url?: string;
   show_quit_penalty?: boolean;
@@ -746,6 +756,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const positions = SPORT_POSITIONS[game.sport_type] || [];
 
   const paymentByUser = new Map((game.payment_details || []).map(p => [p.user_id, p]));
+  const hasPaid = (uid?: number) => uid != null && (paymentByUser.get(uid)?.paid_amount || 0) > 0;
+  const paidIds = new Set((game.payment_details || []).filter(p => (p.paid_amount || 0) > 0).map(p => p.user_id));
+  const iPaid = hasPaid(user?.id);
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.pending > 0);
   const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
@@ -828,8 +841,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </span>
             {['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
               <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-300 text-red-600 hover:bg-red-50"
-                onClick={handleQuitClick} disabled={actionLoading === 'quit'} data-testid="unjoin">
-                {actionLoading === 'quit' ? 'Leaving...' : 'Unjoin'}
+                onClick={handleQuitClick} disabled={actionLoading === 'quit' || iPaid} data-testid="unjoin"
+                title={iPaid ? "You've already paid, so you can't unjoin" : undefined}>
+                {actionLoading === 'quit' ? 'Leaving...' : iPaid ? 'Paid – can’t unjoin' : 'Unjoin'}
               </Button>
             )}
           </div>
@@ -907,6 +921,13 @@ export default function GameDetail({ gameId, onBack }: Props) {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {(isAdmin || isModerator) && game.status === 'completed' && !game.game_score && (
+          <Button variant="outline" className="w-full border-green-700 text-green-700 hover:bg-green-50"
+            data-testid="edit-who-played" onClick={() => setShowEditResultDialog(true)}>
+            <Pencil size={16} className="mr-2" /> Edit who played
+          </Button>
         )}
 
         {firstTimeAlert && (
@@ -1489,6 +1510,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 onComplete={handlePlayersSelected}
                 selectedPlayers={game.selected_players}
                 waitingList={game.waiting_list}
+                paidIds={paidIds}
                 maxPlayers={game.max_players}
                 groundCost={game.ground_cost}
                 currency={currency}
@@ -1507,6 +1529,8 @@ export default function GameDetail({ gameId, onBack }: Props) {
             goalScorers={game.goal_scorers}
             groundCost={game.ground_cost}
             currency={currency}
+            paidIds={paidIds}
+            rosterLockedDays={game.roster_locked ? (game.roster_edit_days ?? 3) : undefined}
             loading={actionLoading === 'edit-result'}
           />
 
@@ -1548,7 +1572,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <div className="space-y-2 text-sm">
                   {[
                     [`${game.payee?.name || 'Payment receiver'} (ground share)`, payPreview.base],
-                    [`Elizoph Technologies (app fee ${gameFees.commission_percent}%${payPreview.app_fee_gst > 0 ? ' + GST' : ''})`, payPreview.app_fee + payPreview.app_fee_gst],
+                    [`App Fee (${gameFees.commission_percent}%${payPreview.app_fee_gst > 0 ? ' + GST' : ''})`, payPreview.app_fee + payPreview.app_fee_gst],
                     [`Cashfree (gateway fee ${gameFees.fee_percent}%${gameFees.gst_percent > 0 ? ` + ${gameFees.gst_percent}% GST` : ''})`, payPreview.gateway_fee],
                   ].map(([label, amt]) => (
                     <div key={label as string} className="flex justify-between gap-2">
@@ -1841,7 +1865,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   {game.note_before_players}
                 </div>
               )}
-              {(isAdmin || isModerator || isGroundManagement) && game.status !== 'cancelled' && (
+              {(isAdmin || isModerator || isGroundManagement) && game.status === 'completed' && game.roster_locked && (
+                <p className="text-xs text-gray-500" data-testid="roster-locked">
+                  Players can't be added or removed {game.roster_edit_days ?? 3} days after the game.
+                </p>
+              )}
+              {(isAdmin || isModerator || isGroundManagement) && game.status !== 'cancelled' && !(game.status === 'completed' && game.roster_locked) && (
                 <div className="space-y-2">
                   <Label className="text-xs text-gray-500 flex items-center gap-1"><Search size={12} /> {game.status === 'completed' ? 'Add a player who played (cost is re-split)' : 'Add player by name or phone'}</Label>
                   <div className="relative">
@@ -1867,6 +1896,10 @@ export default function GameDetail({ gameId, onBack }: Props) {
                             type="button"
                             disabled={addingPlayerId === u.id}
                             onClick={async () => {
+                              if (game.status === 'completed') {
+                                const n = game.selected_players.length;
+                                if (!window.confirm(`Add ${u.name}? ${shareChangeText(game.ground_cost, n, n + 1, currency)} Continue?`)) return;
+                              }
                               setAddingPlayerId(u.id);
                               try {
                                 await api.nominatePlayer(game.id, u.id);
@@ -1969,7 +2002,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         {showPaymentDetails && player.payment_confirmed === 1 && (
                           <Badge className="bg-green-100 text-green-700 text-xs">Paid</Badge>
                         )}
-                        {removableStage && <RemovePlayerButton allowed={canRemove(player)} onRemove={() => removePlayer(player)} />}
+                        {removableStage && <RemovePlayerButton allowed={canRemove(player)} paid={hasPaid(player.user_id)} onRemove={() => removePlayer(player)} />}
 
 
                         {/* Fallback: non-completed games still show old mark paid button */}
@@ -2093,7 +2126,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         + Played
                       </Button>
                     )}
-                    {removableStage && <RemovePlayerButton allowed={canRemove(player)} onRemove={() => removePlayer(player)} />}
+                    {removableStage && <RemovePlayerButton allowed={canRemove(player)} paid={hasPaid(player.user_id)} onRemove={() => removePlayer(player)} />}
                   </div>
                 ))}
               </div>

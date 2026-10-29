@@ -294,6 +294,19 @@ def _per_person_amount(ground_cost: float, player_count: int, max_players: int) 
     return round(ground_cost / denominator, 2)
 
 
+async def _paid_player_names(db: aiosqlite.Connection, game_id: int, user_ids) -> list:
+    """Names of the given players who have already paid something for this game."""
+    ids = list(user_ids)
+    if not ids:
+        return []
+    rows = await (await db.execute(
+        "SELECT u.name FROM payments p JOIN users u ON u.id = p.user_id "
+        f"WHERE p.game_id = ? AND p.user_id IN ({','.join('?' * len(ids))}) AND COALESCE(p.paid_amount, 0) > 0",
+        (game_id, *ids)
+    )).fetchall()
+    return [r["name"] for r in rows]
+
+
 async def _recalc_game_cost(db: aiosqlite.Connection, game_id: int, game: Optional[aiosqlite.Row] = None):
     """Recompute cost_per_person and update payment records for selected players."""
     if game is None:
@@ -662,6 +675,18 @@ def _game_has_ended(game) -> bool:
     return end is not None and _local_now() >= end
 
 
+async def _roster_locked(db: aiosqlite.Connection, game) -> bool:
+    """Players of a completed game can only be added/removed for roster_edit_days after it ends."""
+    if game["status"] != "completed":
+        return False
+    days = int(await get_app_setting(db, "roster_edit_days", "3") or 3)
+    end = _game_end(game)
+    return end is not None and _local_now() >= end + timedelta(days=days)
+
+
+ROSTER_LOCKED_DETAIL = "Players can't be added or removed any more: the game ended more than {} days ago"
+
+
 def _game_is_archived(game) -> bool:
     """Completed/cancelled games archive as soon as their end time passes, any other game 24 hours after it ends."""
     end = _game_end(game)
@@ -1005,6 +1030,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "pay_first_enabled": (await get_app_setting(db, "pay_first_enabled", "false")) == "true",
         "is_archived": is_archived,
         "is_past": _game_has_ended(game),
+        "roster_locked": await _roster_locked(db, game),
+        "roster_edit_days": int(await get_app_setting(db, "roster_edit_days", "3") or 3),
         "created_by": game["created_by"],
         "created_by_name": creator["name"] if creator else None,
         "created_at": game["created_at"],
@@ -1387,6 +1414,8 @@ async def _add_to_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, 
     """A player who turned up (late or from the waiting list) is added as played, even beyond max players;
     the same ground cost is re-split among everyone who played."""
     game_id = game["id"]
+    if await _roster_locked(db, game):
+        raise HTTPException(status_code=400, detail=ROSTER_LOCKED_DETAIL.format(await get_app_setting(db, "roster_edit_days", "3")))
     if not await (await db.execute("SELECT 1 FROM users WHERE id = ?", (player_id,))).fetchone():
         raise HTTPException(status_code=404, detail="User not found")
     existing = await (await db.execute(
@@ -1726,6 +1755,8 @@ async def quit_game(
     player = await cursor.fetchone()
     if not player:
         raise HTTPException(status_code=400, detail="Not in this game")
+    if await _paid_player_names(db, game_id, [user_id]):
+        raise HTTPException(status_code=400, detail="This player has already paid for this game, so their name can't be removed")
 
     was_selected = player["status"] == "selected"
     old_team_id = player["team_id"]
@@ -2158,6 +2189,11 @@ async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameReques
         raise HTTPException(status_code=400, detail="At least one player must have played to complete the game")
 
     played_set = set(played_user_ids)
+    paid_dropped = await _paid_player_names(
+        db, game_id, [p["user_id"] for p in all_players if p["status"] == "selected" and p["user_id"] not in played_set]
+    )
+    if paid_dropped:
+        raise HTTPException(status_code=400, detail=f"Already paid, so they must stay as played: {', '.join(paid_dropped)}")
 
     # Mark played players as selected and unplayed as waiting/not played.
     # payment_confirmed is reset only for unplayed players.
@@ -2354,8 +2390,17 @@ async def edit_completed_game_result(
                     (game_id, gs.user_id, max(0, gs.goals), max(0, gs.own_goals))
                 )
 
+    current_played = {r["user_id"] for r in await (await db.execute(
+        "SELECT user_id FROM game_players WHERE game_id = ? AND played = 1", (game_id,)
+    )).fetchall()}
+    if set(played_user_ids) != current_played and await _roster_locked(db, game):
+        raise HTTPException(status_code=400, detail=ROSTER_LOCKED_DETAIL.format(await get_app_setting(db, "roster_edit_days", "3")))
+
     # Remove pending payment obligations for players who did not play.
     unplayed_ids = [uid for uid in all_player_ids if uid not in played_user_ids]
+    paid_dropped = await _paid_player_names(db, game_id, unplayed_ids)
+    if paid_dropped:
+        raise HTTPException(status_code=400, detail=f"Already paid, so they must stay as played: {', '.join(paid_dropped)}")
     if unplayed_ids:
         placeholders = ",".join("?" * len(unplayed_ids))
         await db.execute(

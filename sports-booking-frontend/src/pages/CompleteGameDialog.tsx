@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Users } from 'lucide-react';
 import { Player, formatPlayerDisplay } from '@/lib/player';
-import { formatMoney } from '@/lib/currency';
+import { formatMoney, shareChangeText } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   onComplete: (playedUserIds: number[]) => void;
   selectedPlayers: Player[];
   waitingList: Player[];
+  paidIds?: Set<number>;
   maxPlayers: number;
   groundCost: number;
   currency: string;
@@ -28,6 +29,7 @@ export default function CompleteGameDialog({
   onComplete,
   selectedPlayers,
   waitingList,
+  paidIds,
   maxPlayers,
   groundCost,
   currency,
@@ -59,10 +61,11 @@ export default function CompleteGameDialog({
   const allPlayers = [...selectedPlayers, ...waitingList];
   const allIds = new Set(allPlayers.map((p) => p.user_id));
 
+  const isLocked = (uid: number) => !!paidIds?.has(uid) && selectedPlayers.some(p => p.user_id === uid);
   const isAllSelected = allIds.size > 0 && selectedIds.size === allIds.size;
   const toggleAll = () => {
     if (isAllSelected) {
-      setSelectedIds(new Set());
+      setSelectedIds(new Set(selectedPlayers.filter(p => isLocked(p.user_id)).map(p => p.user_id)));
     } else {
       setSelectedIds(new Set(allIds));
     }
@@ -81,11 +84,13 @@ export default function CompleteGameDialog({
       <Checkbox
         id={`player-${player.user_id}`}
         checked={selectedIds.has(player.user_id)}
+        disabled={isLocked(player.user_id)}
         onCheckedChange={() => toggleId(player.user_id)}
       />
       <Label htmlFor={`player-${player.user_id}`} className="flex-1 text-sm font-normal cursor-pointer">
         {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}
         {player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+        {isLocked(player.user_id) && <span className="text-xs text-green-600"> · paid</span>}
       </Label>
     </div>
   );
@@ -154,6 +159,11 @@ export default function CompleteGameDialog({
               {formatMoney(perPerson.toFixed(0), currency)}
             </span>
           </div>
+          {selectedIds.size > 0 && selectedPlayers.length > 0 && selectedIds.size !== selectedPlayers.length && (
+            <p className="text-xs text-amber-700" data-testid="share-change-warning">
+              {shareChangeText(groundCost, selectedPlayers.length, selectedIds.size, currency)}
+            </p>
+          )}
         </div>
 
         <DialogFooter className="mt-4 gap-2">

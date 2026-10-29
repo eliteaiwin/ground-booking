@@ -76,6 +76,7 @@ class GameDefaultsRequest(BaseModel):
     show_quit_penalty: Optional[bool] = None
     pay_first_enabled: Optional[bool] = None
     default_payment_collection: Optional[str] = None
+    roster_edit_days: Optional[int] = None
 
 
 async def game_defaults(db: aiosqlite.Connection) -> dict:
@@ -102,6 +103,7 @@ async def game_defaults(db: aiosqlite.Connection) -> dict:
         "show_quit_penalty": (await get_app_setting(db, "show_quit_penalty", "false")) == "true",
         "pay_first_enabled": (await get_app_setting(db, "pay_first_enabled", "false")) == "true",
         "default_payment_collection": (await get_app_setting(db, "default_payment_collection", "offline")) or "offline",
+        "roster_edit_days": int(await get_app_setting(db, "roster_edit_days", "3") or 3),
     }
 
 
@@ -140,6 +142,10 @@ async def update_game_defaults(
         if req.default_payment_collection not in ("offline", "app"):
             raise HTTPException(status_code=400, detail="default_payment_collection must be 'offline' or 'app'")
         await set_app_setting(db, "default_payment_collection", req.default_payment_collection)
+    if req.roster_edit_days is not None:
+        if not 1 <= req.roster_edit_days <= 365:
+            raise HTTPException(status_code=400, detail="Days to edit players must be 1-365")
+        await set_app_setting(db, "roster_edit_days", str(req.roster_edit_days))
     return await game_defaults(db)
 
 

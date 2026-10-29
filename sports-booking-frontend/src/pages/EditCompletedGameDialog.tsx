@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Trophy, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Player, formatPlayerDisplay } from '@/lib/player';
-import { formatMoney } from '@/lib/currency';
+import { formatMoney, shareChangeText } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
 
 interface Team {
@@ -44,6 +44,8 @@ interface Props {
   goalScorers: GoalScorer[];
   groundCost: number;
   currency: string;
+  paidIds?: Set<number>;
+  rosterLockedDays?: number;
   loading?: boolean;
 }
 
@@ -59,6 +61,8 @@ export default function EditCompletedGameDialog({
   goalScorers,
   groundCost,
   currency,
+  paidIds,
+  rosterLockedDays,
   loading,
 }: Props) {
   const [step, setStep] = useState<Step>('players');
@@ -96,6 +100,11 @@ export default function EditCompletedGameDialog({
 
   const playedPlayers = useMemo(() => allPlayers.filter(p => playedIds.has(p.user_id)), [allPlayers, playedIds]);
 
+  const originalPlayed = useMemo(() => allPlayers.filter(p => p.played).map(p => p.user_id), [allPlayers]);
+  const isLocked = (uid: number) => rosterLockedDays != null || (!!paidIds?.has(uid) && originalPlayed.includes(uid));
+  const countChanged = playedIds.size > 0 && playedIds.size !== originalPlayed.length;
+  const shareWarning = countChanged ? shareChangeText(groundCost, originalPlayed.length, playedIds.size, currency) : '';
+
   const togglePlayed = (userId: number) => {
     setPlayedIds(prev => {
       const next = new Set(prev);
@@ -106,7 +115,8 @@ export default function EditCompletedGameDialog({
   };
 
   const toggleAll = () => {
-    if (playedIds.size === allPlayers.length) setPlayedIds(new Set());
+    if (rosterLockedDays != null) return;
+    if (playedIds.size === allPlayers.length) setPlayedIds(new Set(originalPlayed.filter(isLocked)));
     else setPlayedIds(new Set(allPlayers.map(p => p.user_id)));
   };
 
@@ -163,6 +173,7 @@ export default function EditCompletedGameDialog({
   };
 
   const handleSave = async () => {
+    if (shareWarning && !window.confirm(`${shareWarning} Continue?`)) return;
     const assignments: Record<number, number | null> = {};
     playedPlayers.forEach(p => { assignments[p.user_id] = teamAssignments[p.user_id] ?? null; });
     const scores = teams.map(t => ({ team_id: t.id, score: teamScores[t.id] || 0 }));
@@ -184,8 +195,11 @@ export default function EditCompletedGameDialog({
   const renderPlayersStep = () => (
     <>
       <DialogDescription>
-        Select the players who actually played. Cost per player will be recalculated.
+        {rosterLockedDays != null
+          ? `Players can't be added or removed ${rosterLockedDays} days after the game. You can still edit teams and score.`
+          : 'Select the players who actually played. Cost per player will be recalculated.'}
       </DialogDescription>
+      {shareWarning && <p className="text-xs text-amber-700 mt-1" data-testid="share-change-warning">{shareWarning}</p>}
       <div className="flex items-center justify-between my-2">
         <Label className="text-sm font-medium text-gray-700">All players</Label>
         <button type="button" onClick={toggleAll} className="text-xs text-green-600 hover:underline">
@@ -199,11 +213,13 @@ export default function EditCompletedGameDialog({
               <Checkbox
                 id={`edit-player-${player.user_id}`}
                 checked={playedIds.has(player.user_id)}
+                disabled={isLocked(player.user_id)}
                 onCheckedChange={() => togglePlayed(player.user_id)}
               />
               <Label htmlFor={`edit-player-${player.user_id}`} className="flex-1 text-sm font-normal cursor-pointer">
                 {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}
                 {player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                {!!paidIds?.has(player.user_id) && originalPlayed.includes(player.user_id) && <span className="text-xs text-green-600"> · paid</span>}
               </Label>
             </div>
           ))}
@@ -330,6 +346,7 @@ export default function EditCompletedGameDialog({
           </span>
           <span className="font-bold text-green-700">{formatMoney(perPerson.toFixed(0), currency)}</span>
         </div>
+        {shareWarning && <p className="text-xs text-amber-700">{shareWarning}</p>}
         {hasTeams && (
           <>
             <div className="flex justify-between text-gray-600 pt-2 border-t border-gray-200">

@@ -420,7 +420,7 @@ export const api = {
     default_payee_user_id?: number; default_quit_penalty_hours?: number;
     default_potd_delay_minutes?: number; allow_position_selection?: boolean; show_quit_penalty?: boolean;
     pay_first_enabled?: boolean;
-    default_payment_collection?: string;
+    default_payment_collection?: string; roster_edit_days?: number;
   }) =>
     request('/api/preferences/game-defaults', { method: 'PUT', body: JSON.stringify(data) }),
 
