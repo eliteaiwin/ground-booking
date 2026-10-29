@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.27', date: '2026-10-28', changes: [
+    'Before paying online, a popup shows where the money goes: receiver, Elizoph app fee and Cashfree fee',
+    'Saving your UPI ID in Profile now also sets it up with Cashfree, so online payments reach you',
+    'Online payment is offered only for India (₹) grounds; other grounds settle offline',
+  ] },
   { version: '1.26', date: '2026-10-28', changes: [
     'Refer a friend (profile menu): share a link or QR code to the app on WhatsApp, or copy it',
     'Invite to this game: a link / QR code that opens the game straight away (after login) so friends can nominate themselves',

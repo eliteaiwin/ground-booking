@@ -792,7 +792,17 @@ async def update_profile(
     params.append(user_id)
     await db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
     await db.commit()
-    return {"message": "Profile updated"}
+    result = {"message": "Profile updated"}
+    if req.upi_id and req.upi_id.strip():
+        from .. import cashfree
+        if cashfree.configured():
+            from .gateway_router import sync_payout_vendor
+            try:
+                account = await sync_payout_vendor(db, user_id, req.upi_id.strip())
+                result["payout_status"] = account["status"]
+            except HTTPException as e:
+                result["payout_error"] = e.detail
+    return result
 
 
 class PhoneVerifyConfirm(BaseModel):

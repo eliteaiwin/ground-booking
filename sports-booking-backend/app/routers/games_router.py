@@ -990,7 +990,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "payment_commission_percent": pay_settings["commission_percent"],
         "fee_breakdown": fee_breakdown,
         "base_per_person_amount": base_per_person_amount,
-        "online_payment_ready": pay_settings["enabled"] and cashfree.configured(),
+        "online_payment_ready": pay_settings["enabled"] and cashfree.configured()
+            and await ground_currency(db, game["ground_name"]) == "₹",
         "payment_timing": game["payment_timing"],
         "payment_collection": game["payment_collection"] or "offline",
         "currency": await ground_currency(db, game["ground_name"]),

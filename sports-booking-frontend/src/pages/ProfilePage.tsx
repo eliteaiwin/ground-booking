@@ -90,9 +90,12 @@ export default function ProfilePage({ onBack }: Props) {
   const savePayment = async () => {
     setPaySaving(true); setPayMsg(''); setPayErr('');
     try {
-      await api.updateProfile({ currency, upi_id: upiId.trim() });
+      const r = await api.updateProfile({ currency, upi_id: upiId.trim() }) as { payout_status?: string; payout_error?: string };
       await refreshUser();
-      setPayMsg('Payment details saved.');
+      if (r?.payout_error) setPayErr(`Saved, but online payouts aren't set up: ${r.payout_error}`);
+      setPayMsg(r?.payout_status === 'ACTIVE'
+        ? 'Payment details saved. Online payments will be sent to this UPI.'
+        : r?.payout_status ? 'Payment details saved. Cashfree is verifying this UPI.' : 'Payment details saved.');
     } catch (e) {
       setPayErr(e instanceof Error ? e.message : 'Could not save');
     } finally {

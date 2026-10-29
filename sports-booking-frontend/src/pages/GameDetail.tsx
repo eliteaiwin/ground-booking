@@ -439,6 +439,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
   const [editPaymentCollection, setEditPaymentCollection] = useState('offline');
   const [proofGameOpen, setProofGameOpen] = useState(false);
+  const [payPreview, setPayPreview] = useState<FeeBreakdown | null>(null);
   const [proofUrl, setProofUrl] = useState('');
   const [showStatus, setShowStatus] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -774,8 +775,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const myPaidSoFar = myPayment?.paid_amount || 0;
   const myShare = myPayment?.amount ?? perPerson;
   const dueAmount = (n: number) => (game.payment_collection === 'app' ? computeFeeBreakdown(n, gameFees).total : Math.ceil(n - 0.001));
-  const totalOutstanding = perPerson * game.selected_players.length;
-  const pendingAmount = (game.payment_details || []).reduce((sum, p) => sum + (p.pending > 0 ? dueAmount(p.pending) : 0), 0);
+  const totalOutstanding = game.payment_details?.length
+    ? game.payment_details.reduce((sum, p) => sum + p.amount, 0)
+    : perPerson * game.selected_players.length;
+  const pendingAmount = (game.payment_details || []).reduce((sum, p) => sum + (p.pending > 0 ? Math.ceil(p.pending - 0.001) : 0), 0);
+  const excessAmount = (game.payment_details || []).reduce((sum, p) => sum + ((p.excess || 0) > 0 ? Math.ceil((p.excess || 0) - 0.001) : 0), 0);
   const allParticipants = [...game.selected_players, ...game.waiting_list];
   const playedParticipants = pendingPlayedUserIds
     ? allParticipants.filter(p => pendingPlayedUserIds.includes(p.user_id))
@@ -1524,7 +1528,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <>
                     <div className="mb-2"><FeeBreakdownTable breakdown={myAwaitingFees} fees={gameFees} currency={currency} /></div>
                     <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-first-online"
-                      onClick={() => payOnline(game.id)}
+                      onClick={() => setPayPreview(myAwaitingFees)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
                       {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myAwaitingFees.total.toFixed(0), currency)} online`}
@@ -1536,6 +1540,34 @@ export default function GameDetail({ gameId, onBack }: Props) {
               </CardContent>
             </Card>
           )}
+
+          <Dialog open={!!payPreview} onOpenChange={o => { if (!o) setPayPreview(null); }}>
+            <DialogContent className="max-w-sm" data-testid="pay-preview">
+              <DialogHeader><DialogTitle className="flex items-center gap-2"><Wallet size={16} /> Where your money goes</DialogTitle></DialogHeader>
+              {payPreview && (
+                <div className="space-y-2 text-sm">
+                  {[
+                    [`${game.payee?.name || 'Payment receiver'} (ground share)`, payPreview.base],
+                    [`Elizoph Technologies (app fee ${gameFees.commission_percent}%${payPreview.app_fee_gst > 0 ? ' + GST' : ''})`, payPreview.app_fee + payPreview.app_fee_gst],
+                    [`Cashfree (gateway fee ${gameFees.fee_percent}%${gameFees.gst_percent > 0 ? ` + ${gameFees.gst_percent}% GST` : ''})`, payPreview.gateway_fee],
+                  ].map(([label, amt]) => (
+                    <div key={label as string} className="flex justify-between gap-2">
+                      <span className="text-gray-700">{label}</span>
+                      <span className="whitespace-nowrap">{formatMoney((amt as number).toFixed(2), currency)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-2 font-semibold border-t pt-2">
+                    <span>You pay</span><span>{formatMoney(payPreview.total.toFixed(0), currency)}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">Cashfree sends the ground share straight to {game.payee?.name || 'the receiver'}'s UPI.</p>
+                  <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-continue"
+                    onClick={() => { setPayPreview(null); payOnline(game.id); }}>
+                    Continue to pay {formatMoney(payPreview.total.toFixed(0), currency)}
+                  </Button>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* Payment for current user - PrePaid */}
           {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && (game.payment_timing === 'before' || myPlayerRecord.must_prepay) && (game.status === 'voting_open' || game.status === 'in_progress') && (
@@ -1557,7 +1589,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <>
                     <div className="mb-2"><FeeBreakdownTable breakdown={myFeeBreakdown} fees={gameFees} currency={currency} /></div>
                     <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-online"
-                      onClick={() => payOnline(game.id)}
+                      onClick={() => setPayPreview(myFeeBreakdown)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
                       {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myFeeBreakdown.total.toFixed(0), currency)} online`}
@@ -1590,7 +1622,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <>
                     <div className="mb-2"><FeeBreakdownTable breakdown={myFeeBreakdown} fees={gameFees} currency={currency} /></div>
                     <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-online"
-                      onClick={() => payOnline(game.id)}
+                      onClick={() => setPayPreview(myFeeBreakdown)}
                       disabled={actionLoading === 'pay'}>
                       <Wallet size={16} className="mr-1" />
                       {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myFeeBreakdown.total.toFixed(0), currency)} online`}
@@ -1759,6 +1791,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <p className="text-xs text-gray-500">Pending</p>
                 </div>
               </div>
+              {(excessAmount > 0 || game.payment_collection === 'app') && (
+                <p className="text-xs text-gray-600 -mt-2 mb-3 text-center" data-testid="payment-tracking-note">
+                  {excessAmount > 0 && <span className="text-amber-600 font-medium">Excess to return: {formatMoney(excessAmount, currency)}. </span>}
+                  {game.payment_collection === 'app' && 'Amounts are ground shares; app and gateway fees are extra for online payers.'}
+                </p>
+              )}
               <div className="grid grid-cols-3 gap-4 text-center mb-4">
                 <div><p className="text-2xl font-bold text-gray-800">{game.payment_summary.total}</p><p className="text-xs text-gray-500">Total Players</p></div>
                 <div><p className="text-2xl font-bold text-green-600">{game.payment_summary.paid}</p><p className="text-xs text-gray-500">Paid</p></div>

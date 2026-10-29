@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from .. import cashfree
 from ..auth import get_current_user_id
 from ..database import get_db, get_app_setting
+from ..currency import ground_currency
 from .games_router import online_breakdown, payment_fee_settings, _admit_paid_pay_first_player, PAY_FIRST_STATUS
 
 router = APIRouter(prefix="/api/payments", tags=["payment-gateway"])
@@ -71,45 +72,14 @@ async def gateway_info(
     }
 
 
-@router.get("/payout-account")
-async def get_payout_account(
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    row = await (await db.execute(
-        "SELECT id, payout_upi, payout_name, cf_vendor_id, cf_vendor_status FROM users WHERE id = ?", (user_id,)
-    )).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="User not found")
-    status = await _refresh_vendor_status(db, row)
-    return {
-        "upi_id": row["payout_upi"],
-        "account_holder": row["payout_name"],
-        "status": status,
-        "ready": status == "ACTIVE",
-        "gateway_configured": cashfree.configured(),
-    }
-
-
-@router.put("/payout-account")
-async def save_payout_account(
-    req: PayoutAccountRequest,
-    user_id: int = Depends(get_current_user_id),
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    _require_gateway()
-    upi = req.upi_id.strip()
-    pan = (req.pan or "").strip().upper()
-    if not UPI_RE.match(upi):
-        raise HTTPException(status_code=400, detail="Enter a valid UPI ID, e.g. 98xxxxxx45@okhdfcbank")
-    if pan and not PAN_RE.match(pan):
-        raise HTTPException(status_code=400, detail="Enter a valid PAN, e.g. ABCDE1234F")
+async def sync_payout_vendor(db: aiosqlite.Connection, user_id: int, upi: str, account_holder: str = "", pan: str = "") -> dict:
+    """Create or update the user's Cashfree Easy Split vendor so online payments can be split to their UPI."""
     row = await (await db.execute(
         "SELECT id, name, email, phone, cf_vendor_id FROM users WHERE id = ?", (user_id,)
     )).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    holder = (req.account_holder or "").strip() or (row["name"] or "").strip() or f"User {user_id}"
+    holder = (account_holder or "").strip() or (row["name"] or "").strip() or f"User {user_id}"
     phone = _phone10(row["phone"])
     if not phone:
         raise HTTPException(status_code=400, detail="Add your mobile number to your profile first")
@@ -149,6 +119,42 @@ async def save_payout_account(
     return {"upi_id": upi, "account_holder": holder, "status": status, "ready": status == "ACTIVE", "gateway_configured": True}
 
 
+@router.get("/payout-account")
+async def get_payout_account(
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    row = await (await db.execute(
+        "SELECT id, payout_upi, payout_name, cf_vendor_id, cf_vendor_status FROM users WHERE id = ?", (user_id,)
+    )).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    status = await _refresh_vendor_status(db, row)
+    return {
+        "upi_id": row["payout_upi"],
+        "account_holder": row["payout_name"],
+        "status": status,
+        "ready": status == "ACTIVE",
+        "gateway_configured": cashfree.configured(),
+    }
+
+
+@router.put("/payout-account")
+async def save_payout_account(
+    req: PayoutAccountRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    _require_gateway()
+    upi = req.upi_id.strip()
+    pan = (req.pan or "").strip().upper()
+    if not UPI_RE.match(upi):
+        raise HTTPException(status_code=400, detail="Enter a valid UPI ID, e.g. 98xxxxxx45@okhdfcbank")
+    if pan and not PAN_RE.match(pan):
+        raise HTTPException(status_code=400, detail="Enter a valid PAN, e.g. ABCDE1234F")
+    return await sync_payout_vendor(db, user_id, upi, req.account_holder or "", pan)
+
+
 def _public_base(request: Request) -> str:
     if PUBLIC_BASE_URL:
         return PUBLIC_BASE_URL
@@ -173,6 +179,8 @@ async def create_payment_order(
         raise HTTPException(status_code=400, detail="This game's payments are tracked offline")
     if (await get_app_setting(db, 'payments_enabled', 'false')).lower() != 'true':
         raise HTTPException(status_code=400, detail="In-app payments are turned off")
+    if await ground_currency(db, game["ground_name"]) != "₹":
+        raise HTTPException(status_code=400, detail="Online payment is only available for games on India grounds")
     player = await (await db.execute(
         "SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ? AND status IN ('selected', ?)",
         (req.game_id, user_id, PAY_FIRST_STATUS),
