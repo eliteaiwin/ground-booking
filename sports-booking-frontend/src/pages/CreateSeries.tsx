@@ -14,6 +14,7 @@ import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grou
 import { localYmd } from '../lib/utils';
 import { currencySymbol } from '@/lib/currency';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
+import { ReceiverSelect } from '@/components/PaymentReceiver';
 
 interface UserItem {
   id: number;
@@ -77,6 +78,7 @@ export default function CreateSeries({ onBack }: Props) {
   const [paymentCollection, setPaymentCollection] = useState('offline');
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
   const [payeeUserId, setPayeeUserId] = useState('');
+  const [receiverId, setReceiverId] = useState('0');
   const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
   const [weeks, setWeeks] = useState('4');
   const [startDate, setStartDate] = useState('');
@@ -178,6 +180,7 @@ export default function CreateSeries({ onBack }: Props) {
         quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
         payment_mode: paymentMode,
         payment_collection: paymentCollection,
+        receiver_id: Number(receiverId) || undefined,
         potd_congrats_delay_minutes: parseInt(potdDelayMinutes) || 1440,
         recurrence_days: recurrenceDays,
         weeks: parseInt(weeks) || 4,
@@ -286,8 +289,9 @@ export default function CreateSeries({ onBack }: Props) {
                   <Label>POTD Congratulation Delay (minutes)</Label>
                   <Input type="number" min="1" max="10080" value={potdDelayMinutes} onChange={(e) => setPotdDelayMinutes(e.target.value)} />
                 </div>
+                <ReceiverSelect groundName={groundName === '__other__' ? customGround : groundName} value={receiverId} onChange={setReceiverId} autoPick />
                 <div className="space-y-2">
-                  <Label>Payment Receiver</Label>
+                  <Label>Online payments go to (app user)</Label>
                   <Select value={payeeUserId} onValueChange={setPayeeUserId}>
                     <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
                     <SelectContent>

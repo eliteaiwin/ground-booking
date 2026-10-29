@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.33', date: '2026-10-29', changes: [
+    'New Payment Receivers page (Dashboard → Receivers): a nick name plus one or more UPI IDs or Paytm / PhonePe / Google Pay numbers, tagged to grounds',
+    'Create / Edit Game: choose who players pay ("Pay to"); players see only the nick name and a wallet popup with every way to pay and copy buttons',
+  ] },
   { version: '1.32', date: '2026-10-29', changes: [
     'Waiting-list players can leave a game any time, even just before or during it, with no warning or quit fee',
     'Game Log keeps the original join of players who later quit, so every quit has its join before it',

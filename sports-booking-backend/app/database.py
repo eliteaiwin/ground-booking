@@ -542,6 +542,26 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN cf_vendor_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN cf_vendor_status TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE game_players ADD COLUMN list_at TIMESTAMP",
+        "ALTER TABLE games ADD COLUMN receiver_id INTEGER",
+        """CREATE TABLE IF NOT EXISTS payment_receivers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nick_name TEXT NOT NULL,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS payment_receiver_methods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receiver_id INTEGER NOT NULL REFERENCES payment_receivers(id),
+            kind TEXT NOT NULL,
+            value TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        )""",
+        """CREATE TABLE IF NOT EXISTS payment_receiver_grounds (
+            receiver_id INTEGER NOT NULL REFERENCES payment_receivers(id),
+            ground_id INTEGER NOT NULL REFERENCES grounds(id),
+            PRIMARY KEY (receiver_id, ground_id)
+        )""",
         """CREATE TABLE IF NOT EXISTS payment_orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id TEXT NOT NULL UNIQUE,

@@ -228,7 +228,7 @@ export const api = {
     title: string; sport_type: string; ground_name: string;
     game_date: string; game_time: string; max_players: number;
     ground_cost: number; payment_timing: string; duration_minutes?: number;
-    payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
+    payee_user_id?: number; receiver_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; note_before_players?: string; note_after_players?: string;
     pitch_format?: string; pitch_number?: number; allotment_id?: number; payment_collection?: string;
   }) => request('/api/games', { method: 'POST', body: JSON.stringify(data) }),
@@ -236,7 +236,7 @@ export const api = {
   createSeries: (data: {
     series_name: string; sport_type: string; ground_name: string;
     max_players: number; ground_cost: number; duration_minutes?: number;
-    payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
+    payee_user_id?: number; receiver_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     potd_congrats_delay_minutes?: number; recurrence_days: { day: string; time: string }[];
     weeks?: number; start_date?: string; pitch_format?: string; payment_collection?: string;
   }) => request('/api/games/series', { method: 'POST', body: JSON.stringify(data) }),
@@ -245,7 +245,7 @@ export const api = {
     title?: string; sport_type?: string; ground_name?: string;
     game_date?: string; game_time?: string; max_players?: number;
     ground_cost?: number; cost_per_person?: number; duration_minutes?: number;
-    payee_user_id?: number; quit_penalty_hours?: number; payment_mode?: string;
+    payee_user_id?: number; receiver_id?: number; quit_penalty_hours?: number; payment_mode?: string;
     note_before_players?: string; note_after_players?: string; payment_collection?: string;
   }) => request(`/api/games/${gameId}`, { method: 'PUT', body: JSON.stringify(data) }),
 
@@ -651,6 +651,16 @@ export const api = {
 
   // My Managed Grounds
   myManagedGrounds: () => request('/api/locations/my-managed-grounds'),
+
+  // Payment receivers (wallets players pay to)
+  listReceivers: () => request('/api/receivers'),
+  receiversForGround: (groundName: string) =>
+    request(`/api/receivers/for-ground?ground_name=${encodeURIComponent(groundName)}`),
+  createReceiver: (data: { nick_name: string; methods: { kind: string; value: string }[]; ground_ids: number[] }) =>
+    request('/api/receivers', { method: 'POST', body: JSON.stringify(data) }),
+  updateReceiver: (id: number, data: { nick_name: string; methods: { kind: string; value: string }[]; ground_ids: number[] }) =>
+    request(`/api/receivers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteReceiver: (id: number) => request(`/api/receivers/${id}`, { method: 'DELETE' }),
 
   // Enhanced POTD voting (ranked)
   voteRankedPOTD: (gameId: number, first: number, second?: number, third?: number) =>

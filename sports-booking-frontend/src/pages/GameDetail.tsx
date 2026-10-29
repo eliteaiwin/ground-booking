@@ -30,6 +30,7 @@ import { inviteUrl } from '@/lib/invite';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 import GameLog from '@/components/GameLog';
+import { PayTo, ReceiverSelect, type PublicReceiver } from '@/components/PaymentReceiver';
 
 const SPORT_POSITIONS: Record<string, string[]> = {
   soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
@@ -339,6 +340,7 @@ interface Game {
   pay_first_enabled?: boolean;
   awaiting_payment?: (Player & { due?: number })[];
   payee: { id: number; name: string; phone: string } | null;
+  receiver?: PublicReceiver | null;
   created_by: number;
   created_by_name: string;
   created_at?: string;
@@ -448,6 +450,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [votePosition, setVotePosition] = useState('Anywhere');
   const [showEditGame, setShowEditGame] = useState(false);
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
+  const [editReceiverId, setEditReceiverId] = useState('0');
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
   const [editPaymentMode, setEditPaymentMode] = useState('postpaid');
   const [editPaymentCollection, setEditPaymentCollection] = useState('offline');
@@ -1039,7 +1042,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 <AlertTriangle size={16} /> <span>Quit penalty: Must pay if quitting within {game.quit_penalty_hours}h of game</span>
               </div>
             )}
-            {game.payee && (
+            {game.receiver ? (
+              <div className="flex items-center gap-2 text-gray-600"><Wallet size={16} /><PayTo receiver={game.receiver} /></div>
+            ) : game.payee && (
               <div className="flex items-center gap-2 text-gray-600">
                 <Phone size={16} />
                 <span>Payment Receiver: {game.payee.name} ({formatPhone(game.payee.phone)})</span>
@@ -1205,6 +1210,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     setShowEditGame(!showEditGame);
                     if (!showEditGame) {
                       setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
+                      setEditReceiverId(game.receiver ? String(game.receiver.id) : '0');
                       setEditQuitPenalty(String(game.quit_penalty_hours || 0));
                       setEditPaymentMode(game.payment_timing === 'before' ? 'prepaid' : 'postpaid');
                       setEditPaymentCollection(game.payment_collection || 'offline');
@@ -1218,8 +1224,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 </div>
                 {showEditGame && (
                   <div className="space-y-3">
+                    <ReceiverSelect groundName={game.ground_name} value={editReceiverId} onChange={setEditReceiverId} />
                     <div>
-                      <Label className="text-xs text-gray-500">Payment Receiver (who receives the money)</Label>
+                      <Label className="text-xs text-gray-500">Online payments go to (app user)</Label>
                       <Select value={editPayeeUserId} onValueChange={setEditPayeeUserId}>
                         <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
                         <SelectContent>
@@ -1286,9 +1293,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       onClick={() => {
                         handleAction('edit-game', () => api.editGame(game.id, game.status === 'completed' ? {
                           payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
+                          receiver_id: Number(editReceiverId) || 0,
                           ground_cost: editGroundCost !== '' ? parseFloat(editGroundCost) : undefined,
                         } : {
                           payee_user_id: editPayeeUserId ? Number(editPayeeUserId) : undefined,
+                          receiver_id: Number(editReceiverId) || 0,
                           quit_penalty_hours: parseInt(editQuitPenalty) || 0,
                           payment_mode: editPaymentMode,
                           payment_collection: editPaymentCollection,
@@ -1570,7 +1579,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 </h4>
                 <p className="text-xs text-orange-700 mb-1">Your name is added to the list once your payment is received.</p>
                 <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(myAwaiting.due ?? perPerson, currency)}</strong></p>
-                {game.payee && (
+                {game.receiver ? <p className="text-sm text-orange-700 mb-3"><PayTo receiver={game.receiver} /></p> : game.payee && (
                   <p className="text-sm text-orange-700 mb-3">
                     Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                   </p>
@@ -1631,7 +1640,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <p className="text-xs text-orange-700 mb-1">The moderator has asked you to pay before this game.</p>
                 )}
                 <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(game.cost_per_person, currency)}</strong></p>
-                {game.payee && (
+                {game.receiver ? <p className="text-sm text-orange-700 mb-3"><PayTo receiver={game.receiver} /></p> : game.payee && (
                   <p className="text-sm text-orange-700 mb-3">
                     Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                   </p>
@@ -1658,7 +1667,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           )}
 
           {/* Payment for current user - PostPaid */}
-          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && game.payee && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && ['voting_open', 'in_progress', 'completed'].includes(game.status) && (
+          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && (game.payee || game.receiver) && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && ['voting_open', 'in_progress', 'completed'].includes(game.status) && (
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
                 <h4 className="font-semibold text-orange-800 mb-1">{myPaidSoFar > 0 ? 'Pay Remaining Amount' : game.status === 'voting_open' ? 'Your Share' : 'Payment Due'}</h4>
@@ -1666,9 +1675,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   <p className="text-xs text-orange-700 mb-1">Ground cost changed. You paid {formatMoney(myPaidSoFar.toFixed(0), currency)}; your share is now {formatMoney(myShare.toFixed(0), currency)}.</p>
                 )}
                 <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0), currency)}</strong></p>
-                <p className="text-sm text-orange-700 mb-3">
+                {game.receiver ? <p className="text-sm text-orange-700 mb-3"><PayTo receiver={game.receiver} /></p> : game.payee && (
+                  <p className="text-sm text-orange-700 mb-3">
                   Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
                 </p>
+                )}
                 {payOnlineAvailable ? (
                   <>
                     <div className="mb-2"><FeeBreakdownTable breakdown={myFeeBreakdown} fees={gameFees} currency={currency} /></div>

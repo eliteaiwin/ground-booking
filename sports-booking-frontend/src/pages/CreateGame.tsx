@@ -15,6 +15,7 @@ import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
 import { currencySymbol } from '@/lib/currency';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
+import { ReceiverSelect } from '@/components/PaymentReceiver';
 
 interface UserItem {
   id: number;
@@ -87,6 +88,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [sportDefaults, setSportDefaults] = useState<Record<string, number>>({});
   const [grounds, setGrounds] = useState<Ground[]>([]);
   const [paymentCollection, setPaymentCollection] = useState('offline');
+  const [receiverId, setReceiverId] = useState('0');
   const [defaultPayee, setDefaultPayee] = useState<{ id: number; name: string; phone: string } | null>(null);
   const [showQuitPenalty, setShowQuitPenalty] = useState(false);
   const [payFirstEnabled, setPayFirstEnabled] = useState(false);
@@ -236,6 +238,7 @@ export default function CreateGame({ onBack, onCreated }: Props) {
         payment_mode: paymentTiming === 'before' ? 'prepaid' : 'postpaid',
         ...(showQuitPenalty ? { quit_penalty_hours: parseInt(quitPenaltyHours) || 0 } : {}),
         payment_collection: paymentCollection,
+        receiver_id: Number(receiverId) || undefined,
         note_before_players: noteBefore || undefined,
         note_after_players: noteAfter || undefined,
         ...(pitchLayouts.length > 0 ? parsePitchValue(pitch) : {}),
@@ -464,9 +467,10 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                   <p className="text-xs text-gray-500">Players who quit within this time before the game still pay their share.</p>
                 </div>
               )}
+              <ReceiverSelect groundName={groundName === '__other__' ? customGround : groundName} value={receiverId} onChange={setReceiverId} autoPick />
               <div className="space-y-1" data-testid="default-payee">
                 <div className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <span>Payment Receiver: <strong>{defaultPayee ? defaultPayee.name : 'Not set'}</strong></span>
+                  <span>Online payments go to: <strong>{defaultPayee ? defaultPayee.name : 'Not set'}</strong></span>
                   <button type="button" aria-label="About the payment receiver" onClick={() => setShowPayeeInfo(v => !v)} className="text-gray-400 hover:text-green-600">
                     <Info size={14} />
                   </button>

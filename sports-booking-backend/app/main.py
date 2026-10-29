@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 
 from .database import init_db
-from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router
+from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router, receivers_router
 
 # Optional: path to a pre-built frontend dist folder to serve as static files.
 # When set, the backend serves the SPA on all non-/api routes (same-origin, no CORS issues).
@@ -42,6 +42,7 @@ app.include_router(locations_router.router)
 app.include_router(discussion_router.router)
 app.include_router(allotments_router.router)
 app.include_router(gateway_router.router)
+app.include_router(receivers_router.router)
 
 
 @app.get("/healthz")

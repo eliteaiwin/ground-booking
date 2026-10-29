@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays, Share2 } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays, Share2, Wallet } from 'lucide-react';
 import { WhatsNew } from '@/components/WhatsNew';
 import { AboutDialog } from '@/components/AboutDialog';
 import { InviteDialog } from '@/components/InviteDialog';
@@ -486,6 +486,18 @@ export default function Dashboard({ onNavigate }: Props) {
                 <BarChart3 size={20} className="text-amber-600" />
               </div>
               <span className="text-xs font-medium text-gray-700">Ground Mgmt</span>
+            </button>
+          )}
+          {(isAdmin || isGroundManagement) && (
+            <button
+              onClick={() => onNavigate('payment-receivers')}
+              data-testid="nav-payment-receivers"
+              className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                <Wallet size={20} className="text-green-600" />
+              </div>
+              <span className="text-xs font-medium text-gray-700">Receivers</span>
             </button>
           )}
           {/* Hall of Fame - visible to all */}

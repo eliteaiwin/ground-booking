@@ -15,6 +15,7 @@ from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency
 from ..game_log import log_event, build_log, log_join_before_leaving
+from .receivers_router import check_receiver, public_receiver
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -32,6 +33,7 @@ class CreateGameRequest(BaseModel):
     payment_timing: str  # before, after
     duration_minutes: int = 90
     payee_user_id: Optional[int] = None
+    receiver_id: Optional[int] = None  # payment receiver wallet; 0 clears it
     quit_penalty_hours: Optional[int] = None  # None = moderator preference
     payment_mode: str = "postpaid"  # prepaid, postpaid
     potd_congrats_delay_minutes: Optional[int] = None  # None = moderator preference (24 hours by default)
@@ -56,6 +58,7 @@ class EditGameRequest(BaseModel):
     cost_per_person: Optional[float] = None  # deprecated, kept for compatibility
     duration_minutes: Optional[int] = None
     payee_user_id: Optional[int] = None
+    receiver_id: Optional[int] = None  # payment receiver wallet; 0 clears it
     quit_penalty_hours: Optional[int] = None
     payment_mode: Optional[str] = None  # prepaid, postpaid
     potd_congrats_delay_minutes: Optional[int] = None
@@ -81,6 +84,7 @@ class CreateSeriesRequest(BaseModel):
     ground_cost: float  # total ground cost; per-player cost derived
     duration_minutes: int = 90
     payee_user_id: Optional[int] = None
+    receiver_id: Optional[int] = None  # payment receiver wallet; 0 clears it
     quit_penalty_hours: Optional[int] = None
     payment_mode: str = "postpaid"
     potd_congrats_delay_minutes: Optional[int] = None
@@ -1063,6 +1067,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "currency": await ground_currency(db, game["ground_name"]),
         "status": game["status"],
         "payee": payee_info,
+        "receiver": await public_receiver(db, game["receiver_id"]),
         "quit_penalty_hours": quit_penalty_hours,
         "duration_minutes": duration_minutes,
         "potd_congrats_delay_minutes": potd_delay_minutes,
@@ -1189,6 +1194,7 @@ async def create_game(
     if not defaults["show_quit_penalty"]:
         quit_penalty = 0
     payee_id = req.payee_user_id or defaults["default_payee_user_id"]
+    receiver_id = await check_receiver(db, req.receiver_id, req.ground_name)
 
     series_name = (req.series_name or req.ground_name).strip()
     series_day = (req.series_day or "").strip()
@@ -1206,6 +1212,8 @@ async def create_game(
          slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
     )
     game_id = cursor.lastrowid
+    if receiver_id:
+        await db.execute("UPDATE games SET receiver_id = ? WHERE id = ?", (receiver_id, game_id))
     await log_event(db, game_id, "created", actor_id=user_id)
     await db.commit()
 
@@ -1229,6 +1237,7 @@ async def create_game_series(
     if not defaults["show_quit_penalty"]:
         quit_penalty = 0
     payee_id = req.payee_user_id or defaults["default_payee_user_id"]
+    receiver_id = await check_receiver(db, req.receiver_id, req.ground_name)
 
     day_map = {
         "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
@@ -1314,6 +1323,8 @@ async def create_game_series(
                  payee_id, quit_penalty, potd_delay, note_before, note_after, series_name, series_day,
                  slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"], _check_collection(req.payment_collection))
             )
+            if receiver_id:
+                await db.execute("UPDATE games SET receiver_id = ? WHERE id = ?", (receiver_id, cursor.lastrowid))
             await log_event(db, cursor.lastrowid, "created", actor_id=user_id)
             created_games.append(await get_game_dict(db, cursor.lastrowid))
 
@@ -1422,6 +1433,9 @@ async def _edit_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, re
     game_id = game["id"]
     if req.payee_user_id is not None:
         await db.execute("UPDATE games SET payee_user_id = ? WHERE id = ?", (req.payee_user_id, game_id))
+    if req.receiver_id is not None:
+        await db.execute("UPDATE games SET receiver_id = ? WHERE id = ?",
+                         (await check_receiver(db, req.receiver_id, game["ground_name"]), game_id))
     if req.ground_cost is not None and req.ground_cost != game["ground_cost"]:
         await db.execute("UPDATE games SET ground_cost = ? WHERE id = ?", (req.ground_cost, game_id))
         await _recalc_game_cost(db, game_id)
@@ -1523,6 +1537,10 @@ async def edit_game(
             status_code=400,
             detail=f"Max players for {final_sport} is capped at {max_cap}. {final_max} exceeds the configured maximum."
         )
+
+    if req.receiver_id is not None:
+        updates.append("receiver_id = ?")
+        params.append(await check_receiver(db, req.receiver_id, req.ground_name or game["ground_name"]))
 
     for field in ("title", "sport_type", "ground_name", "game_date", "game_time",
                   "max_players", "ground_cost", "cost_per_person", "duration_minutes",

@@ -19,6 +19,7 @@ import BackendSettlement from './pages/BackendSettlement';
 import GameSearch from './pages/GameSearch';
 import GroundManagement from './pages/GroundManagement';
 import HallOfFame from './pages/HallOfFame';
+import PaymentReceivers from './pages/PaymentReceivers';
 import NotificationSettings from './pages/NotificationSettings';
 import OnboardingProfile from './pages/OnboardingProfile';
 import ForgotPassword from './pages/ForgotPassword';
@@ -28,7 +29,7 @@ import { gameIdFromOrderId } from './lib/cashfree';
 import { captureInviteFromUrl, takePendingJoinGame } from '@/lib/invite';
 import { GetAppBanner } from '@/components/GetAppBanner';
 
-type Page = 'dashboard' | 'game-detail' | 'create-game' | 'create-series' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings';
+type Page = 'dashboard' | 'game-detail' | 'create-game' | 'create-series' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings' | 'payment-receivers';
 
 function AppContent() {
   const { user, loading, isAddingAccount, setIsAddingAccount } = useAuth();
@@ -194,6 +195,8 @@ function AppContent() {
       return <GameSearch onBack={goHome} onViewGame={(gameId) => { setSelectedGameId(gameId); setCurrentPage('game-detail'); }} />;
     case 'ground-management':
       return <GroundManagement onBack={goHome} />;
+    case 'payment-receivers':
+      return <PaymentReceivers onBack={goHome} />;
     case 'hall-of-fame':
       return <HallOfFame onBack={goHome} />;
     case 'notification-settings':
