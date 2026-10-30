@@ -18,6 +18,7 @@ export interface Player {
   gender?: string;
   joined_at: string;
   photo: string;
+  tentative?: boolean;
 }
 
 function getDisplayMode(): string {

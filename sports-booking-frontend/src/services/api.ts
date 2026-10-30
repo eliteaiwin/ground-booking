@@ -257,8 +257,11 @@ export const api = {
   openVoting: (id: number) =>
     request(`/api/games/${id}/open-voting`, { method: 'POST' }),
 
-  voteJoin: (id: number, position?: string) =>
-    request(`/api/games/${id}/vote`, { method: 'POST', body: JSON.stringify({ position: position || '' }) }),
+  voteJoin: (id: number, position?: string, tentative?: boolean) =>
+    request(`/api/games/${id}/vote`, { method: 'POST', body: JSON.stringify({ position: position || '', tentative: !!tentative }) }),
+
+  confirmAvailability: (id: number) =>
+    request(`/api/games/${id}/confirm-availability`, { method: 'POST' }),
 
   quitGame: (id: number) =>
     request(`/api/games/${id}/vote`, { method: 'DELETE' }),

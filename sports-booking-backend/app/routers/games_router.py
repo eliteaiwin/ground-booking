@@ -120,6 +120,7 @@ class VotePOTDRequest(BaseModel):
 
 class VoteJoinRequest(BaseModel):
     position: str = ""
+    tentative: bool = False
 
 
 class CreateTeamsRequest(BaseModel):
@@ -711,6 +712,11 @@ LATE_QUIT_DETAIL = (
     "else you still pay for today's game."
 )
 
+LATE_QUIT_NO_WL_DETAIL = (
+    "You can't quit now: it's short notice and no one is on the waiting list to take your place, "
+    "so you still pay for this game."
+)
+
 
 async def _late_quit_hours(db: aiosqlite.Connection) -> int:
     return int(await get_app_setting(db, "late_quit_hours", "2") or 0)
@@ -907,6 +913,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "joined_at": p["joined_at"],
             "photo": player_photo_map.get(p["user_id"], ""),
             "gender": p["gender"] or "",
+            "tentative": bool(p["tentative"]),
         }
         if p["status"] == "selected":
             selected.append(player_data)
@@ -1660,6 +1667,7 @@ async def vote_join_game(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     position = req.position if req else ""
+    tentative = 1 if req and req.tentative else 0
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
@@ -1788,10 +1796,11 @@ async def vote_join_game(
             is_first_time_on_ground = True
 
     await db.execute(
-        "INSERT INTO game_players (game_id, user_id, status, position, payment_confirmed) VALUES (?, ?, ?, ?, ?)",
-        (game_id, user_id, player_status, position, payment_confirmed)
+        "INSERT INTO game_players (game_id, user_id, status, position, payment_confirmed, tentative) VALUES (?, ?, ?, ?, ?, ?)",
+        (game_id, user_id, player_status, position, payment_confirmed, tentative)
     )
-    await log_event(db, game_id, "joined" if player_status == "selected" else "waiting", user_id=user_id, actor_id=user_id)
+    await log_event(db, game_id, "joined" if player_status == "selected" else "waiting", user_id=user_id, actor_id=user_id,
+                    note="tentative" if tentative else "")
 
     # If payment is before and player is selected, create payment record
     if player_status == "selected" and is_prepaid:
@@ -1815,6 +1824,63 @@ async def vote_join_game(
     if is_first_time_on_ground and player_status == "selected":
         msg += ". As this is your first time on this ground, please pay in advance even though this is a PostPaid game."
     return {"status": player_status, "message": msg, "is_prepaid": is_prepaid, "is_first_time_on_ground": is_first_time_on_ground}
+
+
+@router.post("/{game_id}/confirm-availability")
+async def confirm_availability(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    player = await (await db.execute(
+        "SELECT tentative FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+    )).fetchone()
+    if not player:
+        raise HTTPException(status_code=400, detail="Not in this game")
+    if player["tentative"]:
+        await db.execute("UPDATE game_players SET tentative = 0 WHERE game_id = ? AND user_id = ?", (game_id, user_id))
+        await log_event(db, game_id, "availability_confirmed", user_id=user_id, actor_id=user_id)
+        await db.commit()
+    return await get_game_dict(db, game_id)
+
+
+async def send_tentative_reminders(db: aiosqlite.Connection) -> int:
+    """About 4 hours before a game, ask tentative players to confirm they're playing."""
+    hours = await _late_quit_hours(db)
+    now = _local_now()
+    rows = await (await db.execute(
+        """SELECT gp.id, gp.user_id, g.id AS game_id, g.title, g.game_date, g.game_time
+           FROM game_players gp JOIN games g ON g.id = gp.game_id
+           WHERE gp.tentative = 1 AND gp.tentative_reminded = 0 AND gp.status = 'selected'
+             AND g.status IN ('draft', 'voting_open')"""
+    )).fetchall()
+    sent = 0
+    for r in rows:
+        try:
+            start = datetime.strptime(f"{r['game_date']} {r['game_time']}", "%Y-%m-%d %H:%M")
+        except (TypeError, ValueError):
+            continue
+        if not (start - timedelta(hours=4) <= now < start):
+            continue
+        day = "today" if start.date() == now.date() else start.strftime("on %a %-d %b")
+        when = start.strftime("%-I:%M %p")
+        cutoff_at = start - timedelta(hours=hours)
+        unless = " unless someone on the waiting list takes your place, otherwise you still pay for the game."
+        if hours <= 0:
+            rule = ""
+        elif now >= cutoff_at:
+            rule = f" It's now too late to pull out{unless}"
+        else:
+            rule = f" After {cutoff_at.strftime('%-I:%M %p')} you can't pull out{unless}"
+        await create_notification(
+            db, r["user_id"], r["game_id"], "tentative_confirm",
+            f"You joined {r['title']} {day} at {when} as tentative. Please confirm you're playing.{rule} Confirm now"
+        )
+        await db.execute("UPDATE game_players SET tentative_reminded = 1 WHERE id = ?", (r["id"],))
+        sent += 1
+    if sent:
+        await db.commit()
+    return sent
 
 
 @router.delete("/{game_id}/vote")
@@ -1847,13 +1913,13 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
     old_team_id = player["team_id"]
     must_pay = False
     late = was_selected and await _is_late_quit(db, game)
-    if late and not by_moderator:
-        raise HTTPException(status_code=400, detail=LATE_QUIT_DETAIL)
     if late:
         waiting = await (await db.execute(
             "SELECT 1 FROM game_players WHERE game_id = ? AND status = 'waiting' LIMIT 1", (game_id,)
         )).fetchone()
         must_pay = waiting is None
+        if must_pay and not by_moderator:
+            raise HTTPException(status_code=400, detail=LATE_QUIT_NO_WL_DETAIL)
 
     # Check quit penalty
     quit_penalty_hours = 0

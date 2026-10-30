@@ -7,7 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 
-from .database import init_db
+import asyncio
+import logging
+
+import aiosqlite
+
+from .database import init_db, DATABASE_PATH
 from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router, receivers_router
 
 # Optional: path to a pre-built frontend dist folder to serve as static files.
@@ -18,7 +23,20 @@ STATIC_DIR = os.environ.get("STATIC_DIR", "")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    task = asyncio.create_task(_reminder_loop())
     yield
+    task.cancel()
+
+
+async def _reminder_loop():
+    while True:
+        try:
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                await games_router.send_tentative_reminders(db)
+        except Exception:
+            logging.exception("tentative reminder loop failed")
+        await asyncio.sleep(300)
 
 
 app = FastAPI(title="Elite Turf Booking", lifespan=lifespan)

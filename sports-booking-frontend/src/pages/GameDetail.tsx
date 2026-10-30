@@ -447,6 +447,13 @@ interface Props {
   onBack: () => void;
 }
 
+function TentativeBadge() {
+  return (
+    <span title="Tentative" data-testid="tentative-badge"
+      className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold align-middle">T</span>
+  );
+}
+
 export default function GameDetail({ gameId, onBack }: Props) {
   const { user, isAdmin, isModerator, isGroundManagement, isReadOnly } = useAuth();
   useEffect(() => () => setPhoneHomeCountry(), []);
@@ -487,7 +494,9 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [dragPlayer, setDragPlayer] = useState<Player | null>(null);
   const [quitPenaltyInfo, setQuitPenaltyInfo] = useState<{has_penalty: boolean; must_pay: boolean; hours_until_game?: number; quit_penalty_hours?: number} | null>(null);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
-  const [lateQuitWarning, setLateQuitWarning] = useState(false);
+  const [lateQuitWarning, setLateQuitWarning] = useState<'' | 'wl' | 'declined'>('');
+  const [showJoinConfirm, setShowJoinConfirm] = useState(false);
+  const [joinTentative, setJoinTentative] = useState(false);
   const [firstTimeAlert, setFirstTimeAlert] = useState<string | null>(null);
   const [showCancelPreview, setShowCancelPreview] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -565,6 +574,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     game?.waiting_list.some(p => p.user_id === user?.id) || !!myAwaiting;
   const isSelectedPlayer = game?.selected_players.some(p => p.user_id === user?.id);
   const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id);
+  const myTentative = !!(myPlayerRecord?.tentative || game?.waiting_list.find(p => p.user_id === user?.id)?.tentative) && game?.status !== 'completed';
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -628,7 +638,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     const confirmed = !!game?.selected_players.some(p => p.user_id === user?.id);
     if (game?.late_quit_now && confirmed && !(isModerator || isAdmin)) {
       setShowQuitConfirm(false);
-      setLateQuitWarning(true);
+      setLateQuitWarning(game.waiting_list.length ? 'wl' : 'declined');
       return;
     }
     if (confirmed && game?.status === 'in_progress' && game?.quit_penalty_hours > 0) {
@@ -957,7 +967,15 @@ export default function GameDetail({ gameId, onBack }: Props) {
               {game.status === 'completed'
                 ? (isSelectedPlayer ? '\u{1F389} You played it.' : 'You nominated but remained in WL')
                 : (isSelectedPlayer ? '\u{1F389} You are playing' : 'You have nominated, WL')}
+              {myTentative && ' (tentative)'}
             </span>
+            {myTentative && !gameIsOver && !isReadOnly && (
+              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+                disabled={actionLoading === 'confirm-avail'} data-testid="confirm-playing"
+                onClick={() => handleAction('confirm-avail', () => api.confirmAvailability(game.id))}>
+                I'm playing
+              </Button>
+            )}
             {['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
               <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-300 text-red-600 hover:bg-red-50"
                 onClick={handleQuitClick} disabled={actionLoading === 'quit' || iPaid} data-testid="unjoin"
@@ -973,11 +991,36 @@ export default function GameDetail({ gameId, onBack }: Props) {
             <span className="text-gray-700">You haven't joined yet</span>
             <Button size="sm" className="h-7 px-4 text-xs bg-green-600 hover:bg-green-700" data-testid="join"
               disabled={actionLoading === 'vote'}
+              onClick={() => { setJoinTentative(false); setShowJoinConfirm(true); }}>
+              {actionLoading === 'vote' ? 'Joining...' : 'Join'}
+            </Button>
+          </div>
+        )}
+        {showJoinConfirm && game.status === 'voting_open' && !isPlayerInGame && (
+          <Card className="border-green-300 bg-green-50" data-testid="join-confirm">
+            <CardContent className="p-4">
+              <h4 className="font-semibold text-green-800 mb-2">Join {game.title}?</h4>
+              <label className="flex items-start gap-2 text-sm text-gray-700 mb-3">
+                <input type="checkbox" className="mt-0.5 accent-amber-500" checked={joinTentative}
+                  onChange={e => setJoinTentative(e.target.checked)} data-testid="join-tentative" />
+                <span>
+                  <span className="font-medium">Tentative</span> <TentativeBadge />
+                  <span className="block text-xs text-gray-500">
+                    You'll be asked to confirm a few hours before the game.
+                    {(game.late_quit_hours ?? 0) > 0 && ` Less than ${game.late_quit_hours} hours before, you can't pull out unless someone on the waiting list takes your place, otherwise you still pay.`}
+                  </span>
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setShowJoinConfirm(false)}>Cancel</Button>
+                <Button size="sm" className="bg-green-600 hover:bg-green-700" data-testid="join-yes"
+                  disabled={actionLoading === 'vote'}
               onClick={async () => {
                 setActionLoading('vote');
                 setError('');
                 try {
-                  const result = await api.voteJoin(game.id, 'Anywhere');
+                  const result = await api.voteJoin(game.id, 'Anywhere', joinTentative);
+                  setShowJoinConfirm(false);
                   if (result.is_first_time_on_ground) {
                     setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
                   }
@@ -988,9 +1031,11 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   setActionLoading('');
                 }
               }}>
-              {actionLoading === 'vote' ? 'Joining...' : 'Join'}
-            </Button>
-          </div>
+                  {actionLoading === 'vote' ? 'Joining...' : 'Yes, join'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Game Score Display - for completed soccer games */}
@@ -1064,17 +1109,33 @@ export default function GameDetail({ gameId, onBack }: Props) {
         )}
 
         {lateQuitWarning && (
-          <Card className="border-amber-300 bg-amber-50" data-testid="late-quit-warning">
+          <Card className={lateQuitWarning === 'wl' ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'} data-testid="late-quit-warning">
             <CardContent className="p-4">
-              <h4 className="font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                <AlertTriangle size={16} /> Quitting late
+              <h4 className={`font-semibold mb-2 flex items-center gap-2 ${lateQuitWarning === 'wl' ? 'text-amber-800' : 'text-red-800'}`}>
+                <AlertTriangle size={16} /> {lateQuitWarning === 'wl' ? 'Quitting late' : "You can't quit now"}
               </h4>
-              <p className="text-sm text-amber-800 mb-3">
-                You are quitting late (less than {game.late_quit_hours} hours before the game), please liaise with the
-                moderator to remove your name. If someone from the waiting list gets confirmed in your place then fine,
-                else you still pay for today's game.
-              </p>
-              <Button size="sm" variant="outline" onClick={() => setLateQuitWarning(false)}>OK</Button>
+              {lateQuitWarning === 'wl' ? (
+                <>
+                  <p className="text-sm text-amber-800 mb-3">
+                    You are quitting at short notice (less than {game.late_quit_hours} hours before the game).
+                    Please tell <strong>{game.waiting_list[0] ? formatPlayerDisplay(game.waiting_list[0].name, game.waiting_list[0].phone, undefined, game.waiting_list[0].display_name) : 'the first player on the waiting list'}</strong> from
+                    the waiting list that he is now playing in your place.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setLateQuitWarning('')}>Cancel</Button>
+                    <Button size="sm" className="bg-red-600 hover:bg-red-700" data-testid="late-quit-anyway"
+                      onClick={() => { setLateQuitWarning(''); confirmQuit(); }}>Quit anyway</Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-red-700 mb-3">
+                    It's short notice (less than {game.late_quit_hours} hours before the game) and no one is on the
+                    waiting list to take your place, so you can't quit and you still pay for this game.
+                  </p>
+                  <Button size="sm" variant="outline" onClick={() => setLateQuitWarning('')}>OK</Button>
+                </>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1927,6 +1988,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     </button>
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                          {player.tentative && game.status !== 'completed' && <TentativeBadge />}
                           {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
                           {player.user_id === user?.id && game.status === 'completed' && player.payment_confirmed !== 1 && !(game.pay_first_enabled && player.must_prepay) && (
                             <Button size="sm" className="ml-1 h-5 px-2 text-[11px] bg-orange-600 hover:bg-orange-700" data-testid="row-pay"
@@ -2104,6 +2166,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                     </button>
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {player.tentative && game.status !== 'completed' && <TentativeBadge />}
                       {player.user_id === user?.id && <Badge className="ml-1 bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     </span>
                     <PlayerInfoButton player={player} />

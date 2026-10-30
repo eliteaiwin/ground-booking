@@ -2,6 +2,12 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.41', date: '2026-10-30', changes: [
+    'Join popup with a "Tentative" tick box; tentative players show an amber T until the game is completed',
+    'Tentative players get a reminder about 4 hours before the game to confirm they are playing ("I\'m playing" button)',
+    'Late quit with someone waiting: warning names the waiting-list player to tell, then you can still quit',
+    'Late quit with nobody waiting: quit is refused, you still pay for the game',
+  ] },
   { version: '1.40', date: '2026-10-30', changes: [
     'Full-screen Chat / Photos: folder tabs for Chat and Photos, with shared shrink and close icons',
   ] },

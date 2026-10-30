@@ -20,6 +20,7 @@ export interface GameLogEntry {
 const EVENTS: Record<string, { icon: LucideIcon; label: string; color: string }> = {
   created: { icon: Sparkles, label: 'Initiated', color: 'text-purple-600' },
   joined: { icon: LogIn, label: 'Joined', color: 'text-green-600' },
+  availability_confirmed: { icon: CheckCircle, label: 'Confirmed', color: 'text-green-600' },
   waiting: { icon: Hourglass, label: 'Waiting list', color: 'text-amber-600' },
   nominated: { icon: UserPlus, label: 'Added', color: 'text-green-600' },
   nominated_waiting: { icon: Hourglass, label: 'Waiting list', color: 'text-amber-600' },

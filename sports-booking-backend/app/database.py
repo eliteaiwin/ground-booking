@@ -542,6 +542,8 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN cf_vendor_id TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN cf_vendor_status TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE game_players ADD COLUMN list_at TIMESTAMP",
+        "ALTER TABLE game_players ADD COLUMN tentative INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE game_players ADD COLUMN tentative_reminded INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN receiver_id INTEGER",
         """CREATE TABLE IF NOT EXISTS payment_receivers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
