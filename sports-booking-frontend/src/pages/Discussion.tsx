@@ -403,22 +403,23 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
     <Card className={fullscreen ? 'fixed inset-x-0 bottom-0 z-20 rounded-none flex flex-col overflow-hidden' : ''}
       style={fullscreen ? { top: headerBottom || 'env(safe-area-inset-top)' } : undefined} data-testid="discussion">
       {fullscreen ? (
-        <div className="flex items-center gap-1 px-2 py-2 border-b shrink-0" data-testid="fullscreen-header">
-          <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">
+        <div className="flex items-end gap-1 px-2 pt-2 border-b border-gray-200 bg-gray-50 shrink-0" data-testid="fullscreen-header">
+          <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 mb-0.5 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">
             <ArrowLeft size={18} />
           </button>
-          <span className="font-semibold text-base truncate">{activeTab === 'media' ? 'Photos' : 'Chat'}</span>
-          <div className="ml-auto flex items-center">
-            <button type="button" onClick={() => setActiveTab('chat')} aria-label="Chat" data-testid="fs-chat"
-              className={`p-2 rounded ${activeTab === 'chat' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}>
-              <MessageCircle size={18} />
-            </button>
-            {gameId && (
-              <button type="button" onClick={() => setActiveTab('media')} aria-label="Photos and videos" data-testid="fs-media"
-                className={`p-2 rounded ${activeTab === 'media' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}>
-                <Image size={18} />
+          <div className="flex gap-1" role="tablist">
+            {(gameId ? (['chat', 'media'] as const) : (['chat'] as const)).map(t => (
+              <button key={t} type="button" role="tab" aria-selected={activeTab === t} onClick={() => setActiveTab(t)}
+                aria-label={t === 'chat' ? 'Chat' : 'Photos and videos'} data-testid={`fs-${t}`}
+                className={`-mb-px flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-sm border ${activeTab === t
+                  ? 'relative z-10 bg-white text-green-700 font-semibold border-gray-200 border-t-2 border-t-green-600 border-b-white'
+                  : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                {t === 'chat' ? <MessageCircle size={16} /> : <Image size={16} />}
+                {t === 'chat' ? 'Chat' : 'Photos'}
               </button>
-            )}
+            ))}
+          </div>
+          <div className="ml-auto flex items-center mb-0.5">
             <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 rounded text-gray-500 hover:bg-gray-100" aria-label="Smaller view" data-testid="discussion-fullscreen">
               <Minimize2 size={18} />
             </button>

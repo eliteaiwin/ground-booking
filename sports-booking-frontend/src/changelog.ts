@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.40', date: '2026-10-30', changes: [
+    'Full-screen Chat / Photos: folder tabs for Chat and Photos, with shared shrink and close icons',
+  ] },
   { version: '1.39', date: '2026-10-30', changes: [
     'Ground Mgmt: Schedule and Allot merged into one Schedule screen (Day / Week / Month)',
     'Allot a pitch over a date range (From / To, pick the weekdays) to a moderator or group',
