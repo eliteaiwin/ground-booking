@@ -600,7 +600,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
     game?.waiting_list.some(p => p.user_id === user?.id) || !!myAwaiting;
   const isSelectedPlayer = game?.selected_players.some(p => p.user_id === user?.id);
   const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id);
-  const myTentative = !!(myPlayerRecord?.tentative || game?.waiting_list.find(p => p.user_id === user?.id)?.tentative) && game?.status !== 'completed';
+  const myTentative = !!myPlayerRecord?.tentative && game?.status !== 'completed';
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -1026,6 +1026,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
           <Card className="border-green-300 bg-green-50" data-testid="join-confirm">
             <CardContent className="p-4">
               <h4 className="font-semibold text-green-800 mb-2">Join {game.title}?</h4>
+              {game.selected_players.length < game.max_players && (
               <label className="flex items-start gap-2 text-sm text-gray-700 mb-3">
                 <input type="checkbox" className="mt-0.5 accent-amber-500" checked={joinTentative}
                   onChange={e => setJoinTentative(e.target.checked)} data-testid="join-tentative" />
@@ -1039,6 +1040,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                   )}
                 </span>
               </label>
+              )}
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => setShowJoinConfirm(false)}>Cancel</Button>
                 <Button size="sm" className="bg-green-600 hover:bg-green-700" data-testid="join-yes"
@@ -1047,7 +1049,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                 setActionLoading('vote');
                 setError('');
                 try {
-                  const result = await api.voteJoin(game.id, 'Anywhere', joinTentative);
+                  const result = await api.voteJoin(game.id, 'Anywhere', joinTentative && game.selected_players.length < game.max_players);
                   setShowJoinConfirm(false);
                   if (result.is_first_time_on_ground) {
                     setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
@@ -2219,7 +2221,6 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                     </button>
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
-                      {player.tentative && game.status !== 'completed' && <TentativeBadge onRemove={player.user_id === user?.id && !gameIsOver && !isReadOnly ? () => setConfirmPlayOpen(true) : undefined} />}
                       {player.user_id === user?.id && <Badge className="ml-1 bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     </span>
                     <PlayerInfoButton player={player} />

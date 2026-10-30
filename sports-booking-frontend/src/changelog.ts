@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.44', date: '2026-10-31', changes: [
+    'Tentative is only for confirmed players: no Tentative tick box when the game is full, no T on the waiting list',
+    'Players moved up from the waiting list are never tentative',
+  ] },
   { version: '1.43', date: '2026-10-31', changes: [
     'Tentative players can tap the small x on their own amber T to confirm they will definitely play',
     'Phone push notifications: game voting started (whistle) and payment due (coin), in the next phone app build',

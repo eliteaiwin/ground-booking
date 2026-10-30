@@ -921,7 +921,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "joined_at": p["joined_at"],
             "photo": player_photo_map.get(p["user_id"], ""),
             "gender": p["gender"] or "",
-            "tentative": bool(p["tentative"]),
+            "tentative": bool(p["tentative"]) and p["status"] == "selected",
         }
         if p["status"] == "selected":
             selected.append(player_data)
@@ -1822,6 +1822,8 @@ async def vote_join_game(
         if not await prev_cursor.fetchone():
             is_first_time_on_ground = True
 
+    if player_status != "selected":
+        tentative = 0
     await db.execute(
         "INSERT INTO game_players (game_id, user_id, status, position, payment_confirmed, tentative) VALUES (?, ?, ?, ?, ?, ?)",
         (game_id, user_id, player_status, position, payment_confirmed, tentative)
@@ -2039,7 +2041,7 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
         if next_player:
             # The promoted player takes the leaver's place in the confirmed list.
             await db.execute(
-                "UPDATE game_players SET status = 'selected', list_at = ? WHERE id = ?",
+                "UPDATE game_players SET status = 'selected', tentative = 0, list_at = ? WHERE id = ?",
                 (player["list_at"] or player["joined_at"], next_player["id"])
             )
             await log_event(db, game_id, "promoted", user_id=next_player["user_id"], note=f"place:{user_id}")
@@ -2194,7 +2196,7 @@ async def nominate_player(
             selected_count = (await count_cursor.fetchone())["cnt"]
             if selected_count < game["max_players"]:
                 await db.execute(
-                    "UPDATE game_players SET status = 'selected' WHERE id = ?",
+                    "UPDATE game_players SET status = 'selected', tentative = 0 WHERE id = ?",
                     (existing["id"],)
                 )
                 await db.execute(
