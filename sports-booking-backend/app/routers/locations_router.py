@@ -1163,14 +1163,24 @@ async def users_by_location(
     )
     if not await cursor_role.fetchone():
         raise HTTPException(status_code=403, detail="Admin, Ground Management, or Moderator access required")
+    # Everyone tied to the location: listed it in their profile, belong to / manage / moderate one of
+    # its grounds, or have played a game there.
     query = """SELECT u.id, u.name, u.first_name, u.last_name, u.phone, u.email
                FROM users u
-               WHERE (',' || u.locations || ',' LIKE '%,' || ? || ',%' OR u.locations = ?)"""
-    params: list = [location, location]
+               WHERE (',' || u.locations || ',' LIKE '%,' || ? || ',%' OR u.locations = ?
+                  OR u.id IN (SELECT gm.user_id FROM ground_members gm JOIN grounds g ON g.id = gm.ground_id WHERE g.location = ?)
+                  OR u.id IN (SELECT ga.user_id FROM ground_management_assignments ga JOIN grounds g ON g.id = ga.ground_id WHERE g.location = ?)
+                  OR u.id IN (SELECT ml.user_id FROM moderator_locations ml WHERE ml.location = ?)
+                  OR u.id IN (SELECT gp.user_id FROM game_players gp JOIN games ga ON ga.id = gp.game_id
+                              WHERE ga.ground_name LIKE ? ESCAPE '\\'
+                                 OR ga.ground_name IN (SELECT g.name FROM grounds g WHERE g.location = ?)))"""
+    esc_loc = location.replace('%', '\\%').replace('_', '\\_')
+    params: list = [location, location, location, location, location, f"{esc_loc} - %", location]
     if search:
         escaped = search.replace('%', '\\%').replace('_', '\\_')
-        query += " AND (u.name LIKE ? ESCAPE '\\' OR u.phone LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\')"
-        params.extend([f"%{escaped}%", f"%{escaped}%", f"%{escaped}%"])
+        query += (" AND (u.name LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR u.first_name LIKE ? ESCAPE '\\'"
+                  " OR u.last_name LIKE ? ESCAPE '\\' OR u.phone LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\')")
+        params.extend([f"%{escaped}%"] * 6)
     query += " ORDER BY u.name LIMIT 50"
     cursor = await db.execute(query, params)
     rows = await cursor.fetchall()

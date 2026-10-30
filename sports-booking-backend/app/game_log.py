@@ -78,11 +78,22 @@ def _duration(minutes: float) -> str:
     return f"{mm}m"
 
 
+def _elapsed(seconds: float) -> str:
+    """Two largest units, e.g. 2h, 10m 10s, 1d 3h."""
+    s = max(int(round(seconds)), 0)
+    parts = [(s // 86400, "d"), (s % 86400 // 3600, "h"), (s % 3600 // 60, "m"), (s % 60, "s")]
+    while len(parts) > 1 and parts[0][0] == 0:
+        parts.pop(0)
+    shown = [f"{v}{u}" for v, u in parts[:2] if v]
+    return " ".join(shown) or "0s"
+
+
 async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_payments: bool) -> list[dict]:
     game_id = game["id"]
     cur = await ground_currency(db, game["ground_name"])
     start, end = _schedule(game)
     end_utc = end.replace(tzinfo=APP_TZ).astimezone(timezone.utc) if end else None
+    start_utc = start.replace(tzinfo=APP_TZ).astimezone(timezone.utc) if start else None
     events = [dict(r) for r in await (await db.execute(
         "SELECT kind, user_id, actor_id, amount, note, created_at FROM game_events WHERE game_id = ? ORDER BY id",
         (game_id,),
@@ -191,10 +202,13 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
         return f"{cur} {text}" if cur[-1:].isalpha() else f"{cur}{text}"
 
     def timing(at: Optional[datetime]) -> str:
-        if not at or not end_utc:
+        if not at or not end_utc or not start_utc:
             return ""
-        mins = (at - end_utc).total_seconds() / 60
-        return f", {_duration(mins)} after the game ended" if mins >= 0 else ", before the game ended"
+        if at < start_utc:
+            return f", {_elapsed((start_utc - at).total_seconds())} before the game started"
+        if at < end_utc:
+            return f", {_elapsed((end_utc - at).total_seconds())} before the game ended"
+        return f", {_elapsed((at - end_utc).total_seconds())} after the game ended"
 
     out = []
     for e in events:

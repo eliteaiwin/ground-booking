@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { PersonSearch } from '@/components/PersonSearch';
 import { formatPhone } from '@/lib/phone';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
@@ -569,14 +570,8 @@ export default function AdminScreens({ onBack }: Props) {
               <CardContent className="space-y-3">
                 <div className="space-y-2">
                   <Label>Select User</Label>
-                  <Select value={assignUserId} onValueChange={setAssignUserId}>
-                    <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
-                    <SelectContent>
-                      {users.map(u => (
-                        <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <PersonSearch value={assignUserId} onChange={setAssignUserId} testId="assign-mod-user"
+                    options={users.map(u => ({ id: u.id, label: `${u.name} (${u.phone})` }))} />
                 </div>
                 <div className="space-y-2">
                   <Label>Location</Label>
@@ -799,14 +794,8 @@ export default function AdminScreens({ onBack }: Props) {
                 <p className="text-xs text-gray-500">Assign a user to manage a specific ground. This auto-grants them the Ground Management role.</p>
                 <div className="space-y-2">
                   <Label>Select User</Label>
-                  <Select value={gmUserId} onValueChange={setGmUserId}>
-                    <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
-                    <SelectContent>
-                      {users.map(u => (
-                        <SelectItem key={u.id} value={String(u.id)}>{u.name} ({u.phone})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <PersonSearch value={gmUserId} onChange={setGmUserId} testId="assign-gm-user"
+                    options={users.map(u => ({ id: u.id, label: `${u.name} (${u.phone})` }))} />
                 </div>
                 <div className="space-y-2">
                   <Label>Select Ground</Label>

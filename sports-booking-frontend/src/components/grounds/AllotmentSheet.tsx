@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { sportLabel } from '@/lib/sports';
+import { PersonSearch } from '@/components/PersonSearch';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 
 const SLOT_MINUTES = 30;
@@ -357,17 +358,12 @@ export default function AllotmentSheet({ groundId, groups, date: dateProp, onDat
           </div>
           <div className="space-y-1">
             <Label>Allot to</Label>
-            <Select value={draft.target} onValueChange={(v) => setDraft({ ...draft, target: v })}>
-              <SelectTrigger aria-label="Allot to"><SelectValue placeholder="Moderator or moderator group" /></SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={`g${g.id}`} value={`g:${g.id}`}>Group: {g.name} ({g.members.length})</SelectItem>
-                ))}
-                {moderators.map((m) => (
-                  <SelectItem key={`u${m.user_id}`} value={`u:${m.user_id}`}>{m.user_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PersonSearch value={draft.target} onChange={(v) => setDraft({ ...draft, target: v })} testId="allot-to"
+              placeholder="Type moderator or group name..."
+              options={[
+                ...groups.map((g) => ({ id: `g:${g.id}`, label: `Group: ${g.name} (${g.members.length})` })),
+                ...moderators.map((m) => ({ id: `u:${m.user_id}`, label: m.user_name })),
+              ]} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">

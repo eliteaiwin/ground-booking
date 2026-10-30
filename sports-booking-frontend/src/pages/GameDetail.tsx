@@ -27,6 +27,7 @@ import { formatMoney, shareChangeText, currencySymbol } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { InviteDialog } from '@/components/InviteDialog';
+import { PersonSearch } from '@/components/PersonSearch';
 import { inviteUrl } from '@/lib/invite';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
@@ -400,6 +401,7 @@ interface UserItem {
   name: string;
   first_name?: string;
   last_name?: string;
+  display_name?: string;
   phone: string;
   email?: string;
   profile_pic?: string;
@@ -1989,7 +1991,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                       {availableForNomination
                         .filter(u => {
                           const q = addPlayerSearch.toLowerCase();
-                          return u.name.toLowerCase().includes(q) || u.phone.includes(q);
+                          return `${u.name} ${u.display_name ?? ''}`.toLowerCase().includes(q) || u.phone.includes(q);
                         })
                         .slice(0, 6)
                         .map(u => (
@@ -2021,7 +2023,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                         ))}
                       {availableForNomination.filter(u => {
                         const q = addPlayerSearch.toLowerCase();
-                        return u.name.toLowerCase().includes(q) || u.phone.includes(q);
+                        return `${u.name} ${u.display_name ?? ''}`.toLowerCase().includes(q) || u.phone.includes(q);
                       }).length === 0 && (
                         <p className="px-3 py-2 text-xs text-gray-400">No matching players</p>
                       )}
@@ -2257,49 +2259,34 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
               {/* 1st Preference (Required) */}
               <div>
                 <Label className="text-xs font-semibold text-yellow-800">1st Preference (3 pts) *</Label>
-                <Select value={potdFirstPref} onValueChange={(v) => {
-                  setPotdFirstPref(v);
-                  if (v === potdSecondPref) setPotdSecondPref('');
-                  if (v === potdThirdPref) setPotdThirdPref('');
-                }}>
-                  <SelectTrigger><SelectValue placeholder="Select best player" /></SelectTrigger>
-                  <SelectContent>
-                    {game.selected_players.filter(p => p.user_id !== user?.id).map(p => (
-                      <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <PersonSearch value={potdFirstPref} testId="potd-first" placeholder="Type best player's name..."
+                  onChange={(v) => {
+                    setPotdFirstPref(v);
+                    if (v && v === potdSecondPref) setPotdSecondPref('');
+                    if (v && v === potdThirdPref) setPotdThirdPref('');
+                  }}
+                  options={game.selected_players.filter(p => p.user_id !== user?.id).map(p => ({ id: p.user_id, label: formatPlayerDisplay(p.name, p.phone, undefined, p.display_name), search: `${p.name} ${p.display_name ?? ''} ${p.phone}` }))} />
               </div>
               {/* 2nd Preference (Optional) */}
               <div>
                 <Label className="text-xs font-semibold text-yellow-700">2nd Preference (2 pts)</Label>
-                <Select value={potdSecondPref} onValueChange={(v) => {
-                  setPotdSecondPref(v);
-                  if (v === potdThirdPref) setPotdThirdPref('');
-                }}>
-                  <SelectTrigger><SelectValue placeholder="Optional - 2nd best" /></SelectTrigger>
-                  <SelectContent>
-                    {game.selected_players
-                      .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref)
-                      .map(p => (
-                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <PersonSearch value={potdSecondPref} testId="potd-second" placeholder="Optional - type 2nd best..."
+                  onChange={(v) => {
+                    setPotdSecondPref(v);
+                    if (!v || v === potdThirdPref) setPotdThirdPref('');
+                  }}
+                  options={game.selected_players
+                    .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref)
+                    .map(p => ({ id: p.user_id, label: formatPlayerDisplay(p.name, p.phone, undefined, p.display_name), search: `${p.name} ${p.display_name ?? ''} ${p.phone}` }))} />
               </div>
               {/* 3rd Preference (Optional, requires 2nd) */}
               <div>
                 <Label className="text-xs font-semibold text-yellow-700">3rd Preference (1 pt)</Label>
-                <Select value={potdThirdPref} onValueChange={setPotdThirdPref} disabled={!potdSecondPref}>
-                  <SelectTrigger><SelectValue placeholder={potdSecondPref ? 'Optional - 3rd best' : 'Select 2nd first'} /></SelectTrigger>
-                  <SelectContent>
-                    {game.selected_players
-                      .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref && String(p.user_id) !== potdSecondPref)
-                      .map(p => (
-                        <SelectItem key={p.user_id} value={String(p.user_id)}>{formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <PersonSearch value={potdThirdPref} onChange={setPotdThirdPref} disabled={!potdSecondPref} testId="potd-third"
+                  placeholder={potdSecondPref ? 'Optional - type 3rd best...' : 'Pick 2nd first'}
+                  options={game.selected_players
+                    .filter(p => p.user_id !== user?.id && String(p.user_id) !== potdFirstPref && String(p.user_id) !== potdSecondPref)
+                    .map(p => ({ id: p.user_id, label: formatPlayerDisplay(p.name, p.phone, undefined, p.display_name), search: `${p.name} ${p.display_name ?? ''} ${p.phone}` }))} />
               </div>
               <Button className="w-full bg-yellow-600 hover:bg-yellow-700"
                 disabled={!potdFirstPref || actionLoading === 'potd'}

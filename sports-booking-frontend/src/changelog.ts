@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.45', date: '2026-10-31', changes: [
+    'Log: payments show how early or late they were, e.g. "2h before the game started", "10m 10s after the game ended"',
+    'Picking a person (POTD votes, Allot to, assign moderator / ground manager) is now a type-to-search box instead of a dropdown',
+    'Moderator search finds everyone linked to the location (its grounds, games played there), and matches display names too',
+  ] },
   { version: '1.44', date: '2026-10-31', changes: [
     'Tentative is only for confirmed players: no Tentative tick box when the game is full, no T on the waiting list',
     'Players moved up from the waiting list are never tentative',
