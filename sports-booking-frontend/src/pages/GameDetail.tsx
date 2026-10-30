@@ -455,10 +455,18 @@ interface Props {
   openTab?: string;
 }
 
-function TentativeBadge() {
+function TentativeBadge({ onRemove }: { onRemove?: () => void }) {
   return (
-    <span title="Tentative" data-testid="tentative-badge"
-      className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold align-middle">T</span>
+    <span className="relative ml-1 inline-flex align-middle">
+      <span title="Tentative" data-testid="tentative-badge"
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold">T</span>
+      {onRemove && (
+        <button type="button" aria-label="I will definitely play" data-testid="tentative-remove" onClick={onRemove}
+          className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-gray-700 text-white flex items-center justify-center ring-1 ring-white">
+          <X size={8} strokeWidth={3} />
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -477,6 +485,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
   const [potdDeadline, setPotdDeadline] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
+  const [confirmPlayOpen, setConfirmPlayOpen] = useState(false);
   const [error, setError] = useState('');
   const [showEditGame, setShowEditGame] = useState(false);
   const [confirmCompleted, setConfirmCompleted] = useState<'edit' | 'delete' | null>(null);
@@ -2032,7 +2041,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                     </button>
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
-                          {player.tentative && game.status !== 'completed' && <TentativeBadge />}
+                          {player.tentative && game.status !== 'completed' && <TentativeBadge onRemove={player.user_id === user?.id && !gameIsOver && !isReadOnly ? () => setConfirmPlayOpen(true) : undefined} />}
                           {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
                           {player.user_id === user?.id && game.status === 'completed' && player.payment_confirmed !== 1 && !(game.pay_first_enabled && player.must_prepay) && (
                             <Button size="sm" className="ml-1 h-5 px-2 text-[11px] bg-orange-600 hover:bg-orange-700" data-testid="row-pay"
@@ -2210,7 +2219,7 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                     </button>
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
-                      {player.tentative && game.status !== 'completed' && <TentativeBadge />}
+                      {player.tentative && game.status !== 'completed' && <TentativeBadge onRemove={player.user_id === user?.id && !gameIsOver && !isReadOnly ? () => setConfirmPlayOpen(true) : undefined} />}
                       {player.user_id === user?.id && <Badge className="ml-1 bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     </span>
                     <PlayerInfoButton player={player} />
@@ -2342,6 +2351,21 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
             <Button variant="outline" className="w-full" data-testid="open-invite" onClick={() => setShowInvite(true)}>
               <Users size={16} className="mr-2" /> Invite to this game (link / QR)
             </Button>
+            <Dialog open={confirmPlayOpen} onOpenChange={setConfirmPlayOpen}>
+              <DialogContent className="max-w-sm" data-testid="confirm-play-dialog">
+                <DialogHeader>
+                  <DialogTitle>Hurray, so you confirm you will definitely play the game?</DialogTitle>
+                </DialogHeader>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setConfirmPlayOpen(false)}>Cancel</Button>
+                  <Button className="bg-green-600 hover:bg-green-700 text-white" data-testid="confirm-play"
+                    disabled={actionLoading === 'confirm-avail'}
+                    onClick={() => { setConfirmPlayOpen(false); handleAction('confirm-avail', () => api.confirmAvailability(game.id)); }}>
+                    Confirm
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
             {showInvite && <InviteDialog title="Invite to this game" url={inviteUrl(user?.id, game.id)}
               message={`Join "${game.title}" on ${game.game_date}${game.game_time ? ` at ${game.game_time}` : ''}. Tap to open the game and nominate yourself:`}
               onClose={() => setShowInvite(false)} />}
