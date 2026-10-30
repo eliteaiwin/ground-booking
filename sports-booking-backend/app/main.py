@@ -34,6 +34,7 @@ async def _reminder_loop():
             async with aiosqlite.connect(DATABASE_PATH) as db:
                 db.row_factory = aiosqlite.Row
                 await games_router.send_tentative_reminders(db)
+                await games_router.send_low_turnout_alerts(db)
         except Exception:
             logging.exception("tentative reminder loop failed")
         await asyncio.sleep(300)

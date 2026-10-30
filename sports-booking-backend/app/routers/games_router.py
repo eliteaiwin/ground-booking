@@ -1884,6 +1884,38 @@ async def send_tentative_reminders(db: aiosqlite.Connection) -> int:
     return sent
 
 
+async def send_low_turnout_alerts(db: aiosqlite.Connection) -> int:
+    """About 4 hours before a game, warn its moderator if under 80% of the players have joined."""
+    now = _local_now()
+    rows = await (await db.execute(
+        """SELECT g.*, (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = g.id AND gp.status = 'selected') AS joined
+           FROM games g WHERE g.status = 'voting_open' AND g.low_turnout_alerted = 0 AND g.ground_cost > 0"""
+    )).fetchall()
+    sent = 0
+    for g in rows:
+        try:
+            start = datetime.strptime(f"{g['game_date']} {g['game_time']}", "%Y-%m-%d %H:%M")
+        except (TypeError, ValueError):
+            continue
+        if not (start - timedelta(hours=4) <= now < start):
+            continue
+        n, mx = g["joined"], g["max_players"]
+        if n <= 0 or mx <= 0 or n >= math.ceil(mx * 0.8):
+            continue
+        cur = await ground_currency(db, g["ground_name"])
+        each = lambda c: format_money(math.ceil(g["ground_cost"] / c - 0.001), cur)
+        await create_notification(
+            db, g["created_by"], g["id"], "low_turnout",
+            f"Only {n} of {mx} players joined {g['title']} at {start.strftime('%-I:%M %p')} (under 80%). "
+            f"Consider a smaller ground. If you go ahead, each player pays {each(n)} instead of {each(mx)}."
+        )
+        await db.execute("UPDATE games SET low_turnout_alerted = 1 WHERE id = ?", (g["id"],))
+        sent += 1
+    if sent:
+        await db.commit()
+    return sent
+
+
 @router.delete("/{game_id}/vote")
 async def quit_game(
     game_id: int,
