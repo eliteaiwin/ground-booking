@@ -170,7 +170,8 @@ function AppContent() {
   switch (currentPage) {
     case 'game-detail':
       return selectedGameId ? (
-        <GameDetail key={`${selectedGameId}-${gameOpenTab}`} gameId={selectedGameId} onBack={goHome} openTab={gameOpenTab} />
+        <GameDetail key={`${selectedGameId}-${gameOpenTab}`} gameId={selectedGameId} onBack={goHome} openTab={gameOpenTab}
+          onOpenGame={(id) => { setGameOpenTab(''); setSelectedGameId(id); }} />
       ) : (
         <Dashboard onNavigate={navigate} />
       );

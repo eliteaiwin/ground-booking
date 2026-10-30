@@ -455,6 +455,7 @@ interface Props {
   gameId: number;
   onBack: () => void;
   openTab?: string;
+  onOpenGame?: (gameId: number) => void;
 }
 
 function TentativeBadge({ onRemove }: { onRemove?: () => void }) {
@@ -472,7 +473,7 @@ function TentativeBadge({ onRemove }: { onRemove?: () => void }) {
   );
 }
 
-export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
+export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }: Props) {
   const { user, isAdmin, isModerator, isGroundManagement, isReadOnly } = useAuth();
   useEffect(() => () => setPhoneHomeCountry(), []);
   const [game, setGame] = useState<Game | null>(null);
@@ -491,6 +492,8 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
   const [error, setError] = useState('');
   const [showEditGame, setShowEditGame] = useState(false);
   const [confirmCompleted, setConfirmCompleted] = useState<'edit' | 'delete' | null>(null);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
   const [editReceiverId, setEditReceiverId] = useState('0');
   const [editQuitPenalty, setEditQuitPenalty] = useState('0');
@@ -904,6 +907,15 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
     : game.selected_players;
 
   const canEditGame = (isModerator || isAdmin) && game.status !== 'cancelled';
+  const canCloneGame = (isAdmin || isModerator) && !isReadOnly && !!onOpenGame
+    && (game.status === 'completed' || game.status === 'cancelled' || game.is_archived);
+  const cloneDateLabel = (() => {
+    const d = new Date(`${game.game_date}T00:00`);
+    const now = new Date();
+    do d.setDate(d.getDate() + 7);
+    while (new Date(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${game.game_time || '23:59'}`) <= now);
+    return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+  })();
   const canDeleteGame = game.is_archived ? isAdmin : (isAdmin || isModerator || isGroundManagement) && !gameIsOver && (game.status === 'draft' || game.status === 'cancelled');
   const reveal = (id: string) => setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   const openEditGame = () => {
@@ -943,12 +955,42 @@ export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
                 <button type="button" onClick={() => guardCompleted('edit')} aria-label="Edit game" title="Edit game" data-testid="hdr-edit"
                   className="p-1.5 rounded-md hover:bg-white/20"><Pencil size={18} /></button>
               )}
+              {canCloneGame && (
+                <button type="button" onClick={() => setCloneOpen(true)} aria-label="Clone game" title="Clone game" data-testid="hdr-clone"
+                  className="p-1.5 rounded-md hover:bg-white/20"><Copy size={18} /></button>
+              )}
               {canDeleteGame && (
                 <button type="button" onClick={() => guardCompleted('delete')} aria-label="Delete game" title="Delete game" data-testid="hdr-delete"
                   className="p-1.5 rounded-md hover:bg-white/20"><Trash2 size={18} /></button>
               )}
             </div>
           </div>
+          <Dialog open={cloneOpen} onOpenChange={setCloneOpen}>
+            <DialogContent className="max-w-sm" data-testid="clone-confirm">
+              <DialogHeader><DialogTitle className="flex items-center gap-2"><Copy size={16} className="text-green-600" /> Clone game</DialogTitle></DialogHeader>
+              <p className="text-sm text-gray-600">
+                This game will be cloned for {cloneDateLabel} at the same time, with the same set of players. Are you sure?
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setCloneOpen(false)}>No</Button>
+                <Button className="bg-green-600 hover:bg-green-700" disabled={cloning} data-testid="clone-yes"
+                  onClick={async () => {
+                    setCloning(true);
+                    try {
+                      const g: { id: number } = await api.cloneGame(game.id);
+                      setCloneOpen(false);
+                      onOpenGame?.(g.id);
+                    } catch (e) {
+                      alert(e instanceof Error ? e.message : 'Could not clone the game');
+                    } finally {
+                      setCloning(false);
+                    }
+                  }}>
+                  {cloning ? 'Cloning...' : 'Yes, clone'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Dialog open={!!confirmCompleted} onOpenChange={o => !o && setConfirmCompleted(null)}>
             <DialogContent className="max-w-sm" data-testid="completed-confirm">
               <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle size={16} className="text-orange-500" /> Game already completed</DialogTitle></DialogHeader>

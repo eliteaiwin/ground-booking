@@ -305,6 +305,9 @@ export const api = {
   cancelGame: (id: number) =>
     request(`/api/games/${id}/cancel`, { method: 'POST' }),
 
+  cloneGame: (id: number) =>
+    request(`/api/games/${id}/clone`, { method: 'POST' }),
+
   deleteGame: (id: number) =>
     request(`/api/games/${id}`, { method: 'DELETE' }),
 

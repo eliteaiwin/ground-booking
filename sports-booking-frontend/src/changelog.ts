@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.46', date: '2026-10-31', changes: [
+    'Clone game: completed, cancelled or archived games have a Clone icon next to the bin. It creates the same game on the next same weekday (Sunday to next Sunday) with the same timing, fee, payment receiver and players',
+  ] },
   { version: '1.45', date: '2026-10-31', changes: [
     'Log: payments show how early or late they were, e.g. "2h before the game started", "10m 10s after the game ended"',
     'Picking a person (POTD votes, Allot to, assign moderator / ground manager) is now a type-to-search box instead of a dropdown',

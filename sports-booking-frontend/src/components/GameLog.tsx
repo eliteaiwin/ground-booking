@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Sparkles, LogIn, Hourglass, UserPlus, ArrowUpCircle, ArrowDownCircle, LogOut, UserMinus, PlayCircle, Flag,
   XCircle, Award, Trophy, Banknote, CreditCard, CheckCircle, Bell, Undo2, ArrowUp, ArrowDown, Activity, User,
-  type LucideIcon, CheckCheck, CircleSlash,
+  type LucideIcon, CheckCheck, CircleSlash, Copy,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -19,6 +19,7 @@ export interface GameLogEntry {
 
 const EVENTS: Record<string, { icon: LucideIcon; label: string; color: string }> = {
   created: { icon: Sparkles, label: 'Initiated', color: 'text-purple-600' },
+  cloned: { icon: Copy, label: 'Cloned', color: 'text-green-600' },
   joined: { icon: LogIn, label: 'Joined', color: 'text-green-600' },
   availability_confirmed: { icon: CheckCircle, label: 'Confirmed', color: 'text-green-600' },
   waiting: { icon: Hourglass, label: 'Waiting list', color: 'text-amber-600' },

@@ -556,6 +556,7 @@ async def init_db():
         "ALTER TABLE games ADD COLUMN low_turnout_alerted INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN confirmed_announced_at TIMESTAMP",
         "ALTER TABLE games ADD COLUMN receiver_id INTEGER",
+        "ALTER TABLE games ADD COLUMN cancelled_ground_cost REAL",
         """CREATE TABLE IF NOT EXISTS payment_receivers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nick_name TEXT NOT NULL,

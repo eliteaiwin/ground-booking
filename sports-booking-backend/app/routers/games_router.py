@@ -2793,7 +2793,7 @@ async def cancel_game(
             "these payments first, then cancel the game."
         ))
 
-    await db.execute("UPDATE games SET status = 'cancelled', ground_cost = 0, cost_per_person = 0 WHERE id = ?", (game_id,))
+    await db.execute("UPDATE games SET status = 'cancelled', cancelled_ground_cost = ground_cost, ground_cost = 0, cost_per_person = 0 WHERE id = ?", (game_id,))
     await log_event(db, game_id, "cancelled", actor_id=user_id)
 
     cancel_detail = (
@@ -2921,6 +2921,76 @@ async def delete_game(
 
     await db.commit()
     return {"message": "Game deleted permanently", "game_id": game_id}
+
+
+def _next_same_weekday(src_date: str, game_time: str) -> str:
+    """Next date on the source game's weekday that is after the source date and still ahead of now."""
+    d = datetime.strptime(src_date, "%Y-%m-%d").date() + timedelta(days=7)
+    now = _local_now()
+    while datetime.strptime(f"{d.isoformat()} {game_time or '23:59'}", "%Y-%m-%d %H:%M") <= now:
+        d += timedelta(days=7)
+    return d.isoformat()
+
+
+@router.post("/{game_id}/clone")
+async def clone_game(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Copy a completed / cancelled / archived game to the next same weekday, with the same players."""
+    await require_game_moderator(user_id, game_id, db)
+    src = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    if not src:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if src["status"] not in ("completed", "cancelled") and not _game_is_archived(src):
+        raise HTTPException(status_code=400, detail="Only completed, cancelled or archived games can be cloned")
+
+    new_date = _next_same_weekday(src["game_date"], src["game_time"])
+    slot = await resolve_game_slot(
+        db, user_id, src["ground_name"], src["sport_type"], new_date, src["game_time"], src["duration_minutes"],
+        pitch_format=src["pitch_format"] or None, pitch_number=src["pitch_number"] or None,
+    )
+    from .locations_router import generate_game_code
+    code = await generate_game_code(db, src["sport_type"])
+    code_display = f"{code}-{src['ground_name'].replace(' - ', '-').replace(' ', '')}"
+    ground_cost = src["ground_cost"] or (src["cancelled_ground_cost"] if src["status"] == "cancelled" else 0) or 0
+    cursor = await db.execute(
+        """INSERT INTO games (title, game_code, sport_type, ground_name, game_date, game_time,
+           max_players, ground_cost, cost_per_person, payment_timing, created_by, duration_minutes,
+           payee_user_id, quit_penalty_hours, potd_congrats_delay_minutes, note_before_players, note_after_players, series_name, series_day,
+           pitch_format, pitch_number, allotment_id, moderator_group_id, payment_collection, receiver_id, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'voting_open')""",
+        (src["title"], code_display, src["sport_type"], src["ground_name"], new_date, src["game_time"],
+         src["max_players"], ground_cost, _per_person_amount(ground_cost, 0, src["max_players"]), src["payment_timing"], user_id,
+         src["duration_minutes"], src["payee_user_id"], src["quit_penalty_hours"], src["potd_congrats_delay_minutes"],
+         src["note_before_players"], src["note_after_players"], src["series_name"], src["series_day"],
+         slot["pitch_format"], slot["pitch_number"], slot["allotment_id"], slot["moderator_group_id"] or src["moderator_group_id"],
+         src["payment_collection"], src["receiver_id"])
+    )
+    new_id = cursor.lastrowid
+    await log_event(db, new_id, "cloned", actor_id=user_id, note=src["game_date"])
+
+    rows = await (await db.execute(
+        """SELECT user_id, position FROM game_players WHERE game_id = ? AND status IN ('selected', 'waiting')
+           ORDER BY CASE status WHEN 'selected' THEN 0 ELSE 1 END, played DESC, joined_at, id""", (game_id,)
+    )).fetchall()
+    when = datetime.strptime(f"{new_date} {src['game_time']}", "%Y-%m-%d %H:%M").strftime("%a %-d %b, %-I:%M %p")
+    for i, r in enumerate(rows):
+        status = "selected" if i < src["max_players"] else "waiting"
+        await db.execute(
+            "INSERT INTO game_players (game_id, user_id, status, nominated_by, position) VALUES (?, ?, ?, ?, ?)",
+            (new_id, r["user_id"], status, user_id, r["position"] or ""),
+        )
+        await log_event(db, new_id, "nominated" if status == "selected" else "nominated_waiting", user_id=r["user_id"], actor_id=user_id)
+        if r["user_id"] != user_id:
+            await create_notification(
+                db, r["user_id"], new_id, "nominated",
+                f"You've been added to {src['title']} at {src['ground_name']} on {when}"
+                + (" (waiting list)." if status == "waiting" else "."),
+            )
+    await db.commit()
+    return await get_game_dict(db, new_id)
 
 
 @router.post("/{game_id}/vote-potd")

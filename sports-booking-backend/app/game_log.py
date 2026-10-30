@@ -219,6 +219,7 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
         pays = " (still pays, nobody was waiting)" if note == "pays" else ""
         text = {
             "created": f"Game is initiated by moderator {a}",
+            "cloned": f"{a} cloned this game from {note}",
             "joined": f"{u} joins the game{' (tentative)' if note == 'tentative' else ''}",
             "waiting": f"{u} joins the waiting list{' (tentative)' if note == 'tentative' else ''}",
             "availability_confirmed": f"{u} confirms playing (no longer tentative)",
