@@ -681,6 +681,12 @@ def _game_start(game) -> Optional[datetime]:
         return None
 
 
+def _in_confirm_window(game) -> bool:
+    """The last 3 hours before start, when a moderator can tell players the game is on."""
+    start = _game_start(game)
+    return start is not None and start - timedelta(hours=3) <= _local_now() < start
+
+
 def _game_end(game) -> Optional[datetime]:
     try:
         duration = game["duration_minutes"] or 90
@@ -1067,6 +1073,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "moderator_group_id": game["moderator_group_id"],
         "moderator_group_name": group_name,
         "ground_confirmed": game["allotment_id"] is not None,
+        "confirmed_announced": bool(game["confirmed_announced_at"]) if "confirmed_announced_at" in game.keys() else False,
+        "in_confirm_window": _in_confirm_window(game),
         "game_date": game["game_date"],
         "game_time": game["game_time"],
         "max_players": game["max_players"],
@@ -3375,6 +3383,34 @@ async def mark_payment_made(
 
     await db.commit()
     return await get_game_dict(db, game_id)
+
+
+@router.post("/{game_id}/announce-confirmed")
+async def announce_game_confirmed(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Within 3 hours of start, a moderator tells every joined player the game is on even though it isn't full."""
+    await require_game_moderator(user_id, game_id, db)
+    game = await _get_game(db, game_id)
+    start = _game_start(game)
+    now = _local_now()
+    if game["status"] not in ("draft", "voting_open") or start is None or now >= start:
+        raise HTTPException(status_code=400, detail="This game has already started or is not open")
+    if now < start - timedelta(hours=3):
+        raise HTTPException(status_code=400, detail="You can confirm the game from 3 hours before it starts")
+    if game["confirmed_announced_at"]:
+        raise HTTPException(status_code=400, detail="Players have already been told the game is confirmed")
+    rows = await (await db.execute(
+        "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,)
+    )).fetchall()
+    msg = f"Game is Confirmed: {game['title']} at {start.strftime('%-I:%M %p')}. See you on the ground!"
+    for r in rows:
+        await create_notification(db, r["user_id"], game_id, "game_confirmed", msg)
+    await db.execute("UPDATE games SET confirmed_announced_at = ? WHERE id = ?", (now.isoformat(), game_id))
+    await db.commit()
+    return {"message": f"{len(rows)} players told the game is confirmed", "notified": len(rows)}
 
 
 @router.post("/{game_id}/remind-unpaid")

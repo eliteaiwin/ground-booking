@@ -326,6 +326,8 @@ export const api = {
       body: JSON.stringify({ user_id: userId, game_id: gameId }),
     }),
 
+  announceConfirmed: (gameId: number) =>
+    request(`/api/games/${gameId}/announce-confirmed`, { method: 'POST' }),
   remindUnpaid: (gameId: number) =>
     request(`/api/games/${gameId}/remind-unpaid`, { method: 'POST' }),
 

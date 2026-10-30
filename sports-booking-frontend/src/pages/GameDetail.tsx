@@ -355,6 +355,8 @@ interface Game {
   online_payment_ready?: boolean;
   fee_breakdown?: FeeBreakdown | null;
   ground_confirmed?: boolean;
+  confirmed_announced?: boolean;
+  in_confirm_window?: boolean;
   moderator_group_name?: string | null;
   payment_mode?: string;
   payment_timing: string;
@@ -1342,6 +1344,19 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {(isModerator || isAdmin) && ['draft', 'voting_open'].includes(game.status) && !gameIsOver &&
+            game.selected_players.length > 0 && game.selected_players.length < game.max_players && game.in_confirm_window && (
+            <Button className="w-full bg-green-600 hover:bg-green-700 text-white" data-testid="announce-confirmed"
+              disabled={!!game.confirmed_announced || actionLoading === 'announce'}
+              onClick={() => {
+                if (!window.confirm(`Tell all ${game.selected_players.length} joined players "Game is Confirmed"?`)) return;
+                handleAction('announce', () => api.announceConfirmed(game.id));
+              }}>
+              <Check size={16} className="mr-2" />
+              {game.confirmed_announced ? 'Players told: Game is Confirmed' : 'Game is Confirmed: tell all players'}
+            </Button>
           )}
 
           {/* Cancel Game - for Moderator/Admin on active games that aren't over yet */}

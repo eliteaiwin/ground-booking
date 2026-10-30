@@ -7,6 +7,7 @@ export const CHANGELOG: Release[] = [
     'After cancelling: game cost becomes 0, nobody owes anything, paid players show a purple refund icon',
     'Payment Receiver is told to settle the refunds offline',
     'About 3 hours before the game, moderators get an alert if under 80% have joined: go ahead (higher per-person share shown) or cancel',
+    'Game not full: from 3 hours before start, moderators get a "Game is Confirmed" button that notifies every joined player',
   ] },
   { version: '1.41', date: '2026-10-30', changes: [
     'Join popup with a "Tentative" tick box; tentative players show an amber T until the game is completed',
