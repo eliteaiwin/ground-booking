@@ -23,3 +23,8 @@ async def ground_currency(db: aiosqlite.Connection, ground_name: str | None) -> 
     if row is None and name:
         row = await (await db.execute("SELECT country_code FROM grounds WHERE name = ?", (name,))).fetchone()
     return currency_for_country(row["country_code"] if row else None)
+
+
+def format_money(amount, cur: str) -> str:
+    text = f"{(amount or 0):,.0f}"
+    return f"{cur} {text}" if cur[-1:].isalpha() else f"{cur}{text}"

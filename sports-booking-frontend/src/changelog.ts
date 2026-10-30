@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.42', date: '2026-10-30', changes: [
+    'Cancel Game with payments: blocked until the Payment Receiver verifies every paid player',
+    'After cancelling: game cost becomes 0, nobody owes anything, paid players show a purple refund icon',
+    'Payment Receiver is told to settle the refunds offline',
+  ] },
   { version: '1.41', date: '2026-10-30', changes: [
     'Join popup with a "Tentative" tick box; tentative players show an amber T until the game is completed',
     'Tentative players get a reminder about 4 hours before the game to confirm they are playing ("I\'m playing" button)',

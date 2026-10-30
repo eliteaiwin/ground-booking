@@ -233,7 +233,7 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
             "received": f"{note or a} confirmed receiving {u}'s {money(e['amount'])}",
             "not_received": f"{note or a} says {u}'s {money(e['amount'])} was not received",
             "reminder": f"{note or a} sent {u} a payment reminder" + (f" ({money(e['amount'])} due)" if e["amount"] else ""),
-            "refund": f"{u}'s {money(e['amount'])} is marked for refund",
+            "refund": f"{u}'s {money(e['amount'])} to be refunded offline by the Payment Receiver",
         }.get(k, k)
         who = e["user_id"] or e["actor_id"] or creator
         p = people.get(who) or {}

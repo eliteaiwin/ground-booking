@@ -13,9 +13,9 @@ from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
-from ..currency import ground_currency
+from ..currency import ground_currency, format_money
 from ..game_log import log_event, build_log, log_join_before_leaving
-from .receivers_router import check_receiver, public_receiver, is_game_receiver
+from .receivers_router import check_receiver, public_receiver, is_game_receiver, receiver_owner
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
 
@@ -999,7 +999,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
         """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, u.name, p.received_amount,
-                  p.paid_by, p.paid_via, m.name AS paid_by_name, rv.name AS received_by_name
+                  p.paid_by, p.paid_via, m.name AS paid_by_name, rv.name AS received_by_name, p.refund_due
            FROM payments p
            JOIN users u ON p.user_id = u.id
            LEFT JOIN users m ON m.id = p.paid_by
@@ -1025,6 +1025,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "has_proof": bool(pr["proof_file"]),
             "received_amount": pr["received_amount"] or 0,
             "received_by_name": pr["received_by_name"] or "",
+            "refund_due": bool(pr["refund_due"]),
         }
         for pr in payment_rows
     ]
@@ -2671,6 +2672,8 @@ async def cancel_game_preview(
     pay_row = await cursor.fetchone()
     paid_count = pay_row["cnt"]
     refund_amount = pay_row["total_paid"]
+    unverified = await _unverified_paid_names(db, game_id)
+    receiver = await public_receiver(db, game["receiver_id"])
 
     return {
         "game_id": game_id,
@@ -2682,7 +2685,20 @@ async def cancel_game_preview(
         "total_players": total_players,
         "paid_players": paid_count,
         "refund_amount": refund_amount,
+        "unverified_paid": unverified,
+        "receiver_name": receiver["nick_name"] if receiver else "",
     }
+
+
+async def _unverified_paid_names(db: aiosqlite.Connection, game_id: int) -> list[str]:
+    """Players who paid offline but whose payment the Payment Receiver hasn't verified yet."""
+    rows = await (await db.execute(
+        """SELECT u.name FROM payments p JOIN users u ON u.id = p.user_id
+           WHERE p.game_id = ? AND COALESCE(p.paid_amount, 0) > 0 AND COALESCE(p.paid_via, '') != 'online'
+             AND COALESCE(p.received_amount, 0) < p.paid_amount - 0.001
+           ORDER BY u.name""", (game_id,)
+    )).fetchall()
+    return [r["name"] for r in rows]
 
 
 @router.post("/{game_id}/cancel")
@@ -2704,8 +2720,14 @@ async def cancel_game(
         raise HTTPException(status_code=400, detail="Game is already cancelled")
     if _game_has_ended(game):
         raise HTTPException(status_code=400, detail="Can't cancel a game that is already over")
+    unverified = await _unverified_paid_names(db, game_id)
+    if unverified:
+        raise HTTPException(status_code=400, detail=(
+            f"Some players have already paid ({', '.join(unverified)}). Ask the Payment Receiver to verify "
+            "these payments first, then cancel the game."
+        ))
 
-    await db.execute("UPDATE games SET status = 'cancelled' WHERE id = ?", (game_id,))
+    await db.execute("UPDATE games SET status = 'cancelled', ground_cost = 0, cost_per_person = 0 WHERE id = ?", (game_id,))
     await log_event(db, game_id, "cancelled", actor_id=user_id)
 
     cancel_detail = (
@@ -2713,21 +2735,30 @@ async def cancel_game(
         f"at {game['ground_name']} has been cancelled."
     )
 
-    # Refund paid players
+    # Paid players get their money back offline from the Payment Receiver; nobody owes anything
     cursor = await db.execute(
-        "SELECT user_id, paid_amount FROM payments WHERE game_id = ? AND paid_amount >= amount",
+        """SELECT p.user_id, p.paid_amount, u.name FROM payments p JOIN users u ON u.id = p.user_id
+           WHERE p.game_id = ? AND COALESCE(p.paid_amount, 0) > 0""",
         (game_id,)
     )
     paid_players = await cursor.fetchall()
+    await db.execute("UPDATE payments SET amount = 0 WHERE game_id = ?", (game_id,))
+    currency = await ground_currency(db, game["ground_name"])
     for pp in paid_players:
         await db.execute(
-            "UPDATE payments SET status = 'pending', paid_amount = 0, paid_at = NULL WHERE game_id = ? AND user_id = ?",
-            (game_id, pp["user_id"])
+            "UPDATE payments SET refund_due = 1 WHERE game_id = ? AND user_id = ?", (game_id, pp["user_id"])
         )
         await log_event(db, game_id, "refund", user_id=pp["user_id"], amount=pp["paid_amount"])
         await create_notification(
             db, pp["user_id"], game_id, "game_cancelled",
-            f"{cancel_detail} Your payment of {pp['paid_amount']} has been marked for refund."
+            f"{cancel_detail} Your payment of {format_money(pp['paid_amount'], currency)} will be refunded offline by the Payment Receiver."
+        )
+    receiver_user = await receiver_owner(db, game["receiver_id"])
+    if paid_players and receiver_user:
+        who = ", ".join(f"{pp['name']} {format_money(pp['paid_amount'], currency)}" for pp in paid_players)
+        await create_notification(
+            db, receiver_user, game_id, "refund_due",
+            f"{cancel_detail} Offline settlement to be done by you as Payment Receiver: refund {who}."
         )
 
     # Clear pending payments for players who quit with penalty (no longer in game_players)

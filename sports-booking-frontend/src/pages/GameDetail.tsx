@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check, Undo2 } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -203,7 +203,11 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
   const rs = (n: number) => `${formatMoney(Math.ceil(n - 0.001), currency)}`;
   let color = 'text-gray-300';
   let text = 'No payment yet';
-  if (pd && excess > 0) {
+  const refund = !!pd?.refund_due && paid > 0;
+  if (refund) {
+    color = 'text-purple-600';
+    text = `Game cancelled: refund of ${rs(paid)} due. Offline settlement to be done by the Payment Receiver.`;
+  } else if (pd && excess > 0) {
     color = 'text-amber-500';
     text = `Paid ${rs(paid)}, excess ${rs(excess)}. Share is ${rs(pd.amount)}.`;
   } else if (pd && paid > 0 && pending > 0) {
@@ -226,8 +230,8 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
     <span ref={tipRef} className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
       <button type="button" className={color} data-testid="payment-icon" aria-label={text} onClick={() => setTip(t => !t)}>
         <span className="relative inline-flex">
-          <Banknote size={16} />
-          {received && (
+          {refund ? <Undo2 size={16} data-testid="refund-icon" /> : <Banknote size={16} />}
+          {received && !refund && (
             <span className="absolute -top-1.5 -right-1.5 bg-green-600 text-white rounded-full p-[1px]" data-testid="received-tick">
               <Check size={8} strokeWidth={4} />
             </span>
@@ -237,7 +241,7 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
       {tip && (
         <span role="tooltip" onClick={() => setTip(false)} className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
           {text}
-          {received && !online && (
+          {received && !online && !refund && (
             <span className="block mt-1 text-green-300" data-testid="received-note">
               ✓ {pd?.received_by_name?.split(' ')[0] || 'The receiver'} verified the receiving of payment too.
             </span>
@@ -322,6 +326,7 @@ interface PaymentDetail {
   has_proof?: boolean;
   received_amount?: number;
   received_by_name?: string;
+  refund_due?: boolean;
 }
 
 interface Game {
@@ -504,6 +509,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [addingPlayerId, setAddingPlayerId] = useState<number | null>(null);
   const [cancelPreview, setCancelPreview] = useState<{
     confirmed_players: number; total_players: number; paid_players: number; refund_amount: number;
+    unverified_paid?: string[]; receiver_name?: string;
     title: string; ground_name: string; game_date: string; game_time: string;
   } | null>(null);
   const [showScoreDialog, setShowScoreDialog] = useState(false);
@@ -1373,9 +1379,16 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       <Separator className="my-2" />
                       <p><strong>Confirmed Players:</strong> {cancelPreview.confirmed_players} of {cancelPreview.total_players} total</p>
                       <p><strong>Players who Paid:</strong> {cancelPreview.paid_players}</p>
-                      {cancelPreview.refund_amount > 0 && (
-                        <p className="text-red-800 font-semibold">
-                          Refund Amount: {formatMoney(cancelPreview.refund_amount, currency)} (will be marked for refund)
+                      {(cancelPreview.unverified_paid?.length ?? 0) > 0 ? (
+                        <p className="text-amber-800 bg-amber-50 border border-amber-300 rounded p-2 font-medium" data-testid="cancel-unverified">
+                          Some players have already paid ({cancelPreview.unverified_paid!.join(', ')}). Ask the Payment
+                          Receiver{cancelPreview.receiver_name ? ` (${cancelPreview.receiver_name})` : ''} to verify these
+                          payments first, then cancel the game.
+                        </p>
+                      ) : cancelPreview.refund_amount > 0 && (
+                        <p className="text-red-800 font-semibold" data-testid="cancel-refund">
+                          Refund {formatMoney(cancelPreview.refund_amount, currency)}: offline settlement to be done by the Payment
+                          Receiver{cancelPreview.receiver_name ? ` (${cancelPreview.receiver_name})` : ''}. Game cost becomes 0 and nobody owes anything.
                         </p>
                       )}
                       <Separator className="my-2" />
@@ -1391,9 +1404,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         Go Back
                       </Button>
                       <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                        disabled={actionLoading === 'cancel'}
+                        disabled={actionLoading === 'cancel' || (cancelPreview.unverified_paid?.length ?? 0) > 0}
+                        data-testid="confirm-cancel"
                         onClick={() => {
-                          handleAction('cancel', () => api.cancelGame(game.id));
+                          const refunds = cancelPreview.refund_amount > 0;
+                          handleAction('cancel', async () => {
+                            await api.cancelGame(game.id);
+                            if (refunds) window.alert('Game cancelled. Offline settlement to be done by the Payment Receiver.');
+                          });
                           setShowCancelPreview(false);
                           setCancelPreview(null);
                         }}>
