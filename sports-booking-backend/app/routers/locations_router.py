@@ -883,6 +883,27 @@ async def get_ground_schedule(
             "moderators": moderators,
         })
 
+    cursor = await db.execute(
+        """SELECT a.*, u.name AS mod_name, mg.name AS group_name FROM ground_allotments a
+           LEFT JOIN users u ON u.id = a.moderator_user_id
+           LEFT JOIN moderator_groups mg ON mg.id = a.moderator_group_id
+           WHERE a.ground_id = ? AND a.status = 'confirmed' AND a.allot_date >= ? AND a.allot_date <= ?
+           ORDER BY a.allot_date, a.start_time""",
+        (ground_id, start_date, end_date)
+    )
+    allotments = [{
+        "id": a["id"],
+        "date": a["allot_date"],
+        "start_time": a["start_time"],
+        "duration_minutes": a["duration_minutes"],
+        "sport_type": a["sport_type"],
+        "pitch_format": a["pitch_format"],
+        "pitch_number": a["pitch_number"],
+        "holder": a["group_name"] or a["mod_name"] or "",
+        "rent": a["rent"],
+        "rent_paid": bool(a["rent_paid"]),
+    } for a in await cursor.fetchall()]
+
     return {
         "ground_id": ground_id,
         "ground_name": display_name,
@@ -890,6 +911,7 @@ async def get_ground_schedule(
         "start_date": start_date,
         "end_date": end_date,
         "schedule": schedule,
+        "allotments": allotments,
     }
 
 

@@ -2,6 +2,15 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.39', date: '2026-10-30', changes: [
+    'Ground Mgmt: Schedule and Allot merged into one Schedule screen (Day / Week / Month)',
+    'Allot a pitch over a date range (From / To, pick the weekdays) to a moderator or group',
+    'Allotments now show in Week and Month views',
+    'Game page: Nominate / Nominate self box removed; use the Join button at the top',
+    'Edit Game: note boxes before / after the player list only show if they were filled when booking',
+    '"Online payments go to" field removed from Create / Edit Game; the Pay to wallet covers it',
+    'Full-screen Chat / Photos now open below the app header, so Back stays reachable',
+  ] },
   { version: '1.38', date: '2026-10-30', changes: [
     'Orange "Your Share" payment box removed from the game page',
     '"Mark as paid" next to your name only shows once the game is completed',

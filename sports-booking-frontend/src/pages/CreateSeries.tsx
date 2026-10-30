@@ -16,12 +16,6 @@ import { currencySymbol } from '@/lib/currency';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 import { ReceiverSelect } from '@/components/PaymentReceiver';
 
-interface UserItem {
-  id: number;
-  name: string;
-  phone: string;
-  roles: string[];
-}
 
 interface Ground {
   id: number;
@@ -44,13 +38,6 @@ const SPORT_DURATIONS: Record<string, number> = {
 };
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-const formatUserOption = (name: string, phone: string) => {
-  const firstName = name.split(' ')[0];
-  if (!phone || phone.length < 4) return firstName;
-  const masked = phone[0] + 'x'.repeat(phone.length - 4) + phone.slice(-2);
-  return `${firstName} - ${masked}`;
-};
 
 interface Props {
   onBack: () => void;
@@ -77,7 +64,6 @@ export default function CreateSeries({ onBack }: Props) {
   const [paymentMode, setPaymentMode] = useState('postpaid');
   const [paymentCollection, setPaymentCollection] = useState('offline');
   const [potdDelayMinutes, setPotdDelayMinutes] = useState('1440');
-  const [payeeUserId, setPayeeUserId] = useState('');
   const [receiverId, setReceiverId] = useState('0');
   const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
   const [weeks, setWeeks] = useState('4');
@@ -91,7 +77,6 @@ export default function CreateSeries({ onBack }: Props) {
   const [result, setResult] = useState<{ created: number; skipped: number } | null>(null);
 
   const [grounds, setGrounds] = useState<Ground[]>([]);
-  const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [sportDefaults, setSportDefaults] = useState<Record<string, number>>({});
 
   const currency = currencySymbol(grounds.find(g => g.display_name === groundName)?.currency || user?.currency);
@@ -108,7 +93,6 @@ export default function CreateSeries({ onBack }: Props) {
         setSportDefaults(defaults);
       }).catch(() => {}),
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
-      api.listUsers().then((u: UserItem[]) => setAllUsers(u)).catch(() => {}),
     ]);
   }, []);
 
@@ -176,7 +160,6 @@ export default function CreateSeries({ onBack }: Props) {
         max_players: parseInt(maxPlayers),
         ground_cost: parseFloat(groundCost) || 0,
         duration_minutes: parseInt(durationMinutes) || 90,
-        payee_user_id: payeeUserId ? Number(payeeUserId) : undefined,
         quit_penalty_hours: parseInt(quitPenaltyHours) || 0,
         payment_mode: paymentMode,
         payment_collection: paymentCollection,
@@ -290,17 +273,6 @@ export default function CreateSeries({ onBack }: Props) {
                   <Input type="number" min="1" max="10080" value={potdDelayMinutes} onChange={(e) => setPotdDelayMinutes(e.target.value)} />
                 </div>
                 <ReceiverSelect groundName={groundName === '__other__' ? customGround : groundName} value={receiverId} onChange={setReceiverId} autoPick />
-                <div className="space-y-2">
-                  <Label>Online payments go to (app user)</Label>
-                  <Select value={payeeUserId} onValueChange={setPayeeUserId}>
-                    <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
-                    <SelectContent>
-                      {allUsers.map(u => (
-                        <SelectItem key={u.id} value={String(u.id)}>{formatUserOption(u.name, u.phone)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Quit Penalty (hours)</Label>

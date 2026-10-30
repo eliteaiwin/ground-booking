@@ -41,6 +41,8 @@ class AllotmentRequest(BaseModel):
     rent: float = 0
     notes: str = ""
     repeat_weeks: int = 1
+    until_date: Optional[str] = None
+    weekdays: Optional[list[int]] = None
 
 
 class AllotmentUpdate(BaseModel):
@@ -333,16 +335,32 @@ async def create_allotment(
 
     if not 15 <= req.duration_minutes <= 1440:
         raise HTTPException(status_code=400, detail="Duration must be between 15 minutes and 24 hours")
-    weeks = max(1, min(req.repeat_weeks, 53))
     try:
         first_start = parse_dt(req.allot_date, req.start_time)
     except ValueError:
         raise HTTPException(status_code=400, detail="Use YYYY-MM-DD for the date and HH:MM for the time")
-    series_key = uuid.uuid4().hex if weeks > 1 else ""
+    if req.until_date:
+        try:
+            last_day = datetime.strptime(req.until_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Use YYYY-MM-DD for the end date")
+        days = (last_day - first_start.date()).days
+        if days < 0:
+            raise HTTPException(status_code=400, detail="End date must be on or after the start date")
+        if days > 366:
+            raise HTTPException(status_code=400, detail="A date range can be at most one year")
+        weekdays = set(req.weekdays) if req.weekdays else set(range(7))
+        starts = [first_start + timedelta(days=d) for d in range(days + 1)
+                  if (first_start + timedelta(days=d)).weekday() in weekdays]
+        if not starts:
+            raise HTTPException(status_code=400, detail="No dates in that range match the chosen days")
+    else:
+        weeks = max(1, min(req.repeat_weeks, 53))
+        starts = [first_start + timedelta(weeks=w) for w in range(weeks)]
+    series_key = uuid.uuid4().hex if len(starts) > 1 else ""
 
     created, skipped = [], []
-    for w in range(weeks):
-        start = first_start + timedelta(weeks=w)
+    for start in starts:
         end = start + timedelta(minutes=req.duration_minutes)
         items = await load_occupancy(db, ground, _display_name(ground), sport, start, end)
         adopt, blockers = [], []

@@ -33,14 +33,6 @@ import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 import GameLog from '@/components/GameLog';
 import { PayTo, ReceiverSelect, type PublicReceiver } from '@/components/PaymentReceiver';
 
-const SPORT_POSITIONS: Record<string, string[]> = {
-  soccer: ['Anywhere', 'Goalkeeper', 'Right Back', 'Left Back', 'Center Back', 'Midfielder', 'Right Wing', 'Left Wing', 'Striker', 'Forward'],
-  cricket: ['Anywhere', 'Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
-  badminton: ['Anywhere', 'Singles', 'Doubles'],
-  basketball: ['Anywhere', 'Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
-  hockey: ['Anywhere', 'Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
-};
-
 const sportIconSmall = (type: string) => {
   if (type === 'soccer' || type === 'football') return '\u26BD';
   if (type === 'cricket') return '\uD83C\uDFCF';
@@ -461,10 +453,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [game, setGame] = useState<Game | null>(null);
   const [allUsers, setAllUsers] = useState<UserItem[]>([]);
   const [waitingOpen, setWaitingOpen] = useState(false);
-  const [nominateUserId, setNominateUserId] = useState('');
-  const [nominateSearch, setNominateSearch] = useState('');
-  const [nominateMode, setNominateMode] = useState<'self' | 'others'>('self');
-  const [nominatePosition, setNominatePosition] = useState('Anywhere');
   const [potdFirstPref, setPotdFirstPref] = useState('');
   const [potdSecondPref, setPotdSecondPref] = useState('');
   const [potdThirdPref, setPotdThirdPref] = useState('');
@@ -475,7 +463,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [error, setError] = useState('');
-  const [votePosition, setVotePosition] = useState('Anywhere');
   const [showEditGame, setShowEditGame] = useState(false);
   const [confirmCompleted, setConfirmCompleted] = useState<'edit' | 'delete' | null>(null);
   const [editPayeeUserId, setEditPayeeUserId] = useState('');
@@ -835,7 +822,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
       !game.waiting_list.some(p => p.user_id === u.id)
   );
 
-  const positions = SPORT_POSITIONS[game.sport_type] || [];
 
   const paymentByUser = new Map((game.payment_details || []).map(p => [p.user_id, p]));
   const hasPaid = (uid?: number) => uid != null && (paymentByUser.get(uid)?.paid_amount || 0) > 0;
@@ -979,6 +965,31 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 {actionLoading === 'quit' ? 'Leaving...' : iPaid ? 'Paid – can’t unjoin' : 'Unjoin'}
               </Button>
             )}
+          </div>
+        )}
+
+        {game.status === 'voting_open' && !gameIsOver && !isReadOnly && !isPlayerInGame && !myAwaiting && (
+          <div className="flex items-center justify-between gap-2 text-sm font-medium" data-testid="join-line">
+            <span className="text-gray-700">You haven't joined yet</span>
+            <Button size="sm" className="h-7 px-4 text-xs bg-green-600 hover:bg-green-700" data-testid="join"
+              disabled={actionLoading === 'vote'}
+              onClick={async () => {
+                setActionLoading('vote');
+                setError('');
+                try {
+                  const result = await api.voteJoin(game.id, 'Anywhere');
+                  if (result.is_first_time_on_ground) {
+                    setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
+                  }
+                  await loadGame();
+                } catch (err: unknown) {
+                  setError(err instanceof Error ? err.message : 'Action failed');
+                } finally {
+                  setActionLoading('');
+                }
+              }}>
+              {actionLoading === 'vote' ? 'Joining...' : 'Join'}
+            </Button>
           </div>
         )}
 
@@ -1162,125 +1173,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
             </Button>
           )}
 
-          {game.status === 'voting_open' && !isReadOnly && (!isPlayerInGame || isModerator || isAdmin) && (
-            <Card className="border-green-200 bg-green-50">
-              <CardContent className="p-4">
-                {/* Radio buttons for Nominate Self / Nominate Others */}
-                <div className="flex gap-4 mb-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="nominate-mode" value="self" checked={nominateMode === 'self'}
-                      onChange={() => setNominateMode('self')}
-                      className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-medium text-gray-700">Nominate Self</span>
-                  </label>
-                  {(isModerator || isAdmin) && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="nominate-mode" value="others" checked={nominateMode === 'others'}
-                        onChange={() => setNominateMode('others')}
-                        className="w-4 h-4 text-green-600" />
-                      <span className="text-sm font-medium text-gray-700">Nominate Others</span>
-                    </label>
-                  )}
-                </div>
-
-                {game.payment_timing === 'before' && (
-                  <p className="text-xs text-orange-600 mb-2 flex items-center gap-1">
-                    <CreditCard size={12} /> PrePaid: Payment required to confirm your spot
-                  </p>
-                )}
-
-                {/* Nominate Others: type to search */}
-                {nominateMode === 'others' && (isModerator || isAdmin) && (
-                  <div className="mb-3 space-y-1">
-                    <Label className="text-sm text-gray-600 block">Player</Label>
-                    <div className="relative">
-                      <Search size={14} className="absolute left-2 top-2.5 text-gray-400" />
-                      <Input
-                        placeholder="Type a name or phone..."
-                        value={nominateSearch}
-                        onChange={(e) => { setNominateSearch(e.target.value); setNominateUserId(''); }}
-                        className="pl-8 text-sm bg-white"
-                        data-testid="nominate-search"
-                      />
-                    </div>
-                    {nominateSearch.trim() && !nominateUserId && (
-                      <div className="border rounded-md divide-y max-h-40 overflow-y-auto bg-white">
-                        {availableForNomination
-                          .filter(u => {
-                            const q = nominateSearch.trim().toLowerCase();
-                            return u.name.toLowerCase().includes(q) || u.phone.includes(q);
-                          })
-                          .slice(0, 6)
-                          .map(u => (
-                            <button key={u.id} type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-green-50"
-                              onClick={() => { setNominateUserId(String(u.id)); setNominateSearch(u.name); }}>
-                              {formatPlayerDisplay(u.name, u.phone)}
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Shared position selector */}
-                {positions.length > 0 && game.allow_position_selection && (
-                  <div className="mb-3">
-                    <Label className="text-sm text-gray-600 mb-1 block">Select Position</Label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {positions.map(pos => (
-                        <button key={pos} type="button"
-                          onClick={() => {
-                            if (nominateMode === 'self') {
-                              setVotePosition(votePosition === pos ? 'Anywhere' : pos);
-                            } else {
-                              setNominatePosition(nominatePosition === pos ? 'Anywhere' : pos);
-                            }
-                          }}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-                            (nominateMode === 'self' ? votePosition === pos : nominatePosition === pos)
-                              ? 'bg-green-600 text-white border-green-600'
-                              : 'bg-white text-gray-600 border-gray-300 hover:border-green-400'
-                          }`}>{pos}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {nominateMode === 'self' && !isPlayerInGame && (
-                  <Button className="w-full bg-green-600 hover:bg-green-700"
-                    onClick={async () => {
-                      setActionLoading('vote');
-                      setError('');
-                      try {
-                        const result = await api.voteJoin(game.id, votePosition);
-                        if (result.is_first_time_on_ground) {
-                          setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
-                        }
-                        await loadGame();
-                      } catch (err: unknown) {
-                        setError(err instanceof Error ? err.message : 'Action failed');
-                      } finally {
-                        setActionLoading('');
-                      }
-                    }}
-                    disabled={actionLoading === 'vote'}>
-                    {actionLoading === 'vote' ? 'Nominating...' : `Nominate Self${votePosition && votePosition !== 'Anywhere' ? ` as ${votePosition}` : ''}`}
-                  </Button>
-                )}
-
-                {nominateMode === 'others' && (isModerator || isAdmin) && (
-                  <Button className="w-full bg-green-600 hover:bg-green-700"
-                    disabled={!nominateUserId || actionLoading === 'nominate'}
-                    onClick={async () => { await handleAction('nominate', () => api.nominatePlayer(game.id, Number(nominateUserId), nominatePosition)); setNominateUserId(''); setNominateSearch(''); }}>
-                    {actionLoading === 'nominate' ? 'Nominating...' : 'Nominate Player'}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-
           {isReadOnly && game.status === 'voting_open' && (
             <Card className="border-gray-200 bg-gray-50">
               <CardContent className="p-3 text-center text-sm text-gray-500">
@@ -1302,17 +1194,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 {showEditGame && (
                   <div className="space-y-3">
                     <ReceiverSelect groundName={game.ground_name} value={editReceiverId} onChange={setEditReceiverId} />
-                    <div>
-                      <Label className="text-xs text-gray-500">Online payments go to (app user)</Label>
-                      <Select value={editPayeeUserId} onValueChange={setEditPayeeUserId}>
-                        <SelectTrigger><SelectValue placeholder="Select payment receiver" /></SelectTrigger>
-                        <SelectContent>
-                          {allUsers.map(u => (
-                            <SelectItem key={u.id} value={String(u.id)}>{formatPlayerDisplay(u.name, u.phone)}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div>
                       <Label className="text-xs text-gray-500">Ground Cost ({currency})</Label>
                       <Input type="number" min="0" step="0.01" value={editGroundCost}
@@ -1355,14 +1236,18 @@ export default function GameDetail({ gameId, onBack }: Props) {
                       <Label className="text-xs text-gray-500">How to pay</Label>
                       <PaymentCollectionChoice value={editPaymentCollection} onChange={setEditPaymentCollection} />
                     </div>
+                    {game.note_before_players && (
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Note before player list</Label>
                       <Textarea value={editNoteBefore} onChange={e => setEditNoteBefore(e.target.value)} rows={2} className="text-sm" />
                     </div>
+                    )}
+                    {game.note_after_players && (
                     <div className="space-y-2">
                       <Label className="text-xs text-gray-500">Note after player list</Label>
                       <Textarea value={editNoteAfter} onChange={e => setEditNoteAfter(e.target.value)} rows={2} className="text-sm" />
                     </div>
+                    )}
                     </>
                     )}
                     <Button className="w-full bg-blue-600 hover:bg-blue-700"

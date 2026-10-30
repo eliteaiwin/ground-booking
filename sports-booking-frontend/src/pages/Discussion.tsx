@@ -155,6 +155,21 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
   const { user, isAdmin, isModerator } = useAuth();
   const canModerate = isAdmin || isModerator;
   const [fullscreen, setFullscreen] = useState(false);
+  const [headerBottom, setHeaderBottom] = useState(0);
+  // Full screen sits below the page's sticky header so Back always stays reachable.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const measure = () => setHeaderBottom(document.querySelector('header')?.getBoundingClientRect().bottom || 0);
+    measure();
+    const t = setTimeout(measure, 350);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, { passive: true });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure);
+    };
+  }, [fullscreen]);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [addToGallery, setAddToGallery] = useState(false);
   const [showSmileys, setShowSmileys] = useState(false);
@@ -385,7 +400,8 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
   );
 
   const card = (
-    <Card className={fullscreen ? 'fixed inset-0 z-50 rounded-none flex flex-col overflow-hidden' : ''} data-testid="discussion">
+    <Card className={fullscreen ? 'fixed inset-x-0 bottom-0 z-20 rounded-none flex flex-col overflow-hidden' : ''}
+      style={fullscreen ? { top: headerBottom || 'env(safe-area-inset-top)' } : undefined} data-testid="discussion">
       {fullscreen ? (
         <div className="flex items-center gap-1 px-2 py-2 border-b shrink-0" data-testid="fullscreen-header">
           <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">

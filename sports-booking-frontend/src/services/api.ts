@@ -974,7 +974,7 @@ export const api = {
   createAllotment: (groundId: number, data: {
     sport_type: string; allot_date: string; start_time: string; duration_minutes: number;
     pitch_format?: string; pitch_number?: number; moderator_user_id?: number; moderator_group_id?: number;
-    rent?: number; repeat_weeks?: number; notes?: string;
+    rent?: number; repeat_weeks?: number; notes?: string; until_date?: string; weekdays?: number[];
   }) => request(`/api/allotments/grounds/${groundId}/allotments`, { method: 'POST', body: JSON.stringify(data) }),
   updateAllotment: (allotmentId: number, data: { rent?: number; rent_paid?: boolean; notes?: string }) =>
     request(`/api/allotments/${allotmentId}`, { method: 'PATCH', body: JSON.stringify(data) }),

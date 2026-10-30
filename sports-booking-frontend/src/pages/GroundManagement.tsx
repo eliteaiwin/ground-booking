@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban, Info, LayoutGrid } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Calendar, MapPin, Users, Phone, Clock, UserCheck, UserX, Bell, Plus, Search, X, Check, Shield, Trash2, Camera, Star, Upload, Image, Ban, Info } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -57,7 +57,21 @@ interface ScheduleData {
   start_date: string;
   end_date: string;
   schedule: ScheduleItem[];
+  allotments?: ScheduleAllotment[];
 }
+
+interface ScheduleAllotment {
+  id: number; date: string; start_time: string; duration_minutes: number; sport_type: string;
+  pitch_format: string; pitch_number: number; holder: string; rent: number; rent_paid: boolean;
+}
+
+const endTime = (start: string, minutes: number) => {
+  const [h, m] = start.split(':').map(Number);
+  const t = (h * 60 + (m || 0) + minutes) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+const pitchName = (a: ScheduleAllotment) =>
+  a.pitch_format ? `${a.pitch_format}${a.pitch_number ? ` ${String.fromCharCode(64 + a.pitch_number)}` : ''}` : 'Whole ground';
 
 type ViewMode = 'day' | 'week' | 'month';
 
@@ -98,14 +112,6 @@ function getDaysInRange(start: string, end: string): string[] {
   return days;
 }
 
-function getHoursForDay(): string[] {
-  const hours: string[] = [];
-  for (let h = 6; h <= 23; h++) {
-    hours.push(`${h.toString().padStart(2, '0')}:00`);
-  }
-  return hours;
-}
-
 interface Props {
   onBack: () => void;
 }
@@ -140,6 +146,7 @@ export default function GroundManagement({ onBack }: Props) {
   const [scheduleData, setScheduleData] = useState<ScheduleData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(localYmd());
+  const [newAllot, setNewAllot] = useState(0);
   const [hoveredGame, setHoveredGame] = useState<ScheduleItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [loading, setLoading] = useState(true);
@@ -704,74 +711,6 @@ export default function GroundManagement({ onBack }: Props) {
     setHoveredGame(null);
   };
 
-  // Render the Gantt chart
-  const renderDayView = () => {
-    if (!scheduleData) return null;
-    const hours = getHoursForDay();
-    const todayGames = scheduleData.schedule.filter(g => g.game_date === currentDate);
-
-    return (
-      <div className="overflow-x-auto" ref={chartRef}>
-        <div className="min-w-[600px]">
-          {/* Hours header */}
-          <div className="flex border-b bg-gray-50">
-            <div className="w-16 shrink-0 p-2 text-xs font-medium text-gray-500 border-r">Time</div>
-            {hours.map(h => (
-              <div key={h} className="flex-1 min-w-[60px] p-2 text-xs font-medium text-gray-500 text-center border-r">
-                {h}
-              </div>
-            ))}
-          </div>
-          {/* Games row */}
-          <div className="relative" style={{ height: Math.max(80, todayGames.length * 44 + 20) }}>
-            <div className="flex absolute inset-0">
-              <div className="w-16 shrink-0 border-r" />
-              {hours.map(h => (
-                <div key={h} className="flex-1 min-w-[60px] border-r border-dashed border-gray-100" />
-              ))}
-            </div>
-            {todayGames.map((game, idx) => {
-              const [gH, gM] = (game.game_time || '00:00').split(':').map(Number);
-              const startMinutes = (gH - 6) * 60 + (gM || 0);
-              const totalMinutes = (23 - 6 + 1) * 60;
-              const leftPercent = Math.max(0, (startMinutes / totalMinutes) * 100);
-              const widthPercent = Math.max(3, (game.duration_minutes / totalMinutes) * 100);
-              const colors = statusColors[game.status] || statusColors.draft;
-
-              return (
-                <div
-                  key={game.game_id}
-                  className={`absolute ${colors.bg} ${colors.border} border rounded-md px-2 py-1 text-xs cursor-pointer hover:shadow-md transition-shadow z-10`}
-                  style={{
-                    left: `calc(64px + ${leftPercent}% * (100% - 64px) / 100)`,
-                    width: `calc(${widthPercent}% * (100% - 64px) / 100)`,
-                    top: 8 + idx * 44,
-                    height: 36,
-                    marginLeft: `${leftPercent * 0.01 * (100 - 10)}%`,
-                  }}
-                  onMouseEnter={(e) => handleMouseEnter(game, e)}
-                  onMouseLeave={handleMouseLeave}
-                >
-                  <div className={`font-medium ${colors.text} truncate`}>
-                    {sportIcon(game.sport_type)} {game.title}
-                  </div>
-                  <div className="text-gray-500 truncate">
-                    {game.game_time} ({game.duration_minutes}m)
-                  </div>
-                </div>
-              );
-            })}
-            {todayGames.length === 0 && (
-              <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
-                No games scheduled
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const renderWeekView = () => {
     if (!scheduleData) return null;
     const days = getDaysInRange(scheduleData.start_date, scheduleData.end_date);
@@ -782,6 +721,7 @@ export default function GroundManagement({ onBack }: Props) {
         <div className="min-w-[600px]">
           {days.map(day => {
             const dayGames = scheduleData.schedule.filter(g => g.game_date === day);
+            const dayAllots = (scheduleData.allotments || []).filter(a => a.date === day);
             const isToday = day === today;
 
             return (
@@ -793,6 +733,18 @@ export default function GroundManagement({ onBack }: Props) {
                   {isToday && <Badge className="bg-blue-500 text-xs">Today</Badge>}
                   <span className="text-xs text-gray-400 ml-auto">{dayGames.length} game{dayGames.length !== 1 ? 's' : ''}</span>
                 </div>
+                {dayAllots.length > 0 && (
+                  <div className="px-3 pt-2 space-y-1">
+                    {dayAllots.map(a => (
+                      <button key={a.id} type="button" data-testid="week-allotment"
+                        onClick={() => { setCurrentDate(day); setViewMode('day'); }}
+                        className="w-full text-left bg-red-500 text-white rounded-lg px-3 py-1.5 text-xs">
+                        <span className="font-semibold">Allotted to {a.holder || '—'}</span>
+                        <span className="block opacity-90">{a.start_time}–{endTime(a.start_time, a.duration_minutes)} · {pitchName(a)} · {sportIcon(a.sport_type)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {dayGames.length > 0 ? (
                   <div className="px-3 py-2 space-y-1.5">
                     {dayGames.map(game => {
@@ -817,9 +769,9 @@ export default function GroundManagement({ onBack }: Props) {
                       );
                     })}
                   </div>
-                ) : (
+                ) : dayAllots.length === 0 ? (
                   <div className="px-3 py-3 text-xs text-gray-400 italic">No bookings</div>
-                )}
+                ) : <div className="pb-2" />}
               </div>
             );
           })}
@@ -880,12 +832,20 @@ export default function GroundManagement({ onBack }: Props) {
                 const dayNum = parseInt(dateStr.split('-')[2]);
                 const isToday = dateStr === today;
                 const dayGames = gamesByDate[dateStr] || [];
+                const dayAllots = (scheduleData.allotments || []).filter(a => a.date === dateStr);
 
                 return (
                   <div key={di} className={`min-h-[80px] border-r p-1 ${isToday ? 'bg-blue-50' : ''}`}>
                     <div className={`text-xs font-medium mb-1 ${isToday ? 'text-blue-700 bg-blue-200 w-5 h-5 rounded-full flex items-center justify-center' : 'text-gray-600'}`}>
                       {dayNum}
                     </div>
+                    {dayAllots.slice(0, 2).map(a => (
+                      <button key={`a${a.id}`} type="button" onClick={() => { setCurrentDate(dateStr); setViewMode('day'); }}
+                        className="block w-full bg-red-500 text-white text-xs rounded px-1 py-0.5 mb-0.5 truncate text-left">
+                        {a.start_time} {a.holder.split(' ')[0]}
+                      </button>
+                    ))}
+                    {dayAllots.length > 2 && <div className="text-xs text-red-500">+{dayAllots.length - 2} allotted</div>}
                     {dayGames.slice(0, 3).map(game => {
                       const colors = statusColors[game.status] || statusColors.draft;
                       return (
@@ -1187,12 +1147,6 @@ export default function GroundManagement({ onBack }: Props) {
             <Calendar size={14} className="inline mr-1" /> Schedule
           </button>
           <button
-            onClick={() => setActiveTab('allot')}
-            className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'allot' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-          >
-            <LayoutGrid size={14} className="inline mr-1" /> Allot
-          </button>
-          <button
             onClick={() => setActiveTab('groups')}
             className={`flex-1 shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium ${activeTab === 'groups' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
           >
@@ -1241,7 +1195,6 @@ export default function GroundManagement({ onBack }: Props) {
           </button>
         </div>
 
-        {activeTab === 'allot' && <AllotmentSheet groundId={selectedGround.id} groups={moderatorGroups} />}
         {activeTab === 'groups' && (
           <ModeratorGroups
             groundId={selectedGround.id}
@@ -1781,6 +1734,12 @@ export default function GroundManagement({ onBack }: Props) {
             >
               <ZoomOut size={16} />
             </Button>
+            {canManageRequests && (
+              <Button size="sm" className="bg-amber-600 hover:bg-amber-700 ml-1" data-testid="schedule-allot"
+                onClick={() => { setViewMode('day'); setNewAllot(n => n + 1); }}>
+                <Plus size={14} className="mr-1" /> Allot
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1825,12 +1784,21 @@ export default function GroundManagement({ onBack }: Props) {
               <span className="text-xs text-gray-600">{val.label}</span>
             </div>
           ))}
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded bg-red-500 border border-red-600" />
+            <span className="text-xs text-gray-600">Allotted</span>
+          </div>
         </div>
 
         {/* Chart */}
         <Card className="overflow-hidden">
           <CardContent className="p-0">
-            {viewMode === 'day' && renderDayView()}
+            {viewMode === 'day' && (
+              <div className="p-2">
+                <AllotmentSheet groundId={selectedGround.id} groups={moderatorGroups} date={currentDate}
+                  onDateChange={setCurrentDate} newDraft={newAllot} onDraftOpened={() => setNewAllot(0)} onChanged={() => loadSchedule(selectedGround.id)} />
+              </div>
+            )}
             {viewMode === 'week' && renderWeekView()}
             {viewMode === 'month' && renderMonthView()}
           </CardContent>

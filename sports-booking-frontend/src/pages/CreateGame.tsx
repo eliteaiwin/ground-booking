@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Search, X, UserPlus, ChevronDown, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { ArrowLeft, Search, X, UserPlus, ChevronDown, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useSports } from '../lib/sports';
 import PitchSelect from '@/components/grounds/PitchSelect';
 import { defaultPitchValue, parsePitchValue, type PitchLayout } from '@/lib/grounds';
@@ -89,11 +89,9 @@ export default function CreateGame({ onBack, onCreated }: Props) {
   const [grounds, setGrounds] = useState<Ground[]>([]);
   const [paymentCollection, setPaymentCollection] = useState('offline');
   const [receiverId, setReceiverId] = useState('0');
-  const [defaultPayee, setDefaultPayee] = useState<{ id: number; name: string; phone: string } | null>(null);
   const [showQuitPenalty, setShowQuitPenalty] = useState(false);
   const [payFirstEnabled, setPayFirstEnabled] = useState(false);
   const [quitPenaltyHours, setQuitPenaltyHours] = useState('0');
-  const [showPayeeInfo, setShowPayeeInfo] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
   const [pitch, setPitch] = useState('');
@@ -122,7 +120,6 @@ export default function CreateGame({ onBack, onCreated }: Props) {
       }).catch(() => {}),
       api.listGrounds().then((g: Ground[]) => setGrounds(g)).catch(() => {}),
       api.getGameDefaults().then((d: { default_payee: { id: number; name: string; phone: string } | null; show_quit_penalty: boolean; default_quit_penalty_hours: number; pay_first_enabled?: boolean }) => {
-        setDefaultPayee(d.default_payee);
         setPayFirstEnabled(!!d.pay_first_enabled);
         const dc = (d as { default_payment_collection?: string }).default_payment_collection;
         if (dc === 'app' || dc === 'offline') setPaymentCollection(dc);
@@ -468,17 +465,6 @@ export default function CreateGame({ onBack, onCreated }: Props) {
                 </div>
               )}
               <ReceiverSelect groundName={groundName === '__other__' ? customGround : groundName} value={receiverId} onChange={setReceiverId} autoPick />
-              <div className="space-y-1" data-testid="default-payee">
-                <div className="text-sm text-gray-700 flex items-center gap-1.5">
-                  <span>Online payments go to: <strong>{defaultPayee ? defaultPayee.name : 'Not set'}</strong></span>
-                  <button type="button" aria-label="About the payment receiver" onClick={() => setShowPayeeInfo(v => !v)} className="text-gray-400 hover:text-green-600">
-                    <Info size={14} />
-                  </button>
-                </div>
-                {showPayeeInfo && (
-                  <p className="text-xs text-gray-500">A moderator can change the receiver in <strong>Preferences → Game Defaults</strong>.</p>
-                )}
-              </div>
               <div className="border rounded-md overflow-hidden">
                 <button type="button" onClick={() => setShowOptions(v => !v)} data-testid="additional-options"
                   className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 text-sm font-medium text-gray-700">

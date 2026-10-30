@@ -37,7 +37,10 @@ interface Occupancy { units: number; layouts: Layout[]; items: OccupancyItem[]; 
 interface Draft {
   number: number; label: string; start: string; duration: string;
   target: string; rent: string; repeat: string; notes: string;
+  until: string; weekdays: number[];
 }
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function todayIso() {
   const d = new Date();
@@ -59,11 +62,16 @@ function overlaps(item: OccupancyItem, units: number[], start: number, end: numb
   return item.start_minute < end && item.end_minute > start && item.units.some((u) => units.includes(u));
 }
 
-export default function AllotmentSheet({ groundId, groups }: { groundId: number; groups: ModeratorGroupRef[] }) {
+export default function AllotmentSheet({ groundId, groups, date: dateProp, onDateChange, newDraft = 0, onDraftOpened, onChanged }: {
+  groundId: number; groups: ModeratorGroupRef[]; date?: string; onDateChange?: (d: string) => void;
+  newDraft?: number; onDraftOpened?: () => void; onChanged?: () => void;
+}) {
   const [sports, setSports] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [sport, setSport] = useState('');
-  const [date, setDate] = useState(todayIso());
+  const [ownDate, setOwnDate] = useState(todayIso());
+  const date = dateProp ?? ownDate;
+  const setDate = onDateChange ?? setOwnDate;
   const [format, setFormat] = useState('');
   const [occ, setOcc] = useState<Occupancy | null>(null);
   const [moderators, setModerators] = useState<{ user_id: number; user_name: string }[]>([]);
@@ -121,8 +129,21 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
 
   const openDraft = (number: number, label: string, startMinute: number) => {
     setSelected(null); setInfo(''); setError('');
-    setDraft({ number, label, start: minutesToTime(startMinute), duration: '60', target: '', rent: '', repeat: '1', notes: '' });
+    setDraft({ number, label, start: minutesToTime(startMinute), duration: '60', target: '', rent: '', repeat: '1', notes: '', until: addDays(date, 6), weekdays: [0, 1, 2, 3, 4, 5, 6] });
   };
+
+  useEffect(() => {
+    if (!newDraft || !occ || !pitches.length) return;
+    openDraft(pitches[0].number, pitches[0].label, 18 * 60);
+    onDraftOpened?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newDraft, occ, pitches]);
+
+  useEffect(() => {
+    if (draft && pitches.length && !pitches.some((p) => p.number === draft.number)) {
+      setDraft({ ...draft, number: pitches[0].number, label: pitches[0].label });
+    }
+  }, [draft, pitches]);
 
   const confirm = async () => {
     if (!draft || !draft.target) { setError('Choose a moderator or a moderator group'); return; }
@@ -139,12 +160,15 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
         ...(kind === 'g' ? { moderator_group_id: Number(id) } : { moderator_user_id: Number(id) }),
         rent: parseFloat(draft.rent) || 0,
         notes: draft.notes,
-        repeat_weeks: parseInt(draft.repeat) || 1,
+        ...(draft.repeat === 'range'
+          ? { until_date: draft.until, weekdays: draft.weekdays }
+          : { repeat_weeks: parseInt(draft.repeat) || 1 }),
       });
       const skipped = (res.skipped as { date: string; reason: string }[]).map((s) => `${s.date}: ${s.reason}`).join('\n');
       setInfo(`Allotted ${res.pitch_label} on ${res.created.length} date(s).${skipped ? `\nSkipped:\n${skipped}` : ''}`);
       setDraft(null);
       reload();
+      onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to allot');
     } finally {
@@ -158,6 +182,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
       await api.cancelAllotment(item.id, series);
       setSelected(null);
       reload();
+      onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to cancel');
     }
@@ -184,7 +209,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2">
-        <div className="flex items-center gap-1">
+        {dateProp === undefined && <div className="flex items-center gap-1">
           <Button variant="outline" size="icon" aria-label="Previous day" onClick={() => setDate(addDays(date, -1))}>
             <ChevronLeft size={16} />
           </Button>
@@ -192,7 +217,7 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
           <Button variant="outline" size="icon" aria-label="Next day" onClick={() => setDate(addDays(date, 1))}>
             <ChevronRight size={16} />
           </Button>
-        </div>
+        </div>}
         <Select value={sport} onValueChange={(v) => { setSport(v); setDraft(null); }}>
           <SelectTrigger className="w-36" aria-label="Sport"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -296,9 +321,23 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
       {draft && (
         <div className="fixed inset-x-0 bottom-0 z-40 bg-white border-t shadow-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-w-lg mx-auto rounded-t-xl space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Allot {draft.label} on {date}</h3>
+            <h3 className="font-semibold">Allot {draft.label}{draft.repeat === 'range' ? '' : ` on ${date}`}</h3>
             <button type="button" aria-label="Close" onClick={() => setDraft(null)}><X size={18} /></button>
           </div>
+          {pitches.length > 1 && (
+            <div className="space-y-1">
+              <Label>Pitch</Label>
+              <Select value={String(draft.number)} onValueChange={(v) => {
+                const p = pitches.find((x) => String(x.number) === v);
+                if (p) setDraft({ ...draft, number: p.number, label: p.label });
+              }}>
+                <SelectTrigger aria-label="Pitch"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {pitches.map((p) => <SelectItem key={p.number} value={String(p.number)}>{p.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label htmlFor="allot-start">Start</Label>
@@ -336,18 +375,46 @@ export default function AllotmentSheet({ groundId, groups }: { groundId: number;
               <Input id="allot-rent" type="number" min="0" value={draft.rent} onChange={(e) => setDraft({ ...draft, rent: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <Label>Repeat weekly</Label>
+              <Label>Repeat</Label>
               <Select value={draft.repeat} onValueChange={(v) => setDraft({ ...draft, repeat: v })}>
-                <SelectTrigger aria-label="Repeat weekly"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Repeat"><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="range">Date range…</SelectItem>
                   {[1, 2, 3, 4, 5, 8, 12, 26, 52].map((w) => (
-                    <SelectItem key={w} value={String(w)}>{w === 1 ? 'Just this date' : w === 52 ? '52 weeks (1 year)' : `${w} weeks`}</SelectItem>
+                    <SelectItem key={w} value={String(w)}>{w === 1 ? 'Just this date' : w === 52 ? 'Weekly, 52 weeks' : `Weekly, ${w} weeks`}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
+          {draft.repeat === 'range' && (
+            <div className="space-y-2 bg-gray-50 rounded-md p-2" data-testid="allot-range">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="allot-from">From</Label>
+                  <Input id="allot-from" type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="allot-to">To</Label>
+                  <Input id="allot-to" type="date" min={date} value={draft.until} onChange={(e) => setDraft({ ...draft, until: e.target.value })} />
+                </div>
+              </div>
+              <div className="flex gap-1">
+                {WEEKDAYS.map((d, i) => {
+                  const on = draft.weekdays.includes(i);
+                  return (
+                    <button key={d} type="button" aria-pressed={on}
+                      onClick={() => setDraft({ ...draft, weekdays: on ? draft.weekdays.filter((x) => x !== i) : [...draft.weekdays, i] })}
+                      className={`flex-1 rounded border text-xs py-1 ${on ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500'}`}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <Input placeholder="Note (optional)" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+          {error && <p className="text-xs bg-red-50 text-red-700 p-2 rounded" data-testid="allot-error">{error}</p>}
           <Button className="w-full bg-green-600 hover:bg-green-700" disabled={saving} onClick={confirm}>
             {saving ? 'Allotting...' : 'Confirm allotment'}
           </Button>
