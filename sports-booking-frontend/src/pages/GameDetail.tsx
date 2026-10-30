@@ -666,16 +666,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
     handleAction('quit', () => api.quitGame(game!.id));
   };
 
-  const lowTurnout = (n: number) => {
-    if (!game || n <= 0 || n >= Math.ceil(game.max_players * 0.8) || !(game.ground_cost > 0)) return '';
-    const each = (count: number) => formatMoney(Math.ceil(game.ground_cost / count - 0.001), currency);
-    return `Only ${n} of ${game.max_players} players (under 80%). Consider a smaller ground. `
-      + `If you go ahead, each player pays ${each(n)} instead of ${each(game.max_players)}.`;
-  };
-
   const handlePlayersSelected = (playedUserIds: number[]) => {
-    const warn = lowTurnout(playedUserIds.length);
-    if (warn && !window.confirm(`${warn}\n\nComplete the game anyway?`)) return;
     if (game?.sport_type === 'soccer' && game?.teams.length >= 2) {
       setPendingPlayedUserIds(playedUserIds);
       setTeamAScore(0);
@@ -999,12 +990,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
               </Button>
             )}
           </div>
-        )}
-
-        {(isModerator || isAdmin) && ['voting_open', 'in_progress'].includes(game.status) && lowTurnout(game.selected_players.length) && (
-          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded p-2" data-testid="low-turnout">
-            {lowTurnout(game.selected_players.length)}
-          </p>
         )}
 
         {game.status === 'voting_open' && !gameIsOver && !isReadOnly && !isPlayerInGame && !myAwaiting && (

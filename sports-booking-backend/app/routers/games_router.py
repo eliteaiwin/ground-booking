@@ -1885,7 +1885,7 @@ async def send_tentative_reminders(db: aiosqlite.Connection) -> int:
 
 
 async def send_low_turnout_alerts(db: aiosqlite.Connection) -> int:
-    """About 4 hours before a game, warn its moderator if under 80% of the players have joined."""
+    """About 3 hours before a game, ask its moderators to go ahead or cancel if under 80% of the players have joined."""
     now = _local_now()
     rows = await (await db.execute(
         """SELECT g.*, (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = g.id AND gp.status = 'selected') AS joined
@@ -1897,18 +1897,24 @@ async def send_low_turnout_alerts(db: aiosqlite.Connection) -> int:
             start = datetime.strptime(f"{g['game_date']} {g['game_time']}", "%Y-%m-%d %H:%M")
         except (TypeError, ValueError):
             continue
-        if not (start - timedelta(hours=4) <= now < start):
+        if not (start - timedelta(hours=3) <= now < start):
             continue
         n, mx = g["joined"], g["max_players"]
         if n <= 0 or mx <= 0 or n >= math.ceil(mx * 0.8):
             continue
         cur = await ground_currency(db, g["ground_name"])
         each = lambda c: format_money(math.ceil(g["ground_cost"] / c - 0.001), cur)
-        await create_notification(
-            db, g["created_by"], g["id"], "low_turnout",
-            f"Only {n} of {mx} players joined {g['title']} at {start.strftime('%-I:%M %p')} (under 80%). "
-            f"Consider a smaller ground. If you go ahead, each player pays {each(n)} instead of {each(mx)}."
-        )
+        mods = {g["created_by"]}
+        if g["moderator_group_id"]:
+            mods |= {r["user_id"] for r in await (await db.execute(
+                "SELECT user_id FROM moderator_group_members WHERE group_id = ?", (g["moderator_group_id"],)
+            )).fetchall()}
+        for uid in mods:
+            await create_notification(
+                db, uid, g["id"], "low_turnout",
+                f"{g['title']} at {start.strftime('%-I:%M %p')} is near and only {n} of {mx} players have joined. "
+                f"Do you want to go ahead (each player pays {each(n)} instead of {each(mx)}) or cancel the game? Open game"
+            )
         await db.execute("UPDATE games SET low_turnout_alerted = 1 WHERE id = ?", (g["id"],))
         sent += 1
     if sent:

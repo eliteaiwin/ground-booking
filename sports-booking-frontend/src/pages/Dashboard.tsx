@@ -744,16 +744,16 @@ export default function Dashboard({ onNavigate }: Props) {
                   <div className="flex items-start gap-2">
                     {notif.sport_type && sportIcon(notif.sport_type)}
                     <div className="flex-1">
-                      {notif.game_id && /(Join now!?|Confirm now)$/.test(notif.message) ? (
+                      {notif.game_id && /(Join now!?|Confirm now|Open game)$/.test(notif.message) ? (
                         <p className="text-sm text-gray-800">
-                          {notif.message.replace(/(Join now!?|Confirm now)$/, '')}
+                          {notif.message.replace(/(Join now!?|Confirm now|Open game)$/, '')}
                           <button
                             type="button"
                             className="font-semibold text-green-700 underline hover:text-green-800"
                             onClick={() => openFromNotification(notif)}
                             data-testid="notif-join"
                           >
-                            {/Confirm now$/.test(notif.message) ? 'Confirm now' : 'Join now!'}
+                            {/Confirm now$/.test(notif.message) ? 'Confirm now' : /Open game$/.test(notif.message) ? 'Open game' : 'Join now!'}
                           </button>
                         </p>
                       ) : (
