@@ -1013,10 +1013,12 @@ export default function GameDetail({ gameId, onBack }: Props) {
                   onChange={e => setJoinTentative(e.target.checked)} data-testid="join-tentative" />
                 <span>
                   <span className="font-medium">Tentative</span> <TentativeBadge />
-                  <span className="block text-xs text-gray-500">
-                    You'll be asked to confirm a few hours before the game.
-                    {(game.late_quit_hours ?? 0) > 0 && ` Less than ${game.late_quit_hours} hours before, you can't pull out unless someone on the waiting list takes your place, otherwise you still pay.`}
-                  </span>
+                  {joinTentative && (
+                    <span className="block text-xs text-gray-500" data-testid="tentative-note">
+                      You are joining tentatively.
+                      {(game.late_quit_hours ?? 0) > 0 && ` You still pay for the game if you decide to quit just ${game.late_quit_hours} hours before start the game and no one is in queue to take your place`}
+                    </span>
+                  )}
                 </span>
               </label>
               <div className="flex gap-2">
