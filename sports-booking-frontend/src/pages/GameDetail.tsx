@@ -186,13 +186,32 @@ const shortDateTime = (iso?: string | null): string => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+// Tap tooltip: only one open at a time, closes on a tap anywhere outside it.
+let tipSeq = 0;
+function useTip() {
+  const [tip, setTipState] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  const id = useRef(0);
+  if (!id.current) id.current = ++tipSeq;
+  useEffect(() => {
+    if (!tip) return;
+    window.dispatchEvent(new CustomEvent('tip-open', { detail: id.current }));
+    const onOther = (e: Event) => { if ((e as CustomEvent).detail !== id.current) setTipState(false); };
+    const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setTipState(false); };
+    window.addEventListener('tip-open', onOther);
+    document.addEventListener('pointerdown', onDown);
+    return () => { window.removeEventListener('tip-open', onOther); document.removeEventListener('pointerdown', onDown); };
+  }, [tip]);
+  return [tip, setTipState, ref] as const;
+}
+
 // Cash icon beside a player: red = due, green = paid, amber = paid too little or too much.
 // Hover (desktop) or tap (phone) shows the details.
 function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasReceiver = false, onReceived }: {
   pd?: PaymentDetail; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void; onViewProof?: () => void;
   hasReceiver?: boolean; onReceived?: (ok: boolean) => void;
 }) {
-  const [tip, setTip] = useState(false);
+  const [tip, setTip, tipRef] = useTip();
   const paid = pd?.paid_amount || 0;
   const online = pd?.paid_via === 'online';
   const received = hasReceiver && paid > 0 && (online || (pd?.received_amount || 0) >= paid - 0.001);
@@ -221,7 +240,7 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
     text = `${rs(pending)} to pay after the game`;
   }
   return (
-    <span className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
+    <span ref={tipRef} className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
       <button type="button" className={color} data-testid="payment-icon" aria-label={text} onClick={() => setTip(t => !t)}>
         <span className="relative inline-flex">
           <Banknote size={16} />
@@ -233,7 +252,7 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
         </span>
       </button>
       {tip && (
-        <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
+        <span role="tooltip" onClick={() => setTip(false)} className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1 shadow">
           {text}
           {received && !online && (
             <span className="block mt-1 text-green-300" data-testid="received-note">
@@ -271,18 +290,18 @@ const PREF_LABEL = ['', '1st', '2nd', '3rd'];
 // POTD points badge; hover (desktop) or tap (phone) shows how the points add up.
 // Lists every voter with their preference and points.
 function PotdPointsBadge({ result }: { result: POTDResult }) {
-  const [tip, setTip] = useState(false);
+  const [tip, setTip, tipRef] = useTip();
   const counts = ([[1, result.first_pref, 3], [2, result.second_pref, 2], [3, result.third_pref, 1]] as const)
     .filter(([, n]) => n > 0);
   return (
-    <span className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
+    <span ref={tipRef} className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
       <button type="button" data-testid="potd-points" onClick={() => setTip(t => !t)}>
         <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300">
           <Star size={10} className="mr-0.5" />{result.points} pts
         </Badge>
       </button>
       {tip && (
-        <span role="tooltip" className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1.5 shadow">
+        <span role="tooltip" onClick={() => setTip(false)} className="absolute right-0 top-full mt-1 z-20 w-56 rounded bg-gray-900 text-white text-xs px-2 py-1.5 shadow">
           <span className="block font-semibold mb-1">POTD votes</span>
           {result.voters
             ? result.voters.map(v => (
@@ -858,7 +877,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
   const myAwaitingFees = computeFeeBreakdown(myAwaiting?.due ?? perPerson, gameFees);
   const myPayment = (game.payment_details || []).find(d => d.user_id === user?.id);
   const myPaidSoFar = myPayment?.paid_amount || 0;
-  const myShare = myPayment?.amount ?? perPerson;
   const dueAmount = (n: number) => (game.payment_collection === 'app' ? computeFeeBreakdown(n, gameFees).total : Math.ceil(n - 0.001));
   const totalOutstanding = game.payment_details?.length
     ? game.payment_details.reduce((sum, p) => sum + p.amount, 0)
@@ -1729,41 +1747,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
               </CardContent>
             </Card>
           )}
-
-          {/* Payment for current user - PostPaid */}
-          {isSelectedPlayer && myPlayerRecord && myPlayerRecord.payment_confirmed !== 1 && (game.payee || game.receiver) && game.payment_timing !== 'before' && !myPlayerRecord.must_prepay && ['voting_open', 'in_progress', 'completed'].includes(game.status) && (
-            <Card className="border-orange-200 bg-orange-50">
-              <CardContent className="p-4">
-                <h4 className="font-semibold text-orange-800 mb-1">{myPaidSoFar > 0 ? 'Pay Remaining Amount' : game.status === 'voting_open' ? 'Your Share' : 'Payment Due'}</h4>
-                {myPaidSoFar > 0 && (
-                  <p className="text-xs text-orange-700 mb-1">Ground cost changed. You paid {formatMoney(myPaidSoFar.toFixed(0), currency)}; your share is now {formatMoney(myShare.toFixed(0), currency)}.</p>
-                )}
-                <p className="text-sm text-orange-700 mb-2">Amount: <strong>{formatMoney(myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0), currency)}</strong></p>
-                {game.receiver ? <p className="text-sm text-orange-700 mb-3"><PayTo receiver={game.receiver} /></p> : game.payee && (
-                  <p className="text-sm text-orange-700 mb-3">
-                  Pay to: <strong>{game.payee.name}</strong> - <a href={`tel:${game.payee.phone}`} className="underline">{formatPhone(game.payee.phone)}</a>
-                </p>
-                )}
-                {payOnlineAvailable ? (
-                  <>
-                    <div className="mb-2"><FeeBreakdownTable breakdown={myFeeBreakdown} fees={gameFees} currency={currency} /></div>
-                    <Button className="w-full bg-orange-600 hover:bg-orange-700" data-testid="pay-online"
-                      onClick={() => setPayPreview(myFeeBreakdown)}
-                      disabled={actionLoading === 'pay'}>
-                      <Wallet size={16} className="mr-1" />
-                      {actionLoading === 'pay' ? 'Opening payment...' : `Pay ${formatMoney(myFeeBreakdown.total.toFixed(0), currency)} online`}
-                    </Button>
-                  </>
-                ) : (
-                  <Button className="w-full bg-orange-600 hover:bg-orange-700"
-                    onClick={() => setProofGameOpen(true)}
-                    disabled={actionLoading === 'pay'}>
-                    {actionLoading === 'pay' ? 'Recording...' : 'Mark as Paid'}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         <MarkPaidDialog gameId={proofGameOpen ? game.id : null}
@@ -2072,7 +2055,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
-                          {player.user_id === user?.id && player.payment_confirmed !== 1 && !(game.pay_first_enabled && player.must_prepay) && (
+                          {player.user_id === user?.id && game.status === 'completed' && player.payment_confirmed !== 1 && !(game.pay_first_enabled && player.must_prepay) && (
                             <Button size="sm" className="ml-1 h-5 px-2 text-[11px] bg-orange-600 hover:bg-orange-700" data-testid="row-pay"
                               onClick={() => (payOnlineAvailable ? payOnline(game.id) : setProofGameOpen(true))}>
                               {payOnlineAvailable ? 'Pay' : 'Mark as paid'}
