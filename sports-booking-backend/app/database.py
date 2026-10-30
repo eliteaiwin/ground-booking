@@ -191,6 +191,15 @@ async def init_db():
             FOREIGN KEY (game_id) REFERENCES games(id)
         );
 
+        CREATE TABLE IF NOT EXISTS push_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            platform TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS moderator_preferences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sport_type TEXT NOT NULL UNIQUE,

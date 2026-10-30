@@ -405,6 +405,12 @@ export const api = {
   markAllRead: () =>
     request('/api/notifications/read-all', { method: 'PUT' }),
 
+  registerPushToken: (token: string, platform: string) =>
+    request('/api/notifications/push-token', { method: 'POST', body: JSON.stringify({ token, platform }) }),
+
+  unregisterPushToken: (token: string) =>
+    request('/api/notifications/push-token/remove', { method: 'POST', body: JSON.stringify({ token }) }),
+
   // Preferences & App Settings
   getPreferences: () => request('/api/preferences'),
   getAppSettings: () => request('/api/users/app-settings'),

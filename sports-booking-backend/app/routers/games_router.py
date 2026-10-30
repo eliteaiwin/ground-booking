@@ -15,6 +15,8 @@ from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency, format_money
 from ..game_log import log_event, build_log, log_join_before_leaving
+from .notifications_router import should_notify_user
+from ..push import push_to_users
 from .receivers_router import check_receiver, public_receiver, is_game_receiver, receiver_owner
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
@@ -1665,6 +1667,22 @@ async def open_voting(
         )
 
     await db.commit()
+
+    ground = await (await db.execute("SELECT id FROM grounds WHERE name = ?", (game["ground_name"],))).fetchone()
+    push_ids = [
+        u["id"] for u in all_users
+        if u["id"] != user_id and await should_notify_user(
+            db, u["id"], "voting_started", ground["id"] if ground else None, game["sport_type"] or ""
+        )
+    ]
+    try:
+        when = datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M").strftime("%a %-d %b, %-I:%M %p")
+    except (TypeError, ValueError):
+        when = f"{game['game_date']} {game['game_time']}"
+    await push_to_users(
+        db, push_ids, f"Game voting started: {game['title']}",
+        f"{game['ground_name']}, {when}. Tap to join.", "voting", game_id
+    )
     return await get_game_dict(db, game_id)
 
 
@@ -3461,6 +3479,10 @@ async def remind_unpaid_players(
         })
 
     await db.commit()
+    await push_to_users(
+        db, [u["user_id"] for u in unpaid], f"Payment due: {game['title']}",
+        f"{game['cost_per_person']} is pending. Tap to see payment details.", "payment", game_id, "payment"
+    )
 
     # Build WhatsApp message for moderator to share
     wa_msg = f"Payment Reminder - {game['title']}\n\n"

@@ -28,6 +28,7 @@ import { api } from './services/api';
 import { gameIdFromOrderId } from './lib/cashfree';
 import { captureInviteFromUrl, takePendingJoinGame } from '@/lib/invite';
 import { GetAppBanner } from '@/components/GetAppBanner';
+import { initPush } from '@/lib/push';
 
 type Page = 'dashboard' | 'game-detail' | 'create-game' | 'create-series' | 'my-payments' | 'admin-summary' | 'manage-users' | 'profile' | 'moderator-preferences' | 'moderator-screens' | 'admin-screens' | 'search-grounds' | 'backend-settlement' | 'game-search' | 'ground-management' | 'hall-of-fame' | 'notification-settings' | 'payment-receivers';
 
@@ -36,6 +37,7 @@ function AppContent() {
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot-password'>('login');
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
+  const [gameOpenTab, setGameOpenTab] = useState('');
   const [forcePasswordChange, setForcePasswordChange] = useState(
     () => localStorage.getItem('force_password_change') === '1'
   );
@@ -62,6 +64,16 @@ function AppContent() {
       setSelectedGameId(gameId);
       setCurrentPage('game-detail');
     }
+  }, [user, loading]);
+
+  // Phone push: register this device, and open the game (or its payment details) when a push is tapped
+  useEffect(() => {
+    if (!user || loading) return;
+    void initPush(({ gameId, open }) => {
+      setGameOpenTab(open);
+      setSelectedGameId(gameId);
+      setCurrentPage('game-detail');
+    });
   }, [user, loading]);
 
   // Returning from the Cashfree payment page (?cf_order=...)
@@ -152,12 +164,13 @@ function AppContent() {
   const goHome = () => {
     setCurrentPage('dashboard');
     setSelectedGameId(null);
+    setGameOpenTab('');
   };
 
   switch (currentPage) {
     case 'game-detail':
       return selectedGameId ? (
-        <GameDetail gameId={selectedGameId} onBack={goHome} />
+        <GameDetail key={`${selectedGameId}-${gameOpenTab}`} gameId={selectedGameId} onBack={goHome} openTab={gameOpenTab} />
       ) : (
         <Dashboard onNavigate={navigate} />
       );

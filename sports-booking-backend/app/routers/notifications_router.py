@@ -36,6 +36,41 @@ class ModeratorAlertOverrideRequest(BaseModel):
     nomination_payment_alert: bool = True
 
 
+class PushTokenRequest(BaseModel):
+    token: str
+    platform: str = ""
+
+
+@router.post("/push-token")
+async def register_push_token(
+    req: PushTokenRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Save this phone's push token for the signed-in user (moves it if another account had it)."""
+    token = req.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Token required")
+    await db.execute(
+        """INSERT INTO push_tokens (user_id, token, platform) VALUES (?, ?, ?)
+           ON CONFLICT(token) DO UPDATE SET user_id = excluded.user_id, platform = excluded.platform""",
+        (user_id, token, req.platform[:20])
+    )
+    await db.commit()
+    return {"message": "Push enabled"}
+
+
+@router.post("/push-token/remove")
+async def remove_push_token(
+    req: PushTokenRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    await db.execute("DELETE FROM push_tokens WHERE token = ? AND user_id = ?", (req.token.strip(), user_id))
+    await db.commit()
+    return {"message": "Push disabled"}
+
+
 # --- Existing notification endpoints ---
 
 @router.get("")

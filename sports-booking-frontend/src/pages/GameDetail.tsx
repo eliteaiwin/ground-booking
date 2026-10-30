@@ -452,6 +452,7 @@ const statusLabel = (status: string) => {
 interface Props {
   gameId: number;
   onBack: () => void;
+  openTab?: string;
 }
 
 function TentativeBadge() {
@@ -461,7 +462,7 @@ function TentativeBadge() {
   );
 }
 
-export default function GameDetail({ gameId, onBack }: Props) {
+export default function GameDetail({ gameId, onBack, openTab = '' }: Props) {
   const { user, isAdmin, isModerator, isGroundManagement, isReadOnly } = useAuth();
   useEffect(() => () => setPhoneHomeCountry(), []);
   const [game, setGame] = useState<Game | null>(null);
@@ -533,6 +534,14 @@ export default function GameDetail({ gameId, onBack }: Props) {
     lastDueKey.current = myDueKey;
     setShowPaymentDetails(myDue);
   }, [myDueKey, myDue]);
+  // Opened from a "Payment due" phone push: show Payment Details and scroll to it
+  const openedTab = useRef(false);
+  useEffect(() => {
+    if (!game || openTab !== 'payment' || openedTab.current) return;
+    openedTab.current = true;
+    if (game.status === 'completed') setShowPaymentDetails(true);
+    setTimeout(() => document.getElementById('players-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+  }, [game, openTab]);
   const [playersTab, setPlayersTab] = useState<'current' | 'log'>('current');
   const [markPaidPlayerId, setMarkPaidPlayerId] = useState<number | null>(null);
   const [markPaidComment, setMarkPaidComment] = useState('');
@@ -1913,7 +1922,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-          <Card className="relative !mt-10 rounded-tl-none">
+          <Card id="players-card" className="relative !mt-10 rounded-tl-none">
             <CardHeader className="pb-2">
               <div className="absolute bottom-full -left-px flex gap-1" role="tablist">
                 {(['current', 'log'] as const).map(t => (

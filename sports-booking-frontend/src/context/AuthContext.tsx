@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { stopPush } from '@/lib/push';
 import { api } from '../services/api';
 
 interface User {
@@ -248,6 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     // Keep stored accounts intact so they persist on next login.
     // Just clear the active session.
+    void stopPush();
     localStorage.removeItem('token');
     localStorage.removeItem(ACTIVE_ACCOUNT_KEY);
     setUser(null);

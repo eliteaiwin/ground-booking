@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@capacitor-community/apple-sign-in": "^7.1.0",
+    "@capacitor-firebase/messaging": "^8.5.2",
     "@capacitor/android": "^8.3.0",
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
@@ -31,6 +32,7 @@
     "@radix-ui/react-toast": "^1.2.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "firebase": "^12.19.0",
     "lucide-react": "^0.364.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
