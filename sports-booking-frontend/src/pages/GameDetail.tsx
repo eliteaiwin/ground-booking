@@ -97,15 +97,6 @@ const longDateTime = (ts?: string | null): string => {
   return `${d.getDate()}-${d.toLocaleString('en-US', { month: 'short' })} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 
-const initiatedDateTime = (ts?: string | null): string => {
-  if (!ts) return '';
-  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : `${ts.replace(' ', 'T')}Z`);
-  if (isNaN(d.getTime())) return '';
-  const p = (n: number) => String(n).padStart(2, '0');
-  const h = d.getHours() % 12 || 12;
-  return `${p(d.getDate())}-${d.toLocaleString('en-US', { month: 'short' })}-${p(d.getFullYear() % 100)} ${h}:${p(d.getMinutes())} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
-};
-
 function nomination(player: Player): { tone: keyof typeof NOMINATION_COLOR; text: string } {
   const who = player.display_name || player.name.split(' ')[0];
   const when = longDateTime(player.joined_at);
@@ -1159,9 +1150,6 @@ export default function GameDetail({ gameId, onBack }: Props) {
                 </button>
               </div>
             )}
-            <p className="text-xs text-gray-400 pt-1">
-              Game initiated by {game.created_by_name}{initiatedDateTime(game.created_at) && ` on ${initiatedDateTime(game.created_at)}`}
-            </p>
           </CardContent>
         </Card>
 
@@ -1944,7 +1932,7 @@ export default function GameDetail({ gameId, onBack }: Props) {
           </Card>
         )}
 
-          <Card className="relative mt-8 rounded-tl-none">
+          <Card className="relative !mt-10 rounded-tl-none">
             <CardHeader className="pb-2">
               <div className="absolute bottom-full -left-px flex gap-1" role="tablist">
                 {(['current', 'log'] as const).map(t => (

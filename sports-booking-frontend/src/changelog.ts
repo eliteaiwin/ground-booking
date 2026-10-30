@@ -5,6 +5,8 @@ export const CHANGELOG: Release[] = [
   { version: '1.38', date: '2026-10-30', changes: [
     'Orange "Your Share" payment box removed from the game page',
     '"Mark as paid" next to your name only shows once the game is completed',
+    '"Game initiated by" line removed (it is in the Log)',
+    'Current / Log tabs no longer overlap the box above',
   ] },
   { version: '1.37', date: '2026-10-29', changes: [
     'Game page: Edit and Delete are icons at the top right; on a completed game they ask "completed 2d ago, modify/delete it?" first',
