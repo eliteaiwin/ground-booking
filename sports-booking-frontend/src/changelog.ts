@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.47', date: '2026-11-01', changes: [
+    'Goal times: each goal (and own goal) can record the time it was scored, between 15 min before start and 15 min after the end',
+    'Insights on completed games: late goals ("scored 2 goals in the last 5 mins"), hat-trick count, and how the team does when a player scores first',
+  ] },
   { version: '1.46', date: '2026-10-31', changes: [
     'Clone game: completed, cancelled or archived games have a Clone icon next to the bin. It creates the same game on the next same weekday (Sunday to next Sunday) with the same timing, fee, payment receiver and players',
   ] },

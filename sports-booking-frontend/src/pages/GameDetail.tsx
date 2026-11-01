@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check, Undo2 } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check, Undo2, Lightbulb } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -32,6 +32,7 @@ import { inviteUrl } from '@/lib/invite';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 import GameLog from '@/components/GameLog';
+import GoalTimeInputs, { goalWindow, inGoalWindow, formatGoalTime } from '@/components/GoalTimeInputs';
 import { PayTo, ReceiverSelect, type PublicReceiver } from '@/components/PaymentReceiver';
 
 const sportIconSmall = (type: string) => {
@@ -391,7 +392,7 @@ interface Game {
     team_a_id: number | null; team_a_name: string; team_a_score: number;
     team_b_id: number | null; team_b_name: string; team_b_score: number;
   } | null;
-  goal_scorers: { user_id: number; name: string; display_name?: string; phone: string; goals: number; own_goals: number }[];
+  goal_scorers: { user_id: number; name: string; display_name?: string; phone: string; goals: number; own_goals: number; goal_times?: string[]; own_goal_times?: string[] }[];
   note_before_players: string;
   note_after_players: string;
 }
@@ -536,6 +537,13 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [scoreStep, setScoreStep] = useState<'scores' | 'scorers'>('scores');
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [showEditResultDialog, setShowEditResultDialog] = useState(false);
+  const [goalTimes, setGoalTimes] = useState<Record<number, string[]>>({});
+  const [insights, setInsights] = useState<string[]>([]);
+  const insightsKey = game?.status === 'completed' ? JSON.stringify(game.goal_scorers) + JSON.stringify(game.game_score) : '';
+  useEffect(() => {
+    if (!insightsKey) { setInsights([]); return; }
+    api.getGameInsights(gameId).then(setInsights).catch(() => setInsights([]));
+  }, [gameId, insightsKey]);
   const [pendingPlayedUserIds, setPendingPlayedUserIds] = useState<number[] | null>(null);
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
   // A player who still owes on a completed game sees Payment Details ticked (with their Mark as paid); once paid it goes back to unticked.
@@ -659,7 +667,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
     played_user_ids: number[];
     team_scores?: { team_id: number; score: number }[];
     team_assignments?: Record<number, number | null>;
-    goal_scorers?: { user_id: number; goals: number; own_goals: number }[];
+    goal_scorers?: { user_id: number; goals: number; own_goals: number; goal_times?: string[]; own_goal_times?: string[] }[];
   }) => {
     await handleAction('edit-result', () => api.editCompletedGame(game!.id, payload));
     setShowEditResultDialog(false);
@@ -697,6 +705,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
       setTeamAScore(0);
       setTeamBScore(0);
       setGoalScorers({});
+      setGoalTimes({});
       setScoreStep('scores');
       setShowScoreDialog(true);
     } else {
@@ -1140,10 +1149,23 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                         <span className="font-semibold text-green-700">
                           {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
                           {s.own_goals > 0 && <span className="text-red-600 ml-1">({s.own_goals} own)</span>}
+                          {(s.goal_times?.length || s.own_goal_times?.length) ? (
+                            <span className="block text-[11px] font-normal text-green-600 text-right">
+                              {[...(s.goal_times || []).map(formatGoalTime), ...(s.own_goal_times || []).map(t => `${formatGoalTime(t)} (own)`)].join(', ')}
+                            </span>
+                          ) : null}
                         </span>
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+              {insights.length > 0 && (
+                <div className="border-t border-green-200 pt-2 mt-2" data-testid="goal-insights">
+                  <p className="text-xs font-semibold text-green-700 mb-1 flex items-center gap-1"><Lightbulb size={12} /> Insights</p>
+                  <ul className="space-y-1">
+                    {insights.map((t, i) => <li key={i} className="text-sm text-green-800">• {t}</li>)}
+                  </ul>
                 </div>
               )}
               {(isAdmin || isModerator) && game.status === 'completed' && (
@@ -1579,6 +1601,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                           {teamAScore + teamBScore > 0 ? (
                             <Button className="flex-1 bg-purple-600 hover:bg-purple-700" onClick={() => {
                               setGoalScorers({});
+                              setGoalTimes({});
                               setScoreStep('scorers');
                             }}>Next: Goal Scorers</Button>
                           ) : (
@@ -1613,7 +1636,8 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                             const totalGoals = teamAScore + teamBScore;
                             const canAdd = totalAttributed < totalGoals;
                             return (
-                              <div key={player.user_id} className="flex items-center justify-between bg-white rounded p-2">
+                              <div key={player.user_id} className="bg-white rounded p-2">
+                              <div className="flex items-center justify-between">
                                 <span className="text-sm">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
                                 <div className="flex items-center gap-2">
                                   <Button variant="outline" size="sm" className="h-7 w-7 p-0 text-xs"
@@ -1629,17 +1653,25 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                                     }))}>+</Button>
                                 </div>
                               </div>
+                                <GoalTimeInputs count={currentGoals} win={goalWindow(game.game_time, game.duration_minutes)}
+                                  values={goalTimes[player.user_id] || []}
+                                  onChange={v => setGoalTimes(prev => ({ ...prev, [player.user_id]: v }))} />
+                              </div>
                             );
                           })}
                         </div>
                         <div className="flex gap-2 mt-4">
                           <Button variant="outline" className="flex-1" onClick={() => setScoreStep('scores')}>Back</Button>
                           <Button className="flex-1 bg-purple-600 hover:bg-purple-700"
-                            disabled={actionLoading === 'complete'}
+                            disabled={actionLoading === 'complete'
+                              || Object.values(goalTimes).some(t => t.some(v => !inGoalWindow(v, goalWindow(game.game_time, game.duration_minutes))))}
                             onClick={() => {
                               const scorersList = Object.entries(goalScorers)
                                 .filter(([, goals]) => goals > 0)
-                                .map(([userId, goals]) => ({ user_id: Number(userId), goals }));
+                                .map(([userId, goals]) => ({
+                                  user_id: Number(userId), goals,
+                                  goal_times: (goalTimes[Number(userId)] || []).slice(0, goals).filter(Boolean),
+                                }));
                               handleAction('complete', () => api.completeGame(game.id, {
                                 played_user_ids: pendingPlayedUserIds ?? game.selected_players.map(p => p.user_id),
                                 team_a_score: teamAScore, team_b_score: teamBScore, goal_scorers: scorersList
@@ -1683,6 +1715,8 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
             paidIds={paidIds}
             rosterLockedDays={game.roster_locked ? (game.roster_edit_days ?? 3) : undefined}
             loading={actionLoading === 'edit-result'}
+            gameTime={game.game_time}
+            durationMinutes={game.duration_minutes}
           />
 
           {/* Pay-first player: added to the list only once paid */}

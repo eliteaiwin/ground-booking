@@ -9,6 +9,7 @@ import { Trophy, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Player, formatPlayerDisplay } from '@/lib/player';
 import { formatMoney, shareChangeText } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
+import GoalTimeInputs, { goalWindow, inGoalWindow } from '@/components/GoalTimeInputs';
 
 interface Team {
   id: number;
@@ -27,6 +28,8 @@ interface GoalScorer {
   phone: string;
   goals: number;
   own_goals: number;
+  goal_times?: string[];
+  own_goal_times?: string[];
 }
 
 interface Props {
@@ -36,7 +39,7 @@ interface Props {
     played_user_ids: number[];
     team_scores?: { team_id: number; score: number }[];
     team_assignments?: Record<number, number | null>;
-    goal_scorers?: { user_id: number; goals: number; own_goals: number }[];
+    goal_scorers?: { user_id: number; goals: number; own_goals: number; goal_times?: string[]; own_goal_times?: string[] }[];
   }) => Promise<void>;
   allPlayers: Player[];
   teams: Team[];
@@ -47,6 +50,8 @@ interface Props {
   paidIds?: Set<number>;
   rosterLockedDays?: number;
   loading?: boolean;
+  gameTime?: string;
+  durationMinutes?: number;
 }
 
 type Step = 'players' | 'teams' | 'score' | 'scorers' | 'summary';
@@ -64,7 +69,11 @@ export default function EditCompletedGameDialog({
   paidIds,
   rosterLockedDays,
   loading,
+  gameTime = '',
+  durationMinutes = 90,
 }: Props) {
+  const win = goalWindow(gameTime, durationMinutes);
+  const [scorerTimes, setScorerTimes] = useState<Record<number, { goals: string[]; own: string[] }>>({});
   const [step, setStep] = useState<Step>('players');
   const [playedIds, setPlayedIds] = useState<Set<number>>(new Set());
   const [teamAssignments, setTeamAssignments] = useState<Record<number, number | null>>({});
@@ -95,6 +104,9 @@ export default function EditCompletedGameDialog({
         sg[s.user_id] = { goals: s.goals, own_goals: s.own_goals || 0 };
       });
       setScorerGoals(sg);
+      const st: Record<number, { goals: string[]; own: string[] }> = {};
+      goalScorers.forEach(s => { st[s.user_id] = { goals: s.goal_times || [], own: s.own_goal_times || [] }; });
+      setScorerTimes(st);
     }
   }, [open, allPlayers, teams, gameScore, goalScorers]);
 
@@ -154,7 +166,8 @@ export default function EditCompletedGameDialog({
       return playedPlayers.every(p => teamAssignments[p.user_id] !== undefined && teamAssignments[p.user_id] !== null);
     }
     if (step === 'score') return true;
-    if (step === 'scorers') return totalRegularGoals <= totalTeamScore;
+    if (step === 'scorers') return totalRegularGoals <= totalTeamScore
+      && Object.values(scorerTimes).every(t => [...t.goals, ...t.own].every(v => inGoalWindow(v, win)));
     return true;
   };
 
@@ -183,6 +196,8 @@ export default function EditCompletedGameDialog({
         user_id: p.user_id,
         goals: scorerGoals[p.user_id].goals || 0,
         own_goals: scorerGoals[p.user_id].own_goals || 0,
+        goal_times: (scorerTimes[p.user_id]?.goals || []).slice(0, scorerGoals[p.user_id].goals || 0).filter(Boolean),
+        own_goal_times: (scorerTimes[p.user_id]?.own || []).slice(0, scorerGoals[p.user_id].own_goals || 0).filter(Boolean),
       }));
     await onSave({
       played_user_ids: Array.from(playedIds),
@@ -297,7 +312,8 @@ export default function EditCompletedGameDialog({
             const goals = scorerGoals[player.user_id]?.goals || 0;
             const own = scorerGoals[player.user_id]?.own_goals || 0;
             return (
-              <div key={player.user_id} className="flex items-center justify-between bg-white rounded p-2">
+              <div key={player.user_id} className="bg-white rounded p-2">
+              <div className="flex items-center justify-between">
                 <span className="text-sm">{formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}</span>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1">
@@ -320,6 +336,11 @@ export default function EditCompletedGameDialog({
                       onClick={() => adjustScorer(player.user_id, 'own_goals', 1)}>+</Button>
                   </div>
                 </div>
+              </div>
+                <GoalTimeInputs count={goals} win={win} values={scorerTimes[player.user_id]?.goals || []}
+                  onChange={v => setScorerTimes(prev => ({ ...prev, [player.user_id]: { own: prev[player.user_id]?.own || [], goals: v } }))} />
+                <GoalTimeInputs count={own} win={win} label="Own" tone="red" values={scorerTimes[player.user_id]?.own || []}
+                  onChange={v => setScorerTimes(prev => ({ ...prev, [player.user_id]: { goals: prev[player.user_id]?.goals || [], own: v } }))} />
               </div>
             );
           })}

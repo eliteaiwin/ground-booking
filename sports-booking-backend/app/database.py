@@ -191,6 +191,16 @@ async def init_db():
             FOREIGN KEY (game_id) REFERENCES games(id)
         );
 
+        CREATE TABLE IF NOT EXISTS goal_times (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            own_goal INTEGER NOT NULL DEFAULT 0,
+            scored_at TEXT NOT NULL,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS push_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

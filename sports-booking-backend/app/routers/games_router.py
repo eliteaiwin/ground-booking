@@ -17,6 +17,7 @@ from ..currency import ground_currency, format_money
 from ..game_log import log_event, build_log, log_join_before_leaving
 from .notifications_router import should_notify_user
 from ..push import push_to_users
+from ..goal_insights import save_goal_times, game_insights
 from .receivers_router import check_receiver, public_receiver, is_game_receiver, receiver_owner
 
 VOTING_LINK_SECRET = "ground-booking-voting-2026"
@@ -177,6 +178,8 @@ class GoalScorerEntry(BaseModel):
     user_id: int
     goals: int = 0
     own_goals: int = 0
+    goal_times: List[str] = []
+    own_goal_times: List[str] = []
 
 
 class EditCompletedGameRequest(BaseModel):
@@ -1172,8 +1175,13 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             (game_id,)
         )
         scorer_rows = await cursor.fetchall()
+        times: dict = {}
+        for t in await (await db.execute(
+                "SELECT user_id, own_goal, scored_at FROM goal_times WHERE game_id = ? ORDER BY scored_at, id", (game_id,))).fetchall():
+            times.setdefault((t["user_id"], t["own_goal"]), []).append(t["scored_at"])
         result["goal_scorers"] = [
-            {"user_id": s["user_id"], "name": s["name"], "display_name": s["display_name"] or "", "phone": s["phone"], "goals": s["goals"], "own_goals": s["own_goals"]}
+            {"user_id": s["user_id"], "name": s["name"], "display_name": s["display_name"] or "", "phone": s["phone"], "goals": s["goals"], "own_goals": s["own_goals"],
+             "goal_times": times.get((s["user_id"], 0), []), "own_goal_times": times.get((s["user_id"], 1), [])}
             for s in scorer_rows
         ]
     except Exception:
@@ -2407,12 +2415,14 @@ async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameReques
         # Store goal scorers
         if req.goal_scorers:
             await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
+            await db.execute("DELETE FROM goal_times WHERE game_id = ?", (game_id,))
             for gs in req.goal_scorers:
                 if gs["goals"] > 0:
                     await db.execute(
                         "INSERT INTO goal_scorers (game_id, user_id, goals) VALUES (?, ?, ?)",
                         (game_id, gs["user_id"], gs["goals"])
                     )
+                    await save_goal_times(db, game, gs["user_id"], gs.get("goal_times") or [], False, gs["goals"])
 
     cur = await db.execute("UPDATE games SET status = 'completed' WHERE id = ? AND status = 'in_progress'", (game_id,))
     if cur.rowcount == 0:
@@ -2632,6 +2642,7 @@ async def edit_completed_game_result(
 
     # Update goal scorers (including own goals)
     await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM goal_times WHERE game_id = ?", (game_id,))
     if req.goal_scorers:
         for gs in req.goal_scorers:
             if gs.user_id in played_user_ids and (gs.goals > 0 or gs.own_goals > 0):
@@ -2639,6 +2650,8 @@ async def edit_completed_game_result(
                     "INSERT INTO goal_scorers (game_id, user_id, goals, own_goals) VALUES (?, ?, ?, ?)",
                     (game_id, gs.user_id, max(0, gs.goals), max(0, gs.own_goals))
                 )
+                await save_goal_times(db, game, gs.user_id, gs.goal_times, False, gs.goals)
+                await save_goal_times(db, game, gs.user_id, gs.own_goal_times, True, gs.own_goals)
 
     current_played = {r["user_id"] for r in await (await db.execute(
         "SELECT user_id FROM game_players WHERE game_id = ? AND played = 1", (game_id,)
@@ -2908,6 +2921,7 @@ async def delete_game(
     # Delete all related records
     await db.execute("DELETE FROM potd_votes WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM goal_times WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_scores WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_teams WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_players WHERE game_id = ?", (game_id,))
@@ -2991,6 +3005,16 @@ async def clone_game(
             )
     await db.commit()
     return await get_game_dict(db, new_id)
+
+
+@router.get("/{game_id}/insights")
+async def get_game_insights(game_id: int, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] != "completed":
+        return []
+    return await game_insights(db, game, _local_now().date().isoformat())
 
 
 @router.post("/{game_id}/vote-potd")

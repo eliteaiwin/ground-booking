@@ -281,7 +281,7 @@ export const api = {
   completeGame: (id: number, payload?: {
     played_user_ids?: number[];
     team_a_score?: number; team_b_score?: number;
-    goal_scorers?: { user_id: number; goals: number; own_goals?: number }[];
+    goal_scorers?: { user_id: number; goals: number; own_goals?: number; goal_times?: string[] }[];
   }) =>
     request(`/api/games/${id}/complete`, {
       method: 'POST',
@@ -292,7 +292,7 @@ export const api = {
     played_user_ids: number[];
     team_scores?: { team_id: number; score: number }[];
     team_assignments?: Record<number, number | null>;
-    goal_scorers?: { user_id: number; goals: number; own_goals: number }[];
+    goal_scorers?: { user_id: number; goals: number; own_goals: number; goal_times?: string[]; own_goal_times?: string[] }[];
   }) =>
     request(`/api/games/${id}/edit-result`, {
       method: 'POST',
@@ -369,6 +369,7 @@ export const api = {
   },
 
   getGameLog: (gameId: number) => request(`/api/games/${gameId}/log`),
+  getGameInsights: (gameId: number): Promise<string[]> => request(`/api/games/${gameId}/insights`),
 
   getPaymentHistory: (userId: number, gameId?: number) =>
     request(`/api/payments/history/${userId}${gameId ? `?game_id=${gameId}` : ''}`),
