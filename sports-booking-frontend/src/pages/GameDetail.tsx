@@ -26,9 +26,9 @@ import PlayerProfileDialog from '@/components/PlayerProfileDialog';
 import { formatMoney, shareChangeText, currencySymbol } from '@/lib/currency';
 import CurrencyIcon from '@/components/CurrencyIcon';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { InviteDialog } from '@/components/InviteDialog';
+import { ShareDialog } from '@/components/InviteDialog';
 import { PersonSearch } from '@/components/PersonSearch';
-import { inviteUrl } from '@/lib/invite';
+import { inviteUrl, installMessage, type AppLinks } from '@/lib/invite';
 import MarkPaidDialog, { ProofViewer } from '@/components/MarkPaidDialog';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
 import GameLog from '@/components/GameLog';
@@ -503,9 +503,9 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [proofGameOpen, setProofGameOpen] = useState(false);
   const [payPreview, setPayPreview] = useState<FeeBreakdown | null>(null);
   const [proofUrl, setProofUrl] = useState('');
-  const [showStatus, setShowStatus] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [appLinks, setAppLinks] = useState<AppLinks | null>(null);
   const [showRemind, setShowRemind] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [editGroundCost, setEditGroundCost] = useState('');
   const [editNoteBefore, setEditNoteBefore] = useState('');
@@ -819,11 +819,25 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
       });
     }
 
-    return msg + shareFooter();
+    return msg + shareFooter(isPreGame ? 'Tap to join' : undefined);
   };
 
-  const shareFooter = () =>
-    `\n${game!.game_code ? `Game Ref: ${game!.game_code}\n` : ''}Open in Elite Turf Booking: ${inviteUrl(user?.id, game!.id)}`;
+  const shareFooter = (label = 'Open in Elite Turf Booking') =>
+    `\n${game!.game_code ? `Game Ref: ${game!.game_code}\n` : ''}${label}: ${inviteUrl(user?.id, game!.id)}`;
+
+  const generateSummaryMsg = () => {
+    const g = game!;
+    let msg = `${g.status === 'cancelled' ? 'Game Cancelled' : 'Game Summary'}\n`;
+    msg += `Ground: ${g.ground_name}${g.title ? ` (${g.title})` : ''}\n`;
+    msg += `Date: ${formatGameDate(g.game_date)}, ${formatTime12h(g.game_time)}\n`;
+    if (g.game_score) msg += `\nFinal Score: ${g.game_score.team_a_name} ${g.game_score.team_a_score} - ${g.game_score.team_b_score} ${g.game_score.team_b_name}\n`;
+    if (g.goal_scorers?.length) msg += `Scorers: ${g.goal_scorers.map(sc => `${sc.display_name || sc.name} (${sc.goals})`).join(', ')}\n`;
+    if (g.status !== 'cancelled' && g.selected_players.length) {
+      msg += `\nPlayed (${g.selected_players.length}):\n`;
+      g.selected_players.forEach((pl, i) => { msg += `${i + 1}. ${formatPlayerDisplay(pl.name, pl.phone, undefined, pl.display_name)}\n`; });
+    }
+    return msg + shareFooter();
+  };
 
   const generateRemindMsg = () => {
     const g = game!;
@@ -881,6 +895,9 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const paidIds = new Set((game.payment_details || []).filter(p => (p.paid_amount || 0) > 0).map(p => p.user_id));
   const iPaid = hasPaid(user?.id);
   const unpaidPlayers = (game.payment_details || []).filter(pd => pd.pending > 0);
+  const isPreGame = game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived;
+  const shareKind: 'invite' | 'payment' | 'summary' = isPreGame ? 'invite'
+    : game.status === 'completed' && unpaidPlayers.length > 0 ? 'payment' : 'summary';
   const totalReceived = (game.payment_details || []).reduce((sum, p) => sum + (p.paid_amount || 0), 0);
   const perPerson = game.per_person_amount ?? game.cost_per_person;
 
@@ -2406,63 +2423,51 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
         )}
 
         {game.status !== 'completed' && game.status !== 'cancelled' && !game.is_archived && (
-          <>
-            <Button variant="outline" className="w-full" data-testid="open-invite" onClick={() => setShowInvite(true)}>
-              <Users size={16} className="mr-2" /> Invite to this game (link / QR)
-            </Button>
-            <Dialog open={confirmPlayOpen} onOpenChange={setConfirmPlayOpen}>
-              <DialogContent className="max-w-sm" data-testid="confirm-play-dialog">
-                <DialogHeader>
-                  <DialogTitle>Hurray, so you confirm you will definitely play the game?</DialogTitle>
-                </DialogHeader>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => setConfirmPlayOpen(false)}>Cancel</Button>
-                  <Button className="bg-green-600 hover:bg-green-700 text-white" data-testid="confirm-play"
-                    disabled={actionLoading === 'confirm-avail'}
-                    onClick={() => { setConfirmPlayOpen(false); handleAction('confirm-avail', () => api.confirmAvailability(game.id)); }}>
-                    Confirm
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-            {showInvite && <InviteDialog title="Invite to this game" url={inviteUrl(user?.id, game.id)}
-              message={`Join "${game.title}" on ${game.game_date}${game.game_time ? ` at ${game.game_time}` : ''}. Tap to open the game and nominate yourself:`}
-              onClose={() => setShowInvite(false)} />}
-          </>
+          <Dialog open={confirmPlayOpen} onOpenChange={setConfirmPlayOpen}>
+            <DialogContent className="max-w-sm" data-testid="confirm-play-dialog">
+              <DialogHeader>
+                <DialogTitle>Hurray, so you confirm you will definitely play the game?</DialogTitle>
+              </DialogHeader>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setConfirmPlayOpen(false)}>Cancel</Button>
+                <Button className="bg-green-600 hover:bg-green-700 text-white" data-testid="confirm-play"
+                  disabled={actionLoading === 'confirm-avail'}
+                  onClick={() => { setConfirmPlayOpen(false); handleAction('confirm-avail', () => api.confirmAvailability(game.id)); }}>
+                  Confirm
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
 
-        {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress') && (
-          <>
-            <Button variant="outline" className="w-full border-green-300 text-green-700 bg-green-50" data-testid="open-status"
-              onClick={() => setShowStatus(true)}>
-              <Share2 size={16} className="mr-2" /> Send Current Status
-            </Button>
-            <Dialog open={showStatus} onOpenChange={setShowStatus}>
-              <DialogContent className="max-w-sm" data-testid="status-dialog">
-                <DialogHeader><DialogTitle className="flex items-center gap-2"><Share2 size={16} /> Send Current Status</DialogTitle></DialogHeader>
-
-              <div className="bg-white rounded-lg p-3 text-sm font-mono whitespace-pre-wrap mb-3 border max-h-[50vh] overflow-y-auto">
-                {generateStatusMsg()}
-              </div>
-              <div className="flex gap-2">
-                <Button className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    const msg = generateStatusMsg();
-                    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-                  }}>
-                  <MessageCircle size={16} className="mr-2" /> Share on WhatsApp
-                </Button>
-                <Button variant="outline" onClick={() => navigator.clipboard.writeText(generateStatusMsg())}>Copy</Button>
-              </div>
-              <Button variant="outline" className="w-full mt-2 border-green-300 text-green-700"
-                onClick={() => handleAction('broadcast', () => api.broadcastStatus(game.id))}
-                disabled={actionLoading === 'broadcast'}>
-                <Bell size={16} className="mr-2" />
-                {actionLoading === 'broadcast' ? 'Sending...' : 'Send as In-App Notification'}
-              </Button>
-              </DialogContent>
-            </Dialog>
-          </>
+        <Button variant="outline" className="w-full border-green-300 text-green-700 bg-green-50" data-testid="open-share"
+          onClick={() => { setShowShare(true); if (!appLinks) api.getAppLinks().then(setAppLinks).catch(() => setAppLinks({ play_store_url: '', app_store_url: '' })); }}>
+          <Share2 size={16} className="mr-2" /> {shareKind === 'invite' ? 'Share Game' : shareKind === 'payment' ? 'Share Payment Status' : 'Share Game Summary'}
+        </Button>
+        {showShare && (
+          <ShareDialog
+            title={shareKind === 'invite' ? 'Share Game' : shareKind === 'payment' ? 'Share Payment Status' : 'Share Game Summary'}
+            onClose={() => setShowShare(false)}
+            tabs={[
+              {
+                key: 'game',
+                label: shareKind === 'invite' ? 'Game' : shareKind === 'payment' ? 'Payment' : 'Summary',
+                text: shareKind === 'invite' ? generateStatusMsg() : shareKind === 'payment' ? generateRemindMsg() : generateSummaryMsg(),
+                qrUrl: shareKind === 'invite' ? inviteUrl(user?.id, game.id) : undefined,
+                extra: (isModerator || isAdmin) && !isReadOnly && shareKind !== 'summary' ? (
+                  <Button variant="outline" className="w-full border-green-300 text-green-700" data-testid="share-inapp"
+                    disabled={actionLoading === 'broadcast' || actionLoading === 'remind'}
+                    onClick={() => shareKind === 'invite'
+                      ? handleAction('broadcast', () => api.broadcastStatus(game.id))
+                      : handleAction('remind', () => api.remindUnpaid(game.id))}>
+                    <Bell size={16} className="mr-2" />
+                    {actionLoading === 'broadcast' || actionLoading === 'remind' ? 'Sending...' : shareKind === 'invite' ? 'Send as In-App Notification' : 'Send In-App Reminder to Unpaid'}
+                  </Button>
+                ) : undefined,
+              },
+              { key: 'install', label: 'Install app', text: installMessage(appLinks, inviteUrl(user?.id), inviteUrl(user?.id, game.id)) },
+            ]}
+          />
         )}
 
         {/* Discussion Section - Always active */}

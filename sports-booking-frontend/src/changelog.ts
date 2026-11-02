@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.49', date: '2026-11-02', changes: [
+    'One Share button on every game: Share Game while open for nomination, Share Payment Status once completed with money due, Share Game Summary afterwards',
+    'Share by WhatsApp, SMS or Copy (QR for open games); new Install app tab invites people to install the app with this game\'s link',
+    'Refer a friend sends the app install links (no game link) by WhatsApp or SMS',
+  ] },
   { version: '1.48', date: '2026-11-02', changes: [
     'Final Score shows only the score; tap it to see goal scorers (aligned columns with goal times) and Edit Game Result',
     'Insights moved to their own collapsed section at the bottom of a completed game; moderators can add their own notes there',

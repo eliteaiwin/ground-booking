@@ -12,8 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays, Share2, Wallet } from 'lucide-react';
 import { WhatsNew } from '@/components/WhatsNew';
 import { AboutDialog } from '@/components/AboutDialog';
-import { InviteDialog } from '@/components/InviteDialog';
-import { inviteUrl } from '@/lib/invite';
+import { ShareDialog } from '@/components/InviteDialog';
+import { inviteUrl, installMessage, type AppLinks } from '@/lib/invite';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 
 interface Game {
@@ -129,6 +129,10 @@ export default function Dashboard({ onNavigate }: Props) {
   const [archivePeriod, setArchivePeriod] = useState<ArchivePeriod>('week');
   const [showAbout, setShowAbout] = useState(false);
   const [showRefer, setShowRefer] = useState(false);
+  const [appLinks, setAppLinks] = useState<AppLinks | null>(null);
+  useEffect(() => {
+    if (showRefer && !appLinks) api.getAppLinks().then(setAppLinks).catch(() => setAppLinks({ play_store_url: '', app_store_url: '' }));
+  }, [showRefer, appLinks]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [receiverGames, setReceiverGames] = useState<ReceiverGame[]>([]);
   useEffect(() => {
@@ -194,8 +198,8 @@ export default function Dashboard({ onNavigate }: Props) {
   return (
     <div className="min-h-screen bg-gray-50">
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
-      {showRefer && <InviteDialog title="Refer a friend" url={inviteUrl(user?.id)}
-        message="Join me on Elite Turf Booking to book and play games:" onClose={() => setShowRefer(false)} />}
+      {showRefer && <ShareDialog title="Refer a friend" onClose={() => setShowRefer(false)}
+        tabs={[{ key: 'install', label: 'Install app', text: installMessage(appLinks, inviteUrl(user?.id)), qrUrl: inviteUrl(user?.id) }]} />}
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
