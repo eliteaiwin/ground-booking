@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { SportTile } from '@/components/SportTile';
 import { formatPhone, setPhoneHomeCountry } from '@/lib/phone';
 import { useAuth } from '../context/AuthContext';
 import { FeeBreakdownTable } from '@/components/CostBreakdown';
 import { computeFeeBreakdown, type FeeBreakdown, type FeeSettings } from '@/lib/fees';
 import { openCashfreeCheckout } from '@/lib/cashfree';
-import { api } from '../services/api';
+import { api, type GameInsights } from '../services/api';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check, Undo2, Lightbulb } from 'lucide-react';
+import { ArrowLeft, Trophy, Users, Clock, MapPin, Phone, Star, Share2, MessageCircle, Bell, AlertTriangle, CreditCard, GripVertical, CheckCircle, Archive, Info, Banknote, Pencil, XCircle, Wallet, Trash2, Search, Plus, Copy, X, Check, Undo2, Lightbulb, ChevronDown } from 'lucide-react';
 import Discussion from './Discussion';
 import CompleteGameDialog from './CompleteGameDialog';
 import EditCompletedGameDialog from './EditCompletedGameDialog';
@@ -538,11 +538,14 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [showEditResultDialog, setShowEditResultDialog] = useState(false);
   const [goalTimes, setGoalTimes] = useState<Record<number, string[]>>({});
-  const [insights, setInsights] = useState<string[]>([]);
+  const [insights, setInsights] = useState<GameInsights>({ auto: [], notes: [] });
+  const [scoreOpen, setScoreOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
   const insightsKey = game?.status === 'completed' ? JSON.stringify(game.goal_scorers) + JSON.stringify(game.game_score) : '';
   useEffect(() => {
-    if (!insightsKey) { setInsights([]); return; }
-    api.getGameInsights(gameId).then(setInsights).catch(() => setInsights([]));
+    if (!insightsKey) { setInsights({ auto: [], notes: [] }); return; }
+    api.getGameInsights(gameId).then(setInsights).catch(() => setInsights({ auto: [], notes: [] }));
   }, [gameId, insightsKey]);
   const [pendingPlayedUserIds, setPendingPlayedUserIds] = useState<number[] | null>(null);
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
@@ -1125,9 +1128,11 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
         {game.status === 'completed' && game.game_score && (
           <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
             <CardContent className="p-4">
-              <h4 className="font-semibold text-green-800 mb-3 flex items-center gap-2">
+              <button type="button" onClick={() => setScoreOpen(o => !o)} data-testid="score-toggle"
+                className="w-full font-semibold text-green-800 mb-3 flex items-center gap-2">
                 <Trophy size={16} /> Final Score
-              </h4>
+                <ChevronDown size={16} className={`ml-auto transition-transform ${scoreOpen ? 'rotate-180' : ''}`} />
+              </button>
               <div className="flex items-center justify-center gap-4 mb-3">
                 <div className="text-center">
                   <p className="text-sm font-medium text-green-700">{game.game_score.team_a_name}</p>
@@ -1139,36 +1144,26 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                   <p className="text-3xl font-bold text-green-800">{game.game_score.team_b_score}</p>
                 </div>
               </div>
-              {game.goal_scorers.length > 0 && (
-                <div className="border-t border-green-200 pt-2 mt-2">
+              {scoreOpen && game.goal_scorers.length > 0 && (
+                <div className="border-t border-green-200 pt-2 mt-2" data-testid="score-details">
                   <p className="text-xs font-semibold text-green-700 mb-1">Goal Scorers:</p>
-                  <div className="space-y-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,auto)] gap-x-3 gap-y-1.5 text-sm items-start">
                     {game.goal_scorers.map(s => (
-                      <div key={s.user_id} className="flex justify-between text-sm">
-                        <span className="text-green-800">{formatPlayerDisplay(s.name, s.phone, undefined, s.display_name)}</span>
-                        <span className="font-semibold text-green-700">
+                      <Fragment key={s.user_id}>
+                        <span className="text-green-800 truncate">{s.display_name || s.name}</span>
+                        <span className="font-semibold text-green-700 whitespace-nowrap">
                           {s.goals} {s.goals === 1 ? 'goal' : 'goals'}
                           {s.own_goals > 0 && <span className="text-red-600 ml-1">({s.own_goals} own)</span>}
-                          {(s.goal_times?.length || s.own_goal_times?.length) ? (
-                            <span className="block text-[11px] font-normal text-green-600 text-right">
-                              {[...(s.goal_times || []).map(formatGoalTime), ...(s.own_goal_times || []).map(t => `${formatGoalTime(t)} (own)`)].join(', ')}
-                            </span>
-                          ) : null}
                         </span>
-                      </div>
+                        <span className="text-[11px] text-green-600 leading-5">
+                          {[...(s.goal_times || []).map(formatGoalTime), ...(s.own_goal_times || []).map(t => `${formatGoalTime(t)} (own)`)].join(', ')}
+                        </span>
+                      </Fragment>
                     ))}
                   </div>
                 </div>
               )}
-              {insights.length > 0 && (
-                <div className="border-t border-green-200 pt-2 mt-2" data-testid="goal-insights">
-                  <p className="text-xs font-semibold text-green-700 mb-1 flex items-center gap-1"><Lightbulb size={12} /> Insights</p>
-                  <ul className="space-y-1">
-                    {insights.map((t, i) => <li key={i} className="text-sm text-green-800">• {t}</li>)}
-                  </ul>
-                </div>
-              )}
-              {(isAdmin || isModerator) && game.status === 'completed' && (
+              {scoreOpen && (isAdmin || isModerator) && game.status === 'completed' && (
                 <Button
                   variant="outline"
                   className="w-full mt-3 border-green-700 text-green-700 hover:bg-green-50"
@@ -2473,6 +2468,50 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
         {/* Discussion Section - Always active */}
         <Discussion gameId={game.id} gameStatus={game.status}
           members={[...game.selected_players, ...game.waiting_list].map(p => ({ id: p.user_id, name: p.display_name || p.name }))} />
+
+        {game.status === 'completed' && (insights.auto.length > 0 || insights.notes.length > 0 || isAdmin || isModerator) && (
+          <Card className="border-amber-200 bg-amber-50/50" data-testid="goal-insights">
+            <CardContent className="p-4">
+              <button type="button" onClick={() => setInsightsOpen(o => !o)} data-testid="insights-toggle"
+                className="w-full font-semibold text-amber-800 flex items-center gap-2">
+                <Lightbulb size={16} /> Insights
+                {insights.auto.length + insights.notes.length > 0 && (
+                  <span className="text-xs font-normal text-amber-600">({insights.auto.length + insights.notes.length})</span>
+                )}
+                <ChevronDown size={16} className={`ml-auto transition-transform ${insightsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {insightsOpen && (
+                <div className="mt-3 space-y-2">
+                  <ul className="space-y-1">
+                    {insights.auto.map((t, i) => <li key={i} className="text-sm text-amber-900">• {t}</li>)}
+                    {insights.notes.map(n => (
+                      <li key={n.id} className="text-sm text-amber-900 flex items-start gap-1">
+                        <span className="flex-1">• {n.note} <span className="text-[11px] text-amber-600">({n.by_name})</span></span>
+                        {(isAdmin || isModerator) && (
+                          <button type="button" aria-label="Delete note" className="text-amber-500 hover:text-red-600 p-0.5"
+                            onClick={() => api.deleteGameNote(game.id, n.id).then(setInsights).catch(e => alert(e.message))}><X size={14} /></button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {insights.auto.length + insights.notes.length === 0 && (
+                    <p className="text-xs text-amber-700">No insights yet.</p>
+                  )}
+                  {(isAdmin || isModerator) && !isReadOnly && (
+                    <div className="flex gap-2 pt-1">
+                      <Input value={noteText} onChange={e => setNoteText(e.target.value)} maxLength={500} data-testid="note-input"
+                        placeholder="Add an insight, e.g. Anish had a scuffle with Peter today" className="text-sm bg-white" />
+                      <Button size="sm" className="bg-amber-600 hover:bg-amber-700" disabled={!noteText.trim()} data-testid="note-add"
+                        onClick={() => api.addGameNote(game.id, noteText).then(r => { setInsights(r); setNoteText(''); }).catch(e => alert(e.message))}>
+                        <Plus size={14} />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Separator />
         <p className="text-xs text-gray-400 text-center pb-4">Game ID: {game.id}</p>

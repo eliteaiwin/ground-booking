@@ -2922,6 +2922,7 @@ async def delete_game(
     await db.execute("DELETE FROM potd_votes WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM goal_scorers WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM goal_times WHERE game_id = ?", (game_id,))
+    await db.execute("DELETE FROM game_notes WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_scores WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_teams WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM game_players WHERE game_id = ?", (game_id,))
@@ -3013,8 +3014,34 @@ async def get_game_insights(game_id: int, user_id: int = Depends(get_current_use
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     if game["status"] != "completed":
-        return []
-    return await game_insights(db, game, _local_now().date().isoformat())
+        return {"auto": [], "notes": []}
+    notes = await (await db.execute(
+        """SELECT n.id, n.note, n.created_at, n.created_by, COALESCE(NULLIF(u.display_name, ''), u.name) AS by_name
+           FROM game_notes n LEFT JOIN users u ON u.id = n.created_by WHERE n.game_id = ? ORDER BY n.id""", (game_id,))).fetchall()
+    return {"auto": await game_insights(db, game, _local_now().date().isoformat()), "notes": [dict(n) for n in notes]}
+
+
+class GameNoteRequest(BaseModel):
+    note: str
+
+
+@router.post("/{game_id}/notes")
+async def add_game_note(game_id: int, req: GameNoteRequest, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    await require_game_moderator(user_id, game_id, db)
+    note = req.note.strip()[:500]
+    if not note:
+        raise HTTPException(status_code=400, detail="Note is empty")
+    await db.execute("INSERT INTO game_notes (game_id, note, created_by) VALUES (?, ?, ?)", (game_id, note, user_id))
+    await db.commit()
+    return await get_game_insights(game_id, user_id, db)
+
+
+@router.delete("/{game_id}/notes/{note_id}")
+async def delete_game_note(game_id: int, note_id: int, user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    await require_game_moderator(user_id, game_id, db)
+    await db.execute("DELETE FROM game_notes WHERE id = ? AND game_id = ?", (note_id, game_id))
+    await db.commit()
+    return await get_game_insights(game_id, user_id, db)
 
 
 @router.post("/{game_id}/vote-potd")

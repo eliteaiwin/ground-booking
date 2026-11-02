@@ -191,6 +191,16 @@ async def init_db():
             FOREIGN KEY (game_id) REFERENCES games(id)
         );
 
+        CREATE TABLE IF NOT EXISTS game_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_id INTEGER NOT NULL,
+            note TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (game_id) REFERENCES games(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS goal_times (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             game_id INTEGER NOT NULL,

@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.48', date: '2026-11-02', changes: [
+    'Final Score shows only the score; tap it to see goal scorers (aligned columns with goal times) and Edit Game Result',
+    'Insights moved to their own collapsed section at the bottom of a completed game; moderators can add their own notes there',
+  ] },
   { version: '1.47', date: '2026-11-01', changes: [
     'Goal times: each goal (and own goal) can record the time it was scored, between 15 min before start and 15 min after the end',
     'Insights on completed games: late goals ("scored 2 goals in the last 5 mins"), hat-trick count, and how the team does when a player scores first',

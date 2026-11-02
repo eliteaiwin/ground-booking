@@ -1,3 +1,5 @@
+export interface GameInsights { auto: string[]; notes: { id: number; note: string; by_name: string; created_at: string }[] }
+
 import type { GroundDetailsInput } from '@/lib/grounds';
 
 // Determine API URL and optional proxy Basic-Auth credentials.
@@ -369,7 +371,11 @@ export const api = {
   },
 
   getGameLog: (gameId: number) => request(`/api/games/${gameId}/log`),
-  getGameInsights: (gameId: number): Promise<string[]> => request(`/api/games/${gameId}/insights`),
+  getGameInsights: (gameId: number): Promise<GameInsights> => request(`/api/games/${gameId}/insights`),
+  addGameNote: (gameId: number, note: string): Promise<GameInsights> =>
+    request(`/api/games/${gameId}/notes`, { method: 'POST', body: JSON.stringify({ note }) }),
+  deleteGameNote: (gameId: number, noteId: number): Promise<GameInsights> =>
+    request(`/api/games/${gameId}/notes/${noteId}`, { method: 'DELETE' }),
 
   getPaymentHistory: (userId: number, gameId?: number) =>
     request(`/api/payments/history/${userId}${gameId ? `?game_id=${gameId}` : ''}`),
