@@ -924,7 +924,8 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "joined_at": p["joined_at"],
             "photo": player_photo_map.get(p["user_id"], ""),
             "gender": p["gender"] or "",
-            "tentative": bool(p["tentative"]) and p["status"] == "selected",
+            "tentative": bool(p["tentative"]),
+            "tentative_nudged_at": p["tentative_nudged_at"] if "tentative_nudged_at" in p.keys() else None,
         }
         if p["status"] == "selected":
             selected.append(player_data)
@@ -1830,8 +1831,6 @@ async def vote_join_game(
         if not await prev_cursor.fetchone():
             is_first_time_on_ground = True
 
-    if player_status != "selected":
-        tentative = 0
     await db.execute(
         "INSERT INTO game_players (game_id, user_id, status, position, payment_confirmed, tentative) VALUES (?, ?, ?, ?, ?, ?)",
         (game_id, user_id, player_status, position, payment_confirmed, tentative)
@@ -1881,6 +1880,109 @@ async def confirm_availability(
     return await get_game_dict(db, game_id)
 
 
+@router.post("/{game_id}/mark-tentative")
+async def mark_tentative(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    game = await (await db.execute("SELECT status FROM games WHERE id = ?", (game_id,))).fetchone()
+    if not game or game["status"] not in ("draft", "voting_open", "in_progress"):
+        raise HTTPException(status_code=400, detail="This game is no longer open")
+    player = await (await db.execute(
+        "SELECT tentative FROM game_players WHERE game_id = ? AND user_id = ? AND status IN ('selected', 'waiting')",
+        (game_id, user_id))).fetchone()
+    if not player:
+        raise HTTPException(status_code=400, detail="Not in this game")
+    if not player["tentative"]:
+        await db.execute("UPDATE game_players SET tentative = 1, tentative_reminded = 0, tentative_nudged_at = NULL "
+                         "WHERE game_id = ? AND user_id = ?", (game_id, user_id))
+        await log_event(db, game_id, "marked_tentative", user_id=user_id, actor_id=user_id)
+        await db.commit()
+    return await get_game_dict(db, game_id)
+
+
+@router.post("/{game_id}/players/{player_id}/nudge")
+async def nudge_tentative(
+    game_id: int,
+    player_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator asks a tentative player to confirm their availability."""
+    await require_game_moderator(user_id, game_id, db)
+    game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    player = await (await db.execute(
+        "SELECT id, tentative FROM game_players WHERE game_id = ? AND user_id = ?", (game_id, player_id))).fetchone()
+    if not player or not player["tentative"]:
+        raise HTTPException(status_code=400, detail="This player isn't tentative")
+    mod = await (await db.execute("SELECT name, display_name FROM users WHERE id = ?", (user_id,))).fetchone()
+    try:
+        start = datetime.strptime(f"{game['game_date']} {game['game_time']}", "%Y-%m-%d %H:%M")
+        when = ("today" if start.date() == _local_now().date() else start.strftime("on %a %-d %b")) + start.strftime(" at %-I:%M %p")
+    except (TypeError, ValueError):
+        when = ""
+    await create_notification(
+        db, player_id, game_id, "tentative_nudge",
+        f"{(mod['display_name'] or mod['name']) if mod else 'Your moderator'} asks you to confirm your availability for "
+        f"{game['title']} {when}. Confirm now"
+    )
+    await db.execute("UPDATE game_players SET tentative_nudged_at = ? WHERE id = ?",
+                     (_local_now().strftime("%Y-%m-%d %H:%M:%S"), player["id"]))
+    await log_event(db, game_id, "tentative_nudged", user_id=player_id, actor_id=user_id)
+    await db.commit()
+    return await get_game_dict(db, game_id)
+
+
+async def _game_moderator_ids(db: aiosqlite.Connection, g) -> set:
+    mods = {g["created_by"]}
+    if g["moderator_group_id"]:
+        mods |= {r["user_id"] for r in await (await db.execute(
+            "SELECT user_id FROM moderator_group_members WHERE group_id = ?", (g["moderator_group_id"],)
+        )).fetchall()}
+    return mods
+
+
+async def send_tentative_moderator_alerts(db: aiosqlite.Connection) -> int:
+    """Every hour on game day, tell moderators when more than 2 confirmed players are still tentative."""
+    now = _local_now()
+    rows = await (await db.execute(
+        """SELECT g.* FROM games g WHERE g.status IN ('draft', 'voting_open') AND g.game_date = ?""",
+        (now.strftime("%Y-%m-%d"),)
+    )).fetchall()
+    sent = 0
+    for g in rows:
+        try:
+            start = datetime.strptime(f"{g['game_date']} {g['game_time']}", "%Y-%m-%d %H:%M")
+        except (TypeError, ValueError):
+            continue
+        if now >= start:
+            continue
+        if g["tentative_alert_at"]:
+            try:
+                if now - datetime.strptime(g["tentative_alert_at"], "%Y-%m-%d %H:%M:%S") < timedelta(minutes=58):
+                    continue
+            except ValueError:
+                pass
+        names = [r["n"] for r in await (await db.execute(
+            """SELECT COALESCE(NULLIF(u.display_name, ''), u.name) AS n FROM game_players gp JOIN users u ON u.id = gp.user_id
+               WHERE gp.game_id = ? AND gp.status = 'selected' AND gp.tentative = 1 ORDER BY gp.joined_at""", (g["id"],)
+        )).fetchall()]
+        if len(names) <= 2:
+            continue
+        for uid in await _game_moderator_ids(db, g):
+            await create_notification(
+                db, uid, g["id"], "tentative_alert",
+                f"{g['title']} at {start.strftime('%-I:%M %p')} today: {len(names)} confirmed players are still tentative "
+                f"({', '.join(names)}). Nudge them to confirm their availability. Open game"
+            )
+        await db.execute("UPDATE games SET tentative_alert_at = ? WHERE id = ?", (now.strftime("%Y-%m-%d %H:%M:%S"), g["id"]))
+        sent += 1
+    if sent:
+        await db.commit()
+    return sent
+
+
 async def send_tentative_reminders(db: aiosqlite.Connection) -> int:
     """About 4 hours before a game, ask tentative players to confirm they're playing."""
     hours = await _late_quit_hours(db)
@@ -1888,7 +1990,7 @@ async def send_tentative_reminders(db: aiosqlite.Connection) -> int:
     rows = await (await db.execute(
         """SELECT gp.id, gp.user_id, g.id AS game_id, g.title, g.game_date, g.game_time
            FROM game_players gp JOIN games g ON g.id = gp.game_id
-           WHERE gp.tentative = 1 AND gp.tentative_reminded = 0 AND gp.status = 'selected'
+           WHERE gp.tentative = 1 AND gp.tentative_reminded = 0 AND gp.status IN ('selected', 'waiting')
              AND g.status IN ('draft', 'voting_open')"""
     )).fetchall()
     sent = 0
@@ -2049,7 +2151,7 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
         if next_player:
             # The promoted player takes the leaver's place in the confirmed list.
             await db.execute(
-                "UPDATE game_players SET status = 'selected', tentative = 0, list_at = ? WHERE id = ?",
+                "UPDATE game_players SET status = 'selected', list_at = ? WHERE id = ?",
                 (player["list_at"] or player["joined_at"], next_player["id"])
             )
             await log_event(db, game_id, "promoted", user_id=next_player["user_id"], note=f"place:{user_id}")
@@ -2204,7 +2306,7 @@ async def nominate_player(
             selected_count = (await count_cursor.fetchone())["cnt"]
             if selected_count < game["max_players"]:
                 await db.execute(
-                    "UPDATE game_players SET status = 'selected', tentative = 0 WHERE id = ?",
+                    "UPDATE game_players SET status = 'selected' WHERE id = ?",
                     (existing["id"],)
                 )
                 await db.execute(

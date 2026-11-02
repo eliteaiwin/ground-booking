@@ -266,6 +266,10 @@ export const api = {
   voteJoin: (id: number, position?: string, tentative?: boolean) =>
     request(`/api/games/${id}/vote`, { method: 'POST', body: JSON.stringify({ position: position || '', tentative: !!tentative }) }),
 
+  markTentative: (id: number) =>
+    request(`/api/games/${id}/mark-tentative`, { method: 'POST' }),
+  nudgeTentative: (id: number, playerId: number) =>
+    request(`/api/games/${id}/players/${playerId}/nudge`, { method: 'POST' }),
   confirmAvailability: (id: number) =>
     request(`/api/games/${id}/confirm-availability`, { method: 'POST' }),
 

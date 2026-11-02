@@ -2,6 +2,12 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.51', date: '2026-11-03', changes: [
+    'Players can join the waiting list as tentative, and keep their T when moved up',
+    'Any player can mark themselves Tentative at any time (Tentative button next to Unjoin)',
+    'Game day: moderators get an hourly alert while more than 2 confirmed players are tentative',
+    'Moderators can Nudge a tentative player to confirm their availability',
+  ] },
   { version: '1.50', date: '2026-11-03', changes: [
     'Ground Admin role: Super Admins make someone Admin of a ground; they manage that ground\'s users, moderators and ground managers',
     'Users list shows games played; users who never played can be deleted',

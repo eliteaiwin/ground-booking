@@ -19,6 +19,7 @@ export interface Player {
   joined_at: string;
   photo: string;
   tentative?: boolean;
+  tentative_nudged_at?: string | null;
 }
 
 function getDisplayMode(): string {

@@ -490,6 +490,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [confirmPlayOpen, setConfirmPlayOpen] = useState(false);
+  const [markTentOpen, setMarkTentOpen] = useState(false);
   const [error, setError] = useState('');
   const [showEditGame, setShowEditGame] = useState(false);
   const [confirmCompleted, setConfirmCompleted] = useState<'edit' | 'delete' | null>(null);
@@ -615,7 +616,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const isPlayerInGame = game?.selected_players.some(p => p.user_id === user?.id) ||
     game?.waiting_list.some(p => p.user_id === user?.id) || !!myAwaiting;
   const isSelectedPlayer = game?.selected_players.some(p => p.user_id === user?.id);
-  const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id);
+  const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id) || game?.waiting_list.find(p => p.user_id === user?.id);
   const myTentative = !!myPlayerRecord?.tentative && game?.status !== 'completed';
 
   useEffect(() => {
@@ -936,6 +937,15 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
     : game.selected_players;
 
   const canEditGame = (isModerator || isAdmin) && game.status !== 'cancelled';
+  const canNudge = (p: Player) => !!p.tentative && (isModerator || isAdmin) && p.user_id !== user?.id && !gameIsOver && !isReadOnly &&
+    ['draft', 'voting_open', 'in_progress'].includes(game.status);
+  const nudgeButton = (p: Player) => canNudge(p) && (
+    <button type="button" data-testid="nudge-tentative" disabled={actionLoading === `nudge-${p.user_id}`}
+      onClick={() => handleAction(`nudge-${p.user_id}`, () => api.nudgeTentative(game.id, p.user_id))}
+      className="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded border border-amber-400 text-amber-700 hover:bg-amber-50">
+      {p.tentative_nudged_at ? 'Nudged \u2713' : 'Nudge'}
+    </button>
+  );
   const canCloneGame = (isAdmin || isModerator) && !isReadOnly && !!onOpenGame
     && (game.status === 'completed' || game.status === 'cancelled' || game.is_archived);
   const cloneDateLabel = (() => {
@@ -1075,6 +1085,12 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                 I'm playing
               </Button>
             )}
+            {!myTentative && ['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
+              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+                disabled={actionLoading === 'mark-tent'} data-testid="mark-tentative" onClick={() => setMarkTentOpen(true)}>
+                Tentative
+              </Button>
+            )}
             {['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
               <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-300 text-red-600 hover:bg-red-50"
                 onClick={handleQuitClick} disabled={actionLoading === 'quit' || iPaid} data-testid="unjoin"
@@ -1099,7 +1115,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
           <Card className="border-green-300 bg-green-50" data-testid="join-confirm">
             <CardContent className="p-4">
               <h4 className="font-semibold text-green-800 mb-2">Join {game.title}?</h4>
-              {game.selected_players.length < game.max_players && (
+              {(
               <label className="flex items-start gap-2 text-sm text-gray-700 mb-3">
                 <input type="checkbox" className="mt-0.5 accent-amber-500" checked={joinTentative}
                   onChange={e => setJoinTentative(e.target.checked)} data-testid="join-tentative" />
@@ -1122,7 +1138,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                 setActionLoading('vote');
                 setError('');
                 try {
-                  const result = await api.voteJoin(game.id, 'Anywhere', joinTentative && game.selected_players.length < game.max_players);
+                  const result = await api.voteJoin(game.id, 'Anywhere', joinTentative);
                   setShowJoinConfirm(false);
                   if (result.is_first_time_on_ground) {
                     setFirstTimeAlert('This is your first time on this ground. Even though this is a PostPaid game, please pay in advance as a deposit.');
@@ -2134,6 +2150,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                         <span className="flex-1">
                           {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
                           {player.tentative && game.status !== 'completed' && <TentativeBadge onRemove={player.user_id === user?.id && !gameIsOver && !isReadOnly ? () => setConfirmPlayOpen(true) : undefined} />}
+                          {nudgeButton(player)}
                           {player.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
                           {player.user_id === user?.id && game.status === 'completed' && player.payment_confirmed !== 1 && !(game.pay_first_enabled && player.must_prepay) && (
                             <Button size="sm" className="ml-1 h-5 px-2 text-[11px] bg-orange-600 hover:bg-orange-700" data-testid="row-pay"
@@ -2311,6 +2328,8 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                     </button>
                     <span className="flex-1">
                       {formatPlayerDisplay(player.name, player.phone, undefined, player.display_name)}{player.position && player.position !== 'Anywhere' ? ` (${player.position})` : ''}
+                      {player.tentative && game.status !== 'completed' && <TentativeBadge onRemove={player.user_id === user?.id && !gameIsOver && !isReadOnly ? () => setConfirmPlayOpen(true) : undefined} />}
+                      {nudgeButton(player)}
                       {player.user_id === user?.id && <Badge className="ml-1 bg-orange-100 text-orange-700 text-xs">You</Badge>}
                     </span>
                     <PlayerInfoButton player={player} />
@@ -2439,6 +2458,25 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
             </DialogContent>
           </Dialog>
         )}
+
+        <Dialog open={markTentOpen} onOpenChange={setMarkTentOpen}>
+          <DialogContent className="max-w-sm" data-testid="mark-tentative-dialog">
+            <DialogHeader>
+              <DialogTitle>Not sure you can make it?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-600">
+              You'll show as tentative <TentativeBadge /> to everyone.
+              {(game.late_quit_hours ?? 0) > 0 && ` You still pay for the game if you decide to quit just ${game.late_quit_hours} hours before start the game and no one is in queue to take your place`}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setMarkTentOpen(false)}>Cancel</Button>
+              <Button className="bg-amber-500 hover:bg-amber-600 text-white" data-testid="mark-tentative-yes"
+                onClick={() => { setMarkTentOpen(false); handleAction('mark-tent', () => api.markTentative(game.id)); }}>
+                Mark tentative
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Button variant="outline" className="w-full border-green-300 text-green-700 bg-green-50" data-testid="open-share"
           onClick={() => { setShowShare(true); if (!appLinks) api.getAppLinks().then(setAppLinks).catch(() => setAppLinks({ play_store_url: '', app_store_url: '' })); }}>
