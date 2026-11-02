@@ -491,6 +491,8 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [actionLoading, setActionLoading] = useState('');
   const [confirmPlayOpen, setConfirmPlayOpen] = useState(false);
   const [markTentOpen, setMarkTentOpen] = useState(false);
+  const [modTentOpen, setModTentOpen] = useState(false);
+  const [modTentQuery, setModTentQuery] = useState('');
   const [error, setError] = useState('');
   const [showEditGame, setShowEditGame] = useState(false);
   const [confirmCompleted, setConfirmCompleted] = useState<'edit' | 'delete' | null>(null);
@@ -616,6 +618,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const isPlayerInGame = game?.selected_players.some(p => p.user_id === user?.id) ||
     game?.waiting_list.some(p => p.user_id === user?.id) || !!myAwaiting;
   const isSelectedPlayer = game?.selected_players.some(p => p.user_id === user?.id);
+  const canModTent = isModerator || isAdmin;
   const myPlayerRecord = game?.selected_players.find(p => p.user_id === user?.id) || game?.waiting_list.find(p => p.user_id === user?.id);
   const myTentative = !!myPlayerRecord?.tentative && game?.status !== 'completed';
 
@@ -1078,26 +1081,37 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                 : (isSelectedPlayer ? '\u{1F389} You are playing' : 'You have nominated, WL')}
               {myTentative && ' (tentative)'}
             </span>
-            {myTentative && !gameIsOver && !isReadOnly && (
-              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
-                disabled={actionLoading === 'confirm-avail'} data-testid="confirm-playing"
-                onClick={() => handleAction('confirm-avail', () => api.confirmAvailability(game.id))}>
-                I'm playing
-              </Button>
-            )}
-            {!myTentative && ['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
-              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
-                disabled={actionLoading === 'mark-tent'} data-testid="mark-tentative" onClick={() => setMarkTentOpen(true)}>
-                Tentative
-              </Button>
-            )}
-            {['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
-              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-300 text-red-600 hover:bg-red-50"
-                onClick={handleQuitClick} disabled={actionLoading === 'quit' || iPaid} data-testid="unjoin"
-                title={iPaid ? "You've already paid, so you can't unjoin" : undefined}>
-                {actionLoading === 'quit' ? 'Leaving...' : iPaid ? 'Paid – can’t unjoin' : 'Unjoin'}
-              </Button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
+                <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                  onClick={handleQuitClick} disabled={actionLoading === 'quit' || iPaid} data-testid="unjoin"
+                  title={iPaid ? "You've already paid, so you can't unjoin" : undefined}>
+                  {actionLoading === 'quit' ? 'Leaving...' : iPaid ? 'Paid – can’t unjoin' : 'Unjoin'}
+                </Button>
+              )}
+              {(canModTent || (!myTentative && isSelectedPlayer)) && ['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
+                <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+                  disabled={actionLoading === 'mark-tent'} data-testid="mark-tentative" onClick={() => canModTent ? setModTentOpen(true) : setMarkTentOpen(true)}>
+                  Mark Tentative
+                </Button>
+              )}
+              {myTentative && !gameIsOver && !isReadOnly && (
+                <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+                  disabled={actionLoading === 'confirm-avail'} data-testid="confirm-playing"
+                  onClick={() => handleAction('confirm-avail', () => api.confirmAvailability(game.id))}>
+                  I'm playing
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {canModTent && !isPlayerInGame && ['draft', 'voting_open', 'in_progress'].includes(game.status) && !gameIsOver && !isReadOnly && (
+          <div className="flex justify-end" data-testid="mod-tent-line">
+            <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+              data-testid="mark-tentative" onClick={() => setModTentOpen(true)}>
+              Mark Tentative
+            </Button>
           </div>
         )}
 
@@ -2458,6 +2472,43 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
             </DialogContent>
           </Dialog>
         )}
+
+        <Dialog open={modTentOpen} onOpenChange={(o) => { setModTentOpen(o); if (!o) setModTentQuery(''); }}>
+          <DialogContent className="max-w-sm" data-testid="mod-tentative-dialog">
+            <DialogHeader>
+              <DialogTitle>Mark a player Tentative</DialogTitle>
+            </DialogHeader>
+            <Input placeholder="Type first few characters..." value={modTentQuery} data-testid="mod-tentative-search"
+              onChange={(e) => setModTentQuery(e.target.value)} />
+            <div className="max-h-80 overflow-y-auto divide-y border rounded-md">
+              {[...game.selected_players.map(p => ({ p, wl: false })), ...game.waiting_list.map(p => ({ p, wl: true }))]
+                .filter(({ p }) => {
+                  const q = modTentQuery.trim().toLowerCase();
+                  return !q || [p.name, p.display_name, p.phone].some(v => (v || '').toLowerCase().includes(q));
+                })
+                .map(({ p, wl }) => (
+                  <div key={p.user_id} className="flex items-center gap-2 px-2 py-1.5 text-sm" data-testid="mod-tentative-row">
+                    <PlayerAvatar photo={p.photo} gender={p.gender} alt={p.name} />
+                    <span className="flex-1 truncate">
+                      {formatPlayerDisplay(p.name, p.phone, undefined, p.display_name)}
+                      {p.user_id === user?.id && <Badge className="ml-1 bg-green-100 text-green-700 text-xs">You</Badge>}
+                    </span>
+                    <span className={`text-[10px] px-1.5 rounded ${wl ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>{wl ? 'WL' : 'Confirmed'}</span>
+                    {p.tentative ? <TentativeBadge /> : (
+                      <Button size="sm" variant="outline" className="h-6 px-2 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+                        disabled={actionLoading === `mod-tent-${p.user_id}`} data-testid="mod-tentative-mark"
+                        onClick={() => handleAction(`mod-tent-${p.user_id}`, () => api.markPlayerTentative(game.id, p.user_id))}>
+                        Mark
+                      </Button>
+                    )}
+                  </div>
+                ))}
+            </div>
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => { setModTentOpen(false); setModTentQuery(''); }}>Done</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={markTentOpen} onOpenChange={setMarkTentOpen}>
           <DialogContent className="max-w-sm" data-testid="mark-tentative-dialog">

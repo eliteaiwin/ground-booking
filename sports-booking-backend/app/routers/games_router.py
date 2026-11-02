@@ -1890,7 +1890,7 @@ async def mark_tentative(
     if not game or game["status"] not in ("draft", "voting_open", "in_progress"):
         raise HTTPException(status_code=400, detail="This game is no longer open")
     player = await (await db.execute(
-        "SELECT tentative FROM game_players WHERE game_id = ? AND user_id = ? AND status IN ('selected', 'waiting')",
+        "SELECT tentative FROM game_players WHERE game_id = ? AND user_id = ? AND status = 'selected'",
         (game_id, user_id))).fetchone()
     if not player:
         raise HTTPException(status_code=400, detail="Not in this game")
@@ -1898,6 +1898,37 @@ async def mark_tentative(
         await db.execute("UPDATE game_players SET tentative = 1, tentative_reminded = 0, tentative_nudged_at = NULL "
                          "WHERE game_id = ? AND user_id = ?", (game_id, user_id))
         await log_event(db, game_id, "marked_tentative", user_id=user_id, actor_id=user_id)
+        await db.commit()
+    return await get_game_dict(db, game_id)
+
+
+@router.post("/{game_id}/players/{player_id}/mark-tentative")
+async def mod_mark_tentative(
+    game_id: int,
+    player_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Moderator marks a confirmed or waiting-list player as tentative."""
+    await require_game_moderator(user_id, game_id, db)
+    game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    if not game or game["status"] not in ("draft", "voting_open", "in_progress"):
+        raise HTTPException(status_code=400, detail="This game is no longer open")
+    player = await (await db.execute(
+        "SELECT id, tentative FROM game_players WHERE game_id = ? AND user_id = ? AND status IN ('selected', 'waiting')",
+        (game_id, player_id))).fetchone()
+    if not player:
+        raise HTTPException(status_code=400, detail="Player is not in this game")
+    if not player["tentative"]:
+        await db.execute("UPDATE game_players SET tentative = 1, tentative_reminded = 0, tentative_nudged_at = NULL "
+                         "WHERE id = ?", (player["id"],))
+        await log_event(db, game_id, "marked_tentative", user_id=player_id, actor_id=user_id)
+        if player_id != user_id:
+            mod = await (await db.execute("SELECT name, display_name FROM users WHERE id = ?", (user_id,))).fetchone()
+            who = (mod["display_name"] or mod["name"]) if mod else "Your moderator"
+            await create_notification(
+                db, player_id, game_id, "marked_tentative",
+                f"{who} marked you tentative for {game['title']}. If you will definitely play, tap the x on your T. Open game")
         await db.commit()
     return await get_game_dict(db, game_id)
 

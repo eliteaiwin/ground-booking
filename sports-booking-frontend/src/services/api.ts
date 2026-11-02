@@ -268,6 +268,8 @@ export const api = {
 
   markTentative: (id: number) =>
     request(`/api/games/${id}/mark-tentative`, { method: 'POST' }),
+  markPlayerTentative: (id: number, playerId: number) =>
+    request(`/api/games/${id}/players/${playerId}/mark-tentative`, { method: 'POST' }),
   nudgeTentative: (id: number, playerId: number) =>
     request(`/api/games/${id}/players/${playerId}/nudge`, { method: 'POST' }),
   confirmAvailability: (id: number) =>

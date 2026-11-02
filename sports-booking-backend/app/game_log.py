@@ -223,7 +223,7 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
             "joined": f"{u} joins the game{' (tentative)' if note == 'tentative' else ''}",
             "waiting": f"{u} joins the waiting list{' (tentative)' if note == 'tentative' else ''}",
             "availability_confirmed": f"{u} confirms playing (no longer tentative)",
-            "marked_tentative": f"{u} is now tentative",
+            "marked_tentative": f"{u} is now tentative" if e["actor_id"] in (None, e["user_id"]) else f"{a} marked {u} tentative",
             "tentative_nudged": f"{a} asks {u} to confirm availability",
             "nominated": f"{a} adds {u} to the game",
             "nominated_waiting": f"{a} adds {u} to the waiting list",

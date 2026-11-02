@@ -2,9 +2,13 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.52', date: '2026-11-03', changes: [
+    'Unjoin first, then Mark Tentative (right side); Mark Tentative only for confirmed players',
+    'Moderators: Mark Tentative opens a searchable list of all players (incl. waiting list) to mark anyone tentative; the player is notified',
+  ] },
   { version: '1.51', date: '2026-11-03', changes: [
     'Players can join the waiting list as tentative, and keep their T when moved up',
-    'Any player can mark themselves Tentative at any time (Tentative button next to Unjoin)',
+    'Any player can mark themselves Tentative at any time',
     'Game day: moderators get an hourly alert while more than 2 confirmed players are tentative',
     'Moderators can Nudge a tentative player to confirm their availability',
   ] },
