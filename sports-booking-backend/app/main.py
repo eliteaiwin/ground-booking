@@ -13,6 +13,7 @@ import logging
 import aiosqlite
 
 from .database import init_db, DATABASE_PATH
+from .user_merge import merge_duplicate_phone_users
 from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router, receivers_router
 
 # Optional: path to a pre-built frontend dist folder to serve as static files.
@@ -23,6 +24,11 @@ STATIC_DIR = os.environ.get("STATIC_DIR", "")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    try:
+        async with aiosqlite.connect(DATABASE_PATH) as mdb:
+            await merge_duplicate_phone_users(mdb)
+    except Exception:
+        logging.getLogger(__name__).exception("Same-mobile merge failed")
     task = asyncio.create_task(_reminder_loop())
     yield
     task.cancel()

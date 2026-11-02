@@ -14,6 +14,8 @@ from ..database import get_db, get_app_setting, set_app_setting, DATABASE_PATH
 from ..auth import get_current_user_id, hash_password
 from ..routers.auth_router import generate_user_code, _assign_roles, UPLOAD_DIR
 from .games_router import payment_fee_settings
+from ..phone_utils import split_phone
+from ..user_merge import merge_duplicate_phone_users
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -285,16 +287,21 @@ async def bulk_import_users(
     skipped = 0
 
     for item in req.users:
-        phone = item.phone.strip()
+        phone = split_phone(item.phone)[1] if item.phone.strip() else ""
         if not phone:
             results.append({"phone": phone, "status": "skipped", "reason": "Empty phone number"})
             skipped += 1
             continue
 
         # Skip duplicates within this batch or already in DB
-        cursor = await db.execute("SELECT id FROM users WHERE phone = ?", (phone,))
-        if await cursor.fetchone():
-            results.append({"phone": phone, "status": "skipped", "reason": "Phone number already registered"})
+        cursor = await db.execute("SELECT id, first_name, last_name FROM users WHERE phone = ?", (phone,))
+        existing = await cursor.fetchone()
+        if existing:
+            if not (existing["first_name"] or "").strip() and item.first_name.strip():
+                await db.execute("UPDATE users SET first_name = ?, last_name = ?, name = ? WHERE id = ?",
+                                 (item.first_name.strip(), (item.last_name or "").strip(),
+                                  f"{item.first_name.strip()} {(item.last_name or '').strip()}".strip(), existing["id"]))
+            results.append({"phone": phone, "status": "skipped", "reason": "Already registered (details merged)"})
             skipped += 1
             continue
 
@@ -319,6 +326,7 @@ async def bulk_import_users(
         created += 1
 
     await db.commit()
+    await merge_duplicate_phone_users(db)
     return {"created": created, "skipped": skipped, "results": results}
 
 
