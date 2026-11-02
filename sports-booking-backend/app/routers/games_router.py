@@ -1079,6 +1079,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
         "moderator_group_id": game["moderator_group_id"],
         "moderator_group_name": group_name,
         "ground_confirmed": game["allotment_id"] is not None,
+        "cancel_reason": game["cancel_reason"] if "cancel_reason" in game.keys() else None,
         "confirmed_announced": bool(game["confirmed_announced_at"]) if "confirmed_announced_at" in game.keys() else False,
         "in_confirm_window": _in_confirm_window(game),
         "game_date": game["game_date"],
@@ -2913,9 +2914,14 @@ async def _unverified_paid_names(db: aiosqlite.Connection, game_id: int) -> list
     return [r["name"] for r in rows]
 
 
+class CancelGameRequest(BaseModel):
+    reason: str = ""
+
+
 @router.post("/{game_id}/cancel")
 async def cancel_game(
     game_id: int,
+    body: Optional[CancelGameRequest] = None,
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
@@ -2939,12 +2945,17 @@ async def cancel_game(
             "these payments first, then cancel the game."
         ))
 
-    await db.execute("UPDATE games SET status = 'cancelled', cancelled_ground_cost = ground_cost, ground_cost = 0, cost_per_person = 0 WHERE id = ?", (game_id,))
-    await log_event(db, game_id, "cancelled", actor_id=user_id)
+    reason = " ".join(((body.reason if body else "") or "").split())[:300]
+    if not reason:
+        raise HTTPException(status_code=400, detail="Please add a reason for cancelling the game")
+
+    await db.execute("UPDATE games SET status = 'cancelled', cancelled_ground_cost = ground_cost, ground_cost = 0, cost_per_person = 0, "
+                     "cancel_reason = ? WHERE id = ?", (reason, game_id))
+    await log_event(db, game_id, "cancelled", actor_id=user_id, note=reason)
 
     cancel_detail = (
         f"Game '{game['title']}' on {game['game_date']} at {game['game_time']} "
-        f"at {game['ground_name']} has been cancelled."
+        f"at {game['ground_name']} has been cancelled. Reason: {reason}."
     )
 
     # Paid players get their money back offline from the Payment Receiver; nobody owes anything
@@ -3020,7 +3031,7 @@ async def cancel_game(
         if sport in user_sports or any(loc.strip() in ground.lower() for loc in user_locations.split(',') if loc.strip()):
             await create_notification(
                 db, u["id"], game_id, "game_cancelled",
-                f"A {sport} game at {ground} on {game['game_date']} has been cancelled."
+                f"A {sport} game at {ground} on {game['game_date']} has been cancelled. Reason: {reason}."
             )
 
     await db.commit()

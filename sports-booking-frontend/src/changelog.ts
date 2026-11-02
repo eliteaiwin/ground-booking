@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.53', date: '2026-11-03', changes: [
+    'Cancel Game button is light red with white text',
+    'Cancelling asks for a reason (e.g. rain, ground not available), shown on the cancelled game and sent to every player',
+    'Cancel prompt: 80%+ confirmed within 3 hours of start asks "Are you sure?"; under 80% says "Good decision, fewer people today"',
+  ] },
   { version: '1.52', date: '2026-11-03', changes: [
     'Unjoin first, then Mark Tentative (right side); Mark Tentative only for confirmed players',
     'Moderators: Mark Tentative opens a searchable list of all players (incl. waiting list) to mark anyone tentative; the player is notified',

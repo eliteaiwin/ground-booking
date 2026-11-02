@@ -358,6 +358,7 @@ interface Game {
   fee_breakdown?: FeeBreakdown | null;
   ground_confirmed?: boolean;
   confirmed_announced?: boolean;
+  cancel_reason?: string | null;
   in_confirm_window?: boolean;
   moderator_group_name?: string | null;
   payment_mode?: string;
@@ -525,6 +526,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [joinTentative, setJoinTentative] = useState(false);
   const [firstTimeAlert, setFirstTimeAlert] = useState<string | null>(null);
   const [showCancelPreview, setShowCancelPreview] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [addPlayerSearch, setAddPlayerSearch] = useState('');
   const [addingPlayerId, setAddingPlayerId] = useState<number | null>(null);
@@ -1073,6 +1075,11 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">{error}</div>}
+        {game.status === 'cancelled' && game.cancel_reason && (
+          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-md text-sm" data-testid="cancel-reason">
+            <span className="font-semibold">Cancelled:</span> {game.cancel_reason}
+          </div>
+        )}
         {game.status !== 'cancelled' && !myAwaiting && (isSelectedPlayer || game.waiting_list.some(p => p.user_id === user?.id)) && (
           <div className="flex items-center justify-between gap-2 text-sm font-medium" data-testid="my-status-line">
             <span className={isSelectedPlayer ? 'text-green-700' : 'text-orange-700'}>
@@ -1492,13 +1499,14 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
           {/* Cancel Game - for Moderator/Admin on active games that aren't over yet */}
           {(isModerator || isAdmin) && (game.status === 'voting_open' || game.status === 'in_progress' || game.status === 'draft') && !gameIsOver && !game.is_archived && (
             <>
-              <Button variant="outline" className="w-full border-red-400 text-red-600 hover:bg-red-50"
+              <Button className="w-full bg-red-400 hover:bg-red-500 text-white" data-testid="cancel-game"
                 disabled={actionLoading === 'cancel-preview' || actionLoading === 'cancel'}
                 onClick={async () => {
                   setActionLoading('cancel-preview');
                   try {
                     const preview = await api.cancelGamePreview(game.id);
                     setCancelPreview(preview);
+                    setCancelReason('');
                     setShowCancelPreview(true);
                   } catch (err: unknown) {
                     setError(err instanceof Error ? err.message : 'Failed to load cancel preview');
@@ -1517,6 +1525,21 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                       <AlertTriangle size={16} /> Cancel Game Confirmation
                     </h4>
                     <p className="text-sm font-semibold text-red-800" data-testid="cancel-time-left">{timeToStart(game.game_date, game.game_time)}</p>
+                    {(() => {
+                      const full = cancelPreview.confirmed_players >= 0.8 * game.max_players;
+                      const minsLeft = (new Date(`${game.game_date}T${game.game_time || '00:00'}`).getTime() - Date.now()) / 60000;
+                      if (full && minsLeft > 0 && minsLeft <= 180) return (
+                        <p className="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded p-2" data-testid="cancel-advice">
+                          Are you sure you want to cancel this? There are a good number of people confirmed ({cancelPreview.confirmed_players} of {game.max_players}).
+                        </p>
+                      );
+                      if (!full) return (
+                        <p className="text-sm font-semibold text-green-800 bg-green-50 border border-green-300 rounded p-2" data-testid="cancel-advice">
+                          Good decision, fewer people today ({cancelPreview.confirmed_players} of {game.max_players} confirmed).
+                        </p>
+                      );
+                      return null;
+                    })()}
                     <div className="text-sm text-red-700 space-y-1">
                       <p><strong>Game:</strong> {cancelPreview.title}</p>
                       <p><strong>Ground:</strong> {cancelPreview.ground_name}</p>
@@ -1543,18 +1566,29 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                         {' '}Users subscribed to this sport will also be notified.
                       </p>
                     </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="cancel-reason" className="text-sm text-red-800">Reason for cancelling (everyone will see this) *</Label>
+                      <div className="flex flex-wrap gap-1">
+                        {['Due to rain, cancelling the game', 'Ground is not available, so cancelling the game', 'Not enough players today'].map(r => (
+                          <button key={r} type="button" onClick={() => setCancelReason(r)}
+                            className="text-[11px] px-2 py-0.5 rounded-full border border-red-300 bg-white text-red-700 hover:bg-red-100">{r}</button>
+                        ))}
+                      </div>
+                      <Textarea id="cancel-reason" data-testid="cancel-reason-input" rows={2} maxLength={300} value={cancelReason}
+                        placeholder="e.g. Due to rain, cancelling the game" onChange={(e) => setCancelReason(e.target.value)} className="bg-white" />
+                    </div>
                     <div className="flex gap-2">
                       <Button variant="outline" className="flex-1"
                         onClick={() => { setShowCancelPreview(false); setCancelPreview(null); }}>
                         Go Back
                       </Button>
                       <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                        disabled={actionLoading === 'cancel' || (cancelPreview.unverified_paid?.length ?? 0) > 0}
+                        disabled={actionLoading === 'cancel' || (cancelPreview.unverified_paid?.length ?? 0) > 0 || !cancelReason.trim()}
                         data-testid="confirm-cancel"
                         onClick={() => {
                           const refunds = cancelPreview.refund_amount > 0;
                           handleAction('cancel', async () => {
-                            await api.cancelGame(game.id);
+                            await api.cancelGame(game.id, cancelReason.trim());
                             if (refunds) window.alert('Game cancelled. Offline settlement to be done by the Payment Receiver.');
                           });
                           setShowCancelPreview(false);

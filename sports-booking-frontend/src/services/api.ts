@@ -314,8 +314,8 @@ export const api = {
   cancelGamePreview: (id: number) =>
     request(`/api/games/${id}/cancel-preview`),
 
-  cancelGame: (id: number) =>
-    request(`/api/games/${id}/cancel`, { method: 'POST' }),
+  cancelGame: (id: number, reason: string) =>
+    request(`/api/games/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
   cloneGame: (id: number) =>
     request(`/api/games/${id}/clone`, { method: 'POST' }),

@@ -587,6 +587,7 @@ async def init_db():
         "ALTER TABLE game_players ADD COLUMN tentative_reminded INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN low_turnout_alerted INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE games ADD COLUMN tentative_alert_at TEXT",
+        "ALTER TABLE games ADD COLUMN cancel_reason TEXT",
         "ALTER TABLE game_players ADD COLUMN tentative_nudged_at TEXT",
         "ALTER TABLE games ADD COLUMN confirmed_announced_at TIMESTAMP",
         "ALTER TABLE games ADD COLUMN receiver_id INTEGER",

@@ -239,7 +239,7 @@ async def build_log(db: aiosqlite.Connection, game, viewer_id: int, see_all_paym
             "played_removed": f"{a} marks {u} as not played",
             "started": "Game is started",
             "completed": "Game is completed",
-            "cancelled": f"Game is cancelled by {a}",
+            "cancelled": f"Game is cancelled by {a}" + (f": {note}" if note else ""),
             "potd_open": "POTD voting started",
             "potd_final": f"POTD finalized: {u}" if e["user_id"] else "POTD finalized (no votes)",
             "paid": f"{u} paid {money(e['amount'])}{' with screenshot' if note == 'screenshot' else ''}{timing(at)}",
