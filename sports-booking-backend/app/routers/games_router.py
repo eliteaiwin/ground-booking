@@ -1976,7 +1976,7 @@ async def _game_moderator_ids(db: aiosqlite.Connection, g) -> set:
 
 
 async def send_tentative_moderator_alerts(db: aiosqlite.Connection) -> int:
-    """Every hour on game day, tell moderators when more than 2 confirmed players are still tentative."""
+    """Every hour on game day, tell moderators when 2 or more confirmed players are still tentative."""
     now = _local_now()
     rows = await (await db.execute(
         """SELECT g.* FROM games g WHERE g.status IN ('draft', 'voting_open') AND g.game_date = ?""",
@@ -2000,7 +2000,7 @@ async def send_tentative_moderator_alerts(db: aiosqlite.Connection) -> int:
             """SELECT COALESCE(NULLIF(u.display_name, ''), u.name) AS n FROM game_players gp JOIN users u ON u.id = gp.user_id
                WHERE gp.game_id = ? AND gp.status = 'selected' AND gp.tentative = 1 ORDER BY gp.joined_at""", (g["id"],)
         )).fetchall()]
-        if len(names) <= 2:
+        if len(names) < 2:
             continue
         for uid in await _game_moderator_ids(db, g):
             await create_notification(

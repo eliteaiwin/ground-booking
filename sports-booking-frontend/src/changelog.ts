@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.54', date: '2026-11-03', changes: [
+    'Moderators get the hourly game-day alert when 2 or more confirmed players are tentative',
+  ] },
   { version: '1.53', date: '2026-11-03', changes: [
     'Cancel Game button is light red with white text',
     'Cancelling asks for a reason (e.g. rain, ground not available), shown on the cancelled game and sent to every player',
