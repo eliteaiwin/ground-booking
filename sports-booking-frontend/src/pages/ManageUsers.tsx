@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { formatPhone } from '@/lib/phone';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,10 @@ interface UserItem {
   disabled_reason: string;
   moderator_assignments: ModAssignment[];
   ground_management_assignments: GMAssignment[];
+  ground_admin_assignments?: GMAssignment[];
+  games_played?: number;
+  display_name?: string;
+  can_delete?: boolean;
   created_at: string;
 }
 
@@ -57,6 +62,7 @@ const ALL_SPORTS = ['soccer', 'cricket', 'badminton', 'basketball', 'hockey'];
 
 export default function ManageUsers({ onBack }: Props) {
   const [users, setUsers] = useState<UserItem[]>([]);
+  const { isAdmin } = useAuth();
   const [grounds, setGrounds] = useState<GroundItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
@@ -94,6 +100,11 @@ export default function ManageUsers({ onBack }: Props) {
   const [selectedSportType, setSelectedSportType] = useState('');
   const [roleLoading, setRoleLoading] = useState(false);
   const [roleError, setRoleError] = useState('');
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ nick: '', phone: '', ground: '' });
+  const [addMsg, setAddMsg] = useState('');
+  const [addLoading, setAddLoading] = useState(false);
 
   // Bulk import state
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
@@ -182,7 +193,9 @@ export default function ManageUsers({ onBack }: Props) {
 
   useEffect(() => {
     fetchUsers();
-    api.listGrounds().then(setGrounds).catch(() => {});
+    Promise.all([api.listGrounds(), api.getMyAdminGrounds().catch(() => ({ all: true, ground_ids: [] as number[] }))])
+      .then(([gs, mine]) => setGrounds(mine.all ? gs : gs.filter((g: GroundItem) => mine.ground_ids.includes(g.id))))
+      .catch(() => {});
   }, []);
 
   const handleSearch = () => fetchUsers();
@@ -287,6 +300,40 @@ export default function ManageUsers({ onBack }: Props) {
     }
   };
 
+  const pastePhone = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      setAddForm(f => ({ ...f, phone: t.replace(/[^\d+]/g, '') }));
+    } catch {
+      setAddMsg('Paste blocked: long-press the box and choose Paste');
+    }
+  };
+
+  const quickAdd = async () => {
+    setAddLoading(true);
+    setAddMsg('');
+    try {
+      const r = await api.quickAddUser({ nick_name: addForm.nick, phone: addForm.phone, ground_id: addForm.ground ? parseInt(addForm.ground) : undefined });
+      setAddMsg(r.message);
+      if (r.status === 'created') setAddForm(f => ({ ...f, nick: '', phone: '' }));
+      fetchUsers();
+    } catch (err: unknown) {
+      setAddMsg(err instanceof Error ? err.message : 'Failed to add user');
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const deleteUser = async (u: UserItem) => {
+    if (!confirm(`Delete ${u.display_name || u.name}? They have never played a game. This can't be undone.`)) return;
+    try {
+      await api.deleteUser(u.id);
+      fetchUsers();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete user');
+    }
+  };
+
   const removeAssignment = async (userId: number, type: string, assignmentId: number) => {
     try {
       await api.removeGroundRole(userId, type, assignmentId);
@@ -331,6 +378,7 @@ export default function ManageUsers({ onBack }: Props) {
     switch (role) {
       case 'admin': return 'bg-red-100 text-red-700';
       case 'moderator': return 'bg-blue-100 text-blue-700';
+      case 'ground_admin': return 'bg-orange-100 text-orange-700';
       case 'ground_management': return 'bg-purple-100 text-purple-700';
       case 'payment_receiver': return 'bg-teal-100 text-teal-700';
       case 'user': return 'bg-gray-100 text-gray-700';
@@ -350,11 +398,17 @@ export default function ManageUsers({ onBack }: Props) {
           </button>
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-bold flex items-center gap-2">
-              <Users size={20} /> Admin User Management
+              <Users size={20} /> {isAdmin ? 'Admin User Management' : 'Ground Admin: Users'}
             </h1>
-            <Button size="sm" onClick={() => setBulkImportOpen(true)} className="bg-white text-green-700 hover:bg-green-50 border-0">
-              <Upload size={14} className="mr-1" /> Bulk Import
+            <div className="flex gap-2">
+            <Button size="sm" data-testid="quick-add-user" onClick={() => { setAddOpen(true); setAddMsg(''); setAddForm({ nick: '', phone: '', ground: filterGround || (grounds.length === 1 ? String(grounds[0].id) : '') }); }}
+              className="bg-white text-green-700 hover:bg-green-50 border-0">
+              <Plus size={14} className="mr-1" /> Add User
             </Button>
+            {isAdmin && <Button size="sm" onClick={() => setBulkImportOpen(true)} className="bg-white text-green-700 hover:bg-green-50 border-0">
+              <Upload size={14} className="mr-1" /> Bulk Import
+            </Button>}
+            </div>
           </div>
         </div>
       </header>
@@ -395,6 +449,7 @@ export default function ManageUsers({ onBack }: Props) {
                   className="w-full border rounded px-3 py-1.5 text-sm">
                   <option value="">All Roles</option>
                   <option value="admin">Admin</option>
+                  <option value="ground_admin">Ground Admin</option>
                   <option value="moderator">Moderator</option>
                   <option value="ground_management">Ground Manager</option>
                   <option value="user">User</option>
@@ -443,10 +498,10 @@ export default function ManageUsers({ onBack }: Props) {
                     <div className="col-span-3">
                       <div className="font-semibold text-sm text-gray-800">
                         {u.first_name} {u.last_name}
-                        {u.is_super_admin && <span title="Protected Admin"><Lock size={12} className="inline ml-1 text-red-500" /></span>}
+                        {u.is_super_admin && <span title="Super Admin"><Lock size={12} className="inline ml-1 text-red-500" /></span>}
                         {u.is_disabled && <Badge className="ml-1 bg-red-500 text-white text-[9px] px-1">Disabled</Badge>}
                       </div>
-                      <div className="text-xs text-gray-400">{u.user_code}</div>
+                      <div className="text-xs text-gray-400">{u.user_code} · {u.games_played || 0} game{u.games_played === 1 ? '' : 's'} played</div>
                       {u.is_disabled && u.disabled_reason && (
                         <div className="text-[10px] text-red-500 italic">Reason: {u.disabled_reason}</div>
                       )}
@@ -462,7 +517,7 @@ export default function ManageUsers({ onBack }: Props) {
                       ))}
                     </div>
                     <div className="col-span-2 flex gap-1 mt-2 md:mt-0">
-                      <Button size="sm" variant="outline" className="text-xs h-7 px-2"
+                      {isAdmin && <><Button size="sm" variant="outline" className="text-xs h-7 px-2"
                         onClick={() => openEdit(u)} title="Edit User">
                         <Edit2 size={12} />
                       </Button>
@@ -476,12 +531,18 @@ export default function ManageUsers({ onBack }: Props) {
                         }}
                         title="Reset Password">
                         <Key size={12} />
-                      </Button>
+                      </Button></>}
                       <Button size="sm" variant="outline" className="text-xs h-7 px-2"
                         onClick={() => setRoleUser(u)} title="Ground Roles">
                         <Shield size={12} />
                       </Button>
-                      {!u.is_super_admin && (
+                      {u.can_delete && (
+                        <Button size="sm" variant="outline" className="text-xs h-7 px-2 text-red-600 border-red-300 hover:bg-red-50"
+                          onClick={() => deleteUser(u)} title="Delete user (never played)" data-testid={`delete-user-${u.id}`}>
+                          <Trash2 size={12} />
+                        </Button>
+                      )}
+                      {isAdmin && !u.is_super_admin && (
                         u.is_disabled ? (
                           <Button size="sm" variant="outline" className="text-xs h-7 px-2 text-green-600 border-green-300 hover:bg-green-50"
                             onClick={() => handleEnableUser(u)} title="Enable User">
@@ -496,7 +557,7 @@ export default function ManageUsers({ onBack }: Props) {
                       )}
                     </div>
                   </div>
-                  <div className="md:hidden mt-2 flex flex-wrap gap-1">
+                  {isAdmin && <div className="md:hidden mt-2 flex flex-wrap gap-1">
                     {['admin', 'moderator', 'ground_management', 'payment_receiver', 'user'].map(role => (
                       <Button key={role} size="sm"
                         variant={u.roles.includes(role) ? 'default' : 'outline'}
@@ -508,7 +569,7 @@ export default function ManageUsers({ onBack }: Props) {
                         {role.replace('_', ' ')}
                       </Button>
                     ))}
-                  </div>
+                  </div>}
                 </CardContent>
               </Card>
             ))}
@@ -655,6 +716,47 @@ export default function ManageUsers({ onBack }: Props) {
         </div>
       )}
 
+      {addOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm">
+            <div className="border-b p-4 flex justify-between items-center">
+              <h3 className="font-bold">Add User</h3>
+              <button onClick={() => setAddOpen(false)} className="p-1 hover:bg-gray-100 rounded"><X size={20} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Nick Name</label>
+                <input value={addForm.nick} onChange={e => setAddForm(f => ({ ...f, nick: e.target.value }))}
+                  className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. Lobo" autoFocus data-testid="add-nick" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Mobile Number</label>
+                <div className="flex gap-2">
+                  <input value={addForm.phone} onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))} inputMode="tel"
+                    className="flex-1 border rounded px-3 py-2 text-sm" placeholder="98xxxxxxxx" data-testid="add-phone" />
+                  <Button size="sm" variant="outline" onClick={pastePhone} className="h-9">Paste</Button>
+                </div>
+              </div>
+              {grounds.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Ground {isAdmin && '(optional)'}</label>
+                  <select value={addForm.ground} onChange={e => setAddForm(f => ({ ...f, ground: e.target.value }))}
+                    className="w-full border rounded px-3 py-2 text-sm">
+                    {isAdmin && <option value="">No ground</option>}
+                    {grounds.map(g => <option key={g.id} value={g.id}>{g.location} - {g.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {addMsg && <p className="text-sm text-gray-700">{addMsg}</p>}
+              <Button onClick={quickAdd} disabled={addLoading || !addForm.nick.trim() || addForm.phone.replace(/\D/g, '').length < 6} className="w-full" data-testid="add-submit">
+                {addLoading ? 'Adding...' : 'Add User'}
+              </Button>
+              <p className="text-xs text-gray-400">They sign in with this mobile number by OTP. Add the next one straight away.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Ground Role Assignment Modal */}
       {roleUser && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -685,6 +787,24 @@ export default function ManageUsers({ onBack }: Props) {
                   </div>
                 )}
               </div>
+              {(roleUser.ground_admin_assignments?.length || 0) > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-orange-700 mb-2">Ground Admin Of</h4>
+                  <div className="space-y-1">
+                    {roleUser.ground_admin_assignments!.map(a => (
+                      <div key={a.id} className="flex items-center justify-between bg-orange-50 rounded px-3 py-1.5 text-sm">
+                        <span>{a.location} - {a.ground_name}</span>
+                        {isAdmin && (
+                          <button onClick={() => removeAssignment(roleUser.id, 'ground_admin', a.id)}
+                            className="text-red-500 hover:text-red-700 p-1">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <h4 className="text-sm font-semibold text-purple-700 mb-2">Ground Manager Assignments</h4>
                 {roleUser.ground_management_assignments.length === 0 ? (
@@ -720,6 +840,7 @@ export default function ManageUsers({ onBack }: Props) {
                     className="w-full border rounded px-3 py-1.5 text-sm">
                     <option value="moderator">Moderator</option>
                     <option value="ground_management">Ground Manager</option>
+                    {isAdmin && <option value="ground_admin">Ground Admin</option>}
                   </select>
                   {selectedRole === 'moderator' && (
                     <select value={selectedSportType} onChange={e => setSelectedSportType(e.target.value)}

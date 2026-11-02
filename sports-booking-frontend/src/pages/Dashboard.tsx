@@ -107,6 +107,7 @@ interface Props {
 
 const roleDisplayNames: Record<string, string> = {
   admin: 'Admin',
+  ground_admin: 'Ground Admin',
   ground_management: 'Ground Management',
   payment_receiver: 'Payment Receiver',
   moderator: 'Moderator',
@@ -120,7 +121,7 @@ interface ReceiverGame {
 }
 
 export default function Dashboard({ onNavigate }: Props) {
-  const { user, logout, isAdmin, isModerator, isGroundManagement, isReceiver, isReadOnly, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
+  const { user, logout, isAdmin, isModerator, isGroundManagement, isReceiver, isReadOnly, isGroundAdmin, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
   const { activeTheme } = useTheme();
   const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -454,7 +455,7 @@ export default function Dashboard({ onNavigate }: Props) {
               <span className="text-xs font-medium text-gray-700">Summary</span>
             </button>
           )}
-          {isAdmin && (
+          {(isAdmin || isGroundAdmin) && (
             <button
               onClick={() => onNavigate('manage-users')}
               className="flex flex-col items-center gap-1 p-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"

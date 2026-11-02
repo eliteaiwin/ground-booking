@@ -2,6 +2,13 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.50', date: '2026-11-03', changes: [
+    'Ground Admin role: Super Admins make someone Admin of a ground; they manage that ground\'s users, moderators and ground managers',
+    'Users list shows games played; users who never played can be deleted',
+    'Add User needs only Nick Name and Mobile (with Paste button)',
+    'Accounts sharing a mobile number merge automatically when the extra one never played',
+    'Name display "visible" options now show full mobile numbers to everyone',
+  ] },
   { version: '1.49', date: '2026-11-02', changes: [
     'One Share button on every game: Share Game while open for nomination, Share Payment Status once completed with money due, Share Game Summary afterwards',
     'Share by WhatsApp, SMS or Copy (QR for open games); new Install app tab invites people to install the app with this game\'s link',

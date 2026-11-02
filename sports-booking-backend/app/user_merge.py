@@ -102,3 +102,26 @@ async def merge_duplicate_phone_users(db: aiosqlite.Connection) -> dict:
     if skipped:
         log.warning("Same-mobile accounts not merged (more than one has played): %s", skipped)
     return {"merged": merged, "skipped": skipped}
+
+
+async def delete_unplayed_user(db: aiosqlite.Connection, uid: int, actor_id: int) -> None:
+    """Delete an account that never played: its own rows go, anything it created passes to the admin deleting it."""
+    if await _has_played(db, uid):
+        raise ValueError("User has played games")
+    for t, c in await _user_ref_columns(db):
+        try:
+            if t == "users":
+                await db.execute(f"UPDATE users SET \"{c}\" = NULL WHERE \"{c}\" = ?", (uid,))
+            elif c == "user_id":
+                await db.execute(f"DELETE FROM \"{t}\" WHERE user_id = ?", (uid,))
+            else:
+                await db.execute(f"UPDATE OR IGNORE \"{t}\" SET \"{c}\" = ? WHERE \"{c}\" = ?", (actor_id, uid))
+                await db.execute(f"DELETE FROM \"{t}\" WHERE \"{c}\" = ?", (uid,))
+        except aiosqlite.OperationalError:
+            pass
+    for t in ("users",):
+        cols = [c[1] for c in await (await db.execute(f"PRAGMA table_info('{t}')")).fetchall()]
+        if "referred_by" in cols:
+            await db.execute("UPDATE users SET referred_by = NULL WHERE referred_by = ?", (uid,))
+    await db.execute("DELETE FROM users WHERE id = ?", (uid,))
+    await db.commit()

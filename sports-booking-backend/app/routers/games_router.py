@@ -1409,7 +1409,7 @@ async def get_game(
         "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator', 'ground_management')",
         (user_id,)
     )).fetchone()) is not None
-    if not sees_contacts:
+    if not sees_contacts and "phone_visible" not in await get_app_setting(db, 'player_name_display', 'first_phone_masked'):
         payee = result.get("payee")
         _mask_phones(result)
         result["payee"] = payee

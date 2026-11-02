@@ -1147,6 +1147,8 @@ async def get_user_summary(
         (user_id,),
     )
     full = user_id == target_user_id or (await cursor.fetchone()) is not None
+    from ..database import get_app_setting
+    phone_public = "phone_visible" in await get_app_setting(db, 'player_name_display', 'first_phone_masked')
     can_set_pay_first = await (await db.execute(
         "SELECT 1 FROM user_roles WHERE user_id = ? AND role IN ('admin', 'moderator')", (user_id,)
     )).fetchone() is not None
@@ -1201,7 +1203,7 @@ async def get_user_summary(
         "last_name": last_name,
         "display_name": u["display_name"] or "",
         "gender": (u["gender"] if "gender" in u.keys() else "") or "",
-        "phone": u["phone"] if full else mask_phone(u["phone"]),
+        "phone": u["phone"] if full or phone_public else mask_phone(u["phone"]),
         "email": (u["email"] or "") if full else "",
         "contact_visible": full,
         "pay_first": bool(u["always_prepay"]) if can_set_pay_first else False,

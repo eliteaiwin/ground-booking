@@ -462,7 +462,7 @@ export default function ModeratorPreferences({ onBack }: Props) {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><Eye size={18} /> Player Name Display</CardTitle>
-              <p className="text-sm text-gray-500">Choose how player names appear in rosters and lists.</p>
+              <p className="text-sm text-gray-500">Choose how player names appear in rosters and lists. "visible" options show full mobile numbers to everyone; otherwise only admins, moderators and ground managers see them.</p>
             </CardHeader>
             <CardContent className="space-y-4">
               {success === 'display' && <div className="bg-green-50 text-green-600 p-3 rounded-md text-sm">Display setting saved!</div>}

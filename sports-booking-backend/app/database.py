@@ -107,7 +107,7 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS user_roles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'ground_management', 'moderator', 'payment_receiver', 'user', 'readonly')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'ground_admin', 'ground_management', 'moderator', 'payment_receiver', 'user', 'readonly')),
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, role)
         );
@@ -325,6 +325,18 @@ async def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS ground_management_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ground_id INTEGER NOT NULL,
+            assigned_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (ground_id) REFERENCES grounds(id),
+            FOREIGN KEY (assigned_by) REFERENCES users(id),
+            UNIQUE(user_id, ground_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS ground_admin_assignments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             ground_id INTEGER NOT NULL,
@@ -698,7 +710,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS user_roles_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('admin', 'ground_management', 'moderator', 'payment_receiver', 'user', 'readonly')),
+                role TEXT NOT NULL CHECK(role IN ('admin', 'ground_admin', 'ground_management', 'moderator', 'payment_receiver', 'user', 'readonly')),
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 UNIQUE(user_id, role)
             );

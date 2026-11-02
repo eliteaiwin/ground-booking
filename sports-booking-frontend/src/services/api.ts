@@ -219,9 +219,13 @@ export const api = {
   adminResetPassword: (userId: number, data: { new_password: string; force_change: boolean }) =>
     request(`/api/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
 
+  getMyAdminGrounds: (): Promise<{ all: boolean; ground_ids: number[] }> => request('/api/users/my-admin-grounds'),
   assignGroundRole: (userId: number, data: { ground_id: number; role: string; sport_type?: string }) =>
     request(`/api/users/${userId}/ground-role`, { method: 'POST', body: JSON.stringify(data) }),
 
+  quickAddUser: (data: { nick_name: string; phone: string; ground_id?: number }): Promise<{ user_id: number; status: string; message: string }> =>
+    request('/api/users/quick-add', { method: 'POST', body: JSON.stringify(data) }),
+  deleteUser: (userId: number) => request(`/api/users/${userId}`, { method: 'DELETE' }),
   removeGroundRole: (userId: number, assignmentType: string, assignmentId: number) =>
     request(`/api/users/${userId}/ground-role/${assignmentType}/${assignmentId}`, { method: 'DELETE' }),
 

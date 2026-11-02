@@ -15,12 +15,25 @@ from ..auth import get_current_user_id, hash_password
 from ..routers.auth_router import generate_user_code, _assign_roles, UPLOAD_DIR
 from .games_router import payment_fee_settings
 from ..phone_utils import split_phone
-from ..user_merge import merge_duplicate_phone_users
+from ..user_merge import merge_duplicate_phone_users, delete_unplayed_user, _has_played
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-# Super-admin emails that can never have admin removed
-SUPER_ADMIN_EMAILS = {"tittlejoseph@gmail.com", "elitedevlit@gmail.com"}
+# Super admins: the only accounts that can grant or remove Admin; they can never lose it or be disabled
+SUPER_ADMIN_EMAILS = {"tittlejoseph@gmail.com", "eliteaiwin@gmail.com", "elitedevlit@gmail.com"}
+SUPER_ADMIN_PHONES = {"9811536174", "8951575798", "9990009999"}
+
+
+def is_super_identity(email: Optional[str], phone: Optional[str]) -> bool:
+    return (email or "").lower() in SUPER_ADMIN_EMAILS or (phone or "") in SUPER_ADMIN_PHONES
+
+
+async def ensure_super_admin_roles(db: aiosqlite.Connection):
+    db.row_factory = aiosqlite.Row
+    for u in await (await db.execute("SELECT id, email, phone FROM users")).fetchall():
+        if is_super_identity(u["email"], u["phone"]):
+            await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'admin')", (u["id"],))
+    await db.commit()
 
 
 class UpdateRolesRequest(BaseModel):
@@ -60,6 +73,13 @@ class BulkImportUserItem(BaseModel):
     phone: str
 
 
+class QuickAddUserRequest(BaseModel):
+    nick_name: str
+    phone: str
+    country_code: Optional[str] = None
+    ground_id: Optional[int] = None
+
+
 class BulkImportRequest(BaseModel):
     users: List[BulkImportUserItem]
     default_password: str
@@ -84,11 +104,42 @@ async def require_admin(user_id: int, db: aiosqlite.Connection):
 
 
 async def is_super_admin(user_id: int, db: aiosqlite.Connection) -> bool:
-    cursor = await db.execute("SELECT email FROM users WHERE id = ?", (user_id,))
+    cursor = await db.execute("SELECT email, phone FROM users WHERE id = ?", (user_id,))
     row = await cursor.fetchone()
-    if row and row["email"] and row["email"].lower() in SUPER_ADMIN_EMAILS:
-        return True
-    return False
+    return bool(row and is_super_identity(row["email"], row["phone"]))
+
+
+async def admin_ground_scope(user_id: int, db: aiosqlite.Connection) -> Optional[set]:
+    """None for full Admins; otherwise the ground ids this Ground Admin manages (403 if none)."""
+    if await (await db.execute("SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,))).fetchone():
+        return None
+    rows = await (await db.execute("SELECT ground_id FROM ground_admin_assignments WHERE user_id = ?", (user_id,))).fetchall()
+    if not rows:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return {r["ground_id"] for r in rows}
+
+
+async def _ground_user_ids(db: aiosqlite.Connection, ground_id: int) -> set:
+    ids: set = set()
+    g = await (await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))).fetchone()
+    if not g:
+        return ids
+    for sql, params in (
+        ("SELECT user_id FROM ground_members WHERE ground_id = ?", (ground_id,)),
+        ("SELECT user_id FROM moderator_locations WHERE location = ? AND (ground_name = ? OR ground_name = '')", (g["location"], g["name"])),
+        ("SELECT user_id FROM ground_management_assignments WHERE ground_id = ?", (ground_id,)),
+        ("SELECT user_id FROM ground_admin_assignments WHERE ground_id = ?", (ground_id,)),
+        ("SELECT DISTINCT gp.user_id FROM game_players gp JOIN games ga ON gp.game_id = ga.id WHERE ga.ground_name = ? OR ga.ground_name = ?",
+         (g["location"] + " - " + g["name"], g["name"])),
+    ):
+        ids.update(r["user_id"] for r in await (await db.execute(sql, params)).fetchall())
+    return ids
+
+
+@router.get("/my-admin-grounds")
+async def my_admin_grounds(user_id: int = Depends(get_current_user_id), db: aiosqlite.Connection = Depends(get_db)):
+    scope = await admin_ground_scope(user_id, db)
+    return {"all": scope is None, "ground_ids": sorted(scope or [])}
 
 
 @router.post("/bootstrap-admin")
@@ -118,7 +169,9 @@ async def list_users(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin(user_id, db)
+    scope = await admin_ground_scope(user_id, db)
+    if scope is not None and ground_id and ground_id not in scope:
+        raise HTTPException(status_code=403, detail="Not an admin of this ground")
 
     query = "SELECT id, user_code, first_name, last_name, name, display_name, always_prepay, phone, email, notification_preference, sports, locations, sport_positions, profile_pic, is_disabled, disabled_reason, created_at FROM users WHERE 1=1"
     params: list = []
@@ -144,32 +197,12 @@ async def list_users(
     users = await cursor.fetchall()
 
     ground_user_ids: set = set()
-    ground_info = None
     if ground_id:
-        gcursor = await db.execute("SELECT * FROM grounds WHERE id = ?", (ground_id,))
-        ground_info = await gcursor.fetchone()
-        if ground_info:
-            mcursor = await db.execute("SELECT user_id FROM ground_members WHERE ground_id = ?", (ground_id,))
-            for row in await mcursor.fetchall():
-                ground_user_ids.add(row["user_id"])
-            mod_cursor = await db.execute(
-                "SELECT user_id FROM moderator_locations WHERE location = ? AND (ground_name = ? OR ground_name = '')",
-                (ground_info["location"], ground_info["name"])
-            )
-            for row in await mod_cursor.fetchall():
-                ground_user_ids.add(row["user_id"])
-            gm_cursor = await db.execute(
-                "SELECT user_id FROM ground_management_assignments WHERE ground_id = ?", (ground_id,)
-            )
-            for row in await gm_cursor.fetchall():
-                ground_user_ids.add(row["user_id"])
-            disp = ground_info["location"] + " - " + ground_info["name"]
-            player_cursor = await db.execute(
-                "SELECT DISTINCT gp.user_id FROM game_players gp JOIN games g ON gp.game_id = g.id WHERE g.ground_name = ? OR g.ground_name = ?",
-                (disp, ground_info["name"])
-            )
-            for row in await player_cursor.fetchall():
-                ground_user_ids.add(row["user_id"])
+        ground_user_ids = await _ground_user_ids(db, ground_id)
+    elif scope is not None:
+        for gid in scope:
+            ground_user_ids |= await _ground_user_ids(db, gid)
+        ground_id = -1
 
     result = []
     for u in users:
@@ -201,7 +234,7 @@ async def list_users(
         user_code = u["user_code"] or "" if "user_code" in u.keys() else ""
         profile_pic = u["profile_pic"] or "" if "profile_pic" in u.keys() else ""
         email_lower = (u["email"] or "").lower()
-        is_super = email_lower in SUPER_ADMIN_EMAILS
+        is_super = is_super_identity(email_lower, u["phone"])
 
         mod_assignments = []
         mod_cursor = await db.execute(
@@ -230,6 +263,16 @@ async def list_users(
                 "ground_name": row["ground_name"], "location": row["location"],
             })
 
+        played_row = await (await db.execute(
+            "SELECT COUNT(DISTINCT gp.game_id) AS n FROM game_players gp JOIN games ga ON ga.id = gp.game_id "
+            "WHERE gp.user_id = ? AND gp.status = 'selected' AND ga.status = 'completed'", (uid,))).fetchone()
+        can_delete = not is_super and uid != user_id and not await _has_played(db, uid)
+
+        ga_assignments = [dict(r) for r in await (await db.execute(
+            "SELECT gaa.id, gaa.ground_id, g.name as ground_name, g.location "
+            "FROM ground_admin_assignments gaa JOIN grounds g ON gaa.ground_id = g.id WHERE gaa.user_id = ?", (uid,)
+        )).fetchall()]
+
         is_disabled = False
         disabled_reason = ""
         try:
@@ -253,10 +296,83 @@ async def list_users(
             "is_disabled": is_disabled, "disabled_reason": disabled_reason,
             "moderator_assignments": mod_assignments,
             "ground_management_assignments": gm_assignments,
+            "ground_admin_assignments": ga_assignments,
+            "games_played": played_row["n"] if played_row else 0,
+            "can_delete": can_delete,
             "created_at": u["created_at"]
         })
 
     return result
+
+
+@router.post("/quick-add")
+async def quick_add_user(
+    req: QuickAddUserRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin / Ground Admin adds a player with just a nick name and mobile number (they sign in by OTP)."""
+    scope = await admin_ground_scope(user_id, db)
+    nick = req.nick_name.strip()
+    cc, phone = split_phone(req.phone, req.country_code)
+    if not nick:
+        raise HTTPException(status_code=400, detail="Nick Name is required")
+    if not phone.isdigit() or len(phone) < 6:
+        raise HTTPException(status_code=400, detail="Enter a valid mobile number")
+    ground_id = req.ground_id
+    if scope is not None:
+        if ground_id is None and len(scope) == 1:
+            ground_id = next(iter(scope))
+        if ground_id not in scope:
+            raise HTTPException(status_code=403, detail="Choose one of your grounds")
+    existing = await (await db.execute(
+        "SELECT id, name, display_name FROM users WHERE phone = ?", (phone,))).fetchone()
+    if existing:
+        if ground_id:
+            if not await (await db.execute("SELECT 1 FROM ground_members WHERE ground_id = ? AND user_id = ?",
+                                           (ground_id, existing["id"]))).fetchone():
+                await db.execute("INSERT INTO ground_members (user_id, ground_id, added_by) VALUES (?, ?, ?)",
+                                 (existing["id"], ground_id, user_id))
+                await db.commit()
+        return {"user_id": existing["id"], "status": "exists",
+                "message": f"Already registered as {existing['display_name'] or existing['name']}"}
+    user_code = await generate_user_code(db)
+    cursor = await db.execute(
+        "INSERT INTO users (user_code, first_name, last_name, name, display_name, phone, country_code, "
+        "sports, locations, sport_positions) VALUES (?, ?, '', ?, ?, ?, ?, '', '', '{}')",
+        (user_code, nick, nick, nick, phone, cc))
+    new_id = cursor.lastrowid
+    await _assign_roles(db, new_id)
+    if ground_id:
+        await db.execute("INSERT INTO ground_members (user_id, ground_id, added_by) VALUES (?, ?, ?)",
+                         (new_id, ground_id, user_id))
+    await db.commit()
+    return {"user_id": new_id, "status": "created", "message": f"{nick} added"}
+
+
+@router.delete("/{target_user_id}")
+async def delete_user(
+    target_user_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """Admin / Ground Admin deletes a user who has never played a game."""
+    scope = await admin_ground_scope(user_id, db)
+    target = await (await db.execute("SELECT id, email, phone FROM users WHERE id = ?", (target_user_id,))).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if is_super_identity(target["email"], target["phone"]) or target_user_id == user_id:
+        raise HTTPException(status_code=403, detail="This account can't be deleted")
+    if scope is not None:
+        allowed: set = set()
+        for gid in scope:
+            allowed |= await _ground_user_ids(db, gid)
+        if target_user_id not in allowed:
+            raise HTTPException(status_code=403, detail="Not a user of your grounds")
+    if await _has_played(db, target_user_id):
+        raise HTTPException(status_code=400, detail="Only users who have never played a game can be deleted")
+    await delete_unplayed_user(db, target_user_id, user_id)
+    return {"message": "User deleted"}
 
 
 @router.post("/bulk-import")
@@ -339,20 +455,25 @@ async def update_user_roles(
 ):
     await require_admin(user_id, db)
 
-    valid_roles = {"admin", "ground_management", "moderator", "payment_receiver", "user", "readonly"}
+    valid_roles = {"admin", "ground_admin", "ground_management", "moderator", "payment_receiver", "user", "readonly"}
     for r in req.roles:
         if r not in valid_roles:
             raise HTTPException(status_code=400, detail="Invalid role: " + r)
 
-    cursor = await db.execute("SELECT id, email FROM users WHERE id = ?", (target_user_id,))
+    cursor = await db.execute("SELECT id, email, phone FROM users WHERE id = ?", (target_user_id,))
     target = await cursor.fetchone()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Super-admin protection
-    target_email = (target["email"] or "").lower()
-    if target_email in SUPER_ADMIN_EMAILS and "admin" not in req.roles:
-        raise HTTPException(status_code=403, detail="Cannot remove admin permission from this protected account")
+    if is_super_identity(target["email"], target["phone"]) and "admin" not in req.roles:
+        raise HTTPException(status_code=403, detail="Cannot remove admin permission from a Super Admin")
+    had_admin = bool(await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (target_user_id,))).fetchone())
+    if had_admin != ("admin" in req.roles) and not await is_super_admin(user_id, db):
+        raise HTTPException(status_code=403, detail="Only a Super Admin can grant or remove Admin")
+    has_ga = bool(await (await db.execute(
+        "SELECT 1 FROM ground_admin_assignments WHERE user_id = ?", (target_user_id,))).fetchone())
+    req.roles = [r for r in req.roles if r != "ground_admin"] + (["ground_admin"] if has_ga else [])
 
     if "admin" not in req.roles:
         cursor = await db.execute(
@@ -523,7 +644,9 @@ async def assign_ground_role(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin(user_id, db)
+    scope = await admin_ground_scope(user_id, db)
+    if scope is not None and (req.role == "ground_admin" or req.ground_id not in scope):
+        raise HTTPException(status_code=403, detail="Ground Admins can only assign Moderators and Ground Managers for their own grounds")
     cursor = await db.execute("SELECT id FROM users WHERE id = ?", (target_user_id,))
     if not await cursor.fetchone():
         raise HTTPException(status_code=404, detail="User not found")
@@ -557,8 +680,17 @@ async def assign_ground_role(
         await db.commit()
         return {"message": "User assigned as Ground Manager for " + ground["location"] + " - " + ground["name"]}
 
+    elif req.role == "ground_admin":
+        await db.execute(
+            "INSERT OR IGNORE INTO ground_admin_assignments (user_id, ground_id, assigned_by) VALUES (?, ?, ?)",
+            (target_user_id, req.ground_id, user_id)
+        )
+        await db.execute("INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?, 'ground_admin')", (target_user_id,))
+        await db.commit()
+        return {"message": "User assigned as Ground Admin for " + ground["location"] + " - " + ground["name"]}
+
     else:
-        raise HTTPException(status_code=400, detail="Invalid role. Use 'moderator' or 'ground_management'")
+        raise HTTPException(status_code=400, detail="Invalid role. Use 'moderator', 'ground_management' or 'ground_admin'")
 
 
 @router.delete("/{target_user_id}/ground-role/{assignment_type}/{assignment_id}")
@@ -569,7 +701,20 @@ async def remove_ground_role(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    await require_admin(user_id, db)
+    scope = await admin_ground_scope(user_id, db)
+    if scope is not None:
+        if assignment_type == "moderator":
+            row = await (await db.execute(
+                "SELECT g.id FROM moderator_locations ml JOIN grounds g ON g.location = ml.location AND g.name = ml.ground_name "
+                "WHERE ml.id = ? AND ml.user_id = ?", (assignment_id, target_user_id))).fetchone()
+        elif assignment_type == "ground_management":
+            row = await (await db.execute(
+                "SELECT ground_id AS id FROM ground_management_assignments WHERE id = ? AND user_id = ?",
+                (assignment_id, target_user_id))).fetchone()
+        else:
+            row = None
+        if not row or row["id"] not in scope:
+            raise HTTPException(status_code=403, detail="Not an admin of this ground")
 
     if assignment_type == "moderator":
         await db.execute("DELETE FROM moderator_locations WHERE id = ? AND user_id = ?", (assignment_id, target_user_id))
@@ -587,6 +732,13 @@ async def remove_ground_role(
             await db.execute("DELETE FROM user_roles WHERE user_id = ? AND role = 'ground_management'", (target_user_id,))
         await db.commit()
         return {"message": "Ground Management assignment removed"}
+    elif assignment_type == "ground_admin":
+        await db.execute("DELETE FROM ground_admin_assignments WHERE id = ? AND user_id = ?", (assignment_id, target_user_id))
+        row = await (await db.execute("SELECT COUNT(*) as cnt FROM ground_admin_assignments WHERE user_id = ?", (target_user_id,))).fetchone()
+        if row["cnt"] == 0:
+            await db.execute("DELETE FROM user_roles WHERE user_id = ? AND role = 'ground_admin'", (target_user_id,))
+        await db.commit()
+        return {"message": "Ground Admin assignment removed"}
     else:
         raise HTTPException(status_code=400, detail="Invalid assignment type")
 
@@ -601,14 +753,13 @@ async def disable_user(
     """Admin disables a user on the platform."""
     await require_admin(user_id, db)
 
-    cursor = await db.execute("SELECT id, email FROM users WHERE id = ?", (target_user_id,))
+    cursor = await db.execute("SELECT id, email, phone FROM users WHERE id = ?", (target_user_id,))
     target = await cursor.fetchone()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Cannot disable super-admins
-    target_email = (target["email"] or "").lower()
-    if target_email in SUPER_ADMIN_EMAILS:
+    if is_super_identity(target["email"], target["phone"]):
         raise HTTPException(status_code=403, detail="Cannot disable a protected super-admin account")
 
     # Cannot disable yourself

@@ -19,6 +19,7 @@ interface ThemeContextType {
 
 const DEFAULT_THEMES: RoleThemes = {
   admin: { primary_color: '#7f1d1d', header_bg: '#7f1d1d', button_bg: '#7f1d1d', button_hover: '#991b1b', accent_color: '#7f1d1d' },
+  ground_admin: { primary_color: '#9a3412', header_bg: '#9a3412', button_bg: '#9a3412', button_hover: '#7c2d12', accent_color: '#9a3412' },
   moderator: { primary_color: '#1d4ed8', header_bg: '#1d4ed8', button_bg: '#1d4ed8', button_hover: '#1e40af', accent_color: '#1d4ed8' },
   ground_management: { primary_color: '#6b7280', header_bg: '#6b7280', button_bg: '#6b7280', button_hover: '#4b5563', accent_color: '#6b7280' },
   payment_receiver: { primary_color: '#0f766e', header_bg: '#0f766e', button_bg: '#0f766e', button_hover: '#115e59', accent_color: '#0f766e' },

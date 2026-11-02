@@ -103,7 +103,7 @@ export default function AdminScreens({ onBack }: Props) {
     user: { primary_color: '#16a34a', header_bg: '#16a34a', button_bg: '#16a34a', button_hover: '#15803d', accent_color: '#16a34a' },
     readonly: { primary_color: '#16a34a', header_bg: '#16a34a', button_bg: '#16a34a', button_hover: '#15803d', accent_color: '#16a34a' },
   };
-  const ROLE_LABELS: Record<string, string> = { admin: 'Admin', moderator: 'Moderator', ground_management: 'Ground Management', payment_receiver: 'Payment Receiver', user: 'User', readonly: 'User (Read Only)' };
+  const ROLE_LABELS: Record<string, string> = { admin: 'Admin', ground_admin: 'Ground Admin', moderator: 'Moderator', ground_management: 'Ground Management', payment_receiver: 'Payment Receiver', user: 'User', readonly: 'User (Read Only)' };
   const [editingThemes, setEditingThemes] = useState<Record<string, ThemeColors>>({});
   const [themeSaving, setThemeSaving] = useState(false);
 
