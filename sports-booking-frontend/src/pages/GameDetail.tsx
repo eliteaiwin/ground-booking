@@ -1371,12 +1371,17 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
         </Card>
 
         <div className="space-y-2">
-          {isAdmin && game.status === 'draft' && !gameIsOver && !game.is_archived && (
-            <Button className="w-full bg-green-600 hover:bg-green-700"
-              onClick={() => handleAction('open-voting', () => api.openVoting(game.id))}
-              disabled={actionLoading === 'open-voting'}>
-              {actionLoading === 'open-voting' ? 'Opening...' : 'Open for Nomination'}
-            </Button>
+          {(isModerator || isAdmin) && game.status === 'draft' && !gameIsOver && !game.is_archived && (
+            <div className="space-y-2" data-testid="draft-next-step">
+              <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-md text-sm">
+                Game saved as a draft. Tap <span className="font-semibold">Open for Nomination</span> to let players join, or the pencil icon to change settings.
+              </div>
+              <Button className="w-full bg-green-600 hover:bg-green-700" data-testid="open-voting"
+                onClick={() => handleAction('open-voting', () => api.openVoting(game.id))}
+                disabled={actionLoading === 'open-voting'}>
+                {actionLoading === 'open-voting' ? 'Opening...' : 'Open for Nomination'}
+              </Button>
+            </div>
           )}
 
           {isReadOnly && game.status === 'voting_open' && (

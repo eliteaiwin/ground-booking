@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.55', date: '2026-11-03', changes: [
+    'Moderators now see Open for Nomination on a new (draft) game, with a note that the game is saved as a draft',
+  ] },
   { version: '1.54', date: '2026-11-03', changes: [
     'Moderators get the hourly game-day alert when 2 or more confirmed players are tentative',
   ] },
