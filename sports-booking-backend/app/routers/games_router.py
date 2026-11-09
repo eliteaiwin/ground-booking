@@ -1372,6 +1372,19 @@ async def create_game_series(
     return {"created": created_games, "skipped": skipped}
 
 
+async def _hidden_draft_ids(db: aiosqlite.Connection, user_id: int) -> set:
+    """Draft games are visible only to their creator and to Admins."""
+    is_admin = await (await db.execute(
+        "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+    )).fetchone()
+    if is_admin:
+        return set()
+    rows = await (await db.execute(
+        "SELECT id FROM games WHERE status = 'draft' AND (created_by IS NULL OR created_by != ?)", (user_id,)
+    )).fetchall()
+    return {r["id"] for r in rows}
+
+
 @router.get("")
 async def list_games(
     status: Optional[str] = None,
@@ -1385,7 +1398,7 @@ async def list_games(
         cursor = await db.execute("SELECT id FROM games ORDER BY game_date DESC, game_time DESC")
     games = await cursor.fetchall()
 
-    hidden = await _hidden_group_game_ids(db, user_id)
+    hidden = await _hidden_group_game_ids(db, user_id) | await _hidden_draft_ids(db, user_id)
     result = []
     for g in games:
         if g["id"] in hidden:
@@ -1402,6 +1415,8 @@ async def get_game(
     db: aiosqlite.Connection = Depends(get_db)
 ):
     await _auto_progress_games(db)
+    if game_id in await _hidden_draft_ids(db, user_id):
+        raise HTTPException(status_code=404, detail="Game not found")
     result = await get_game_dict(db, game_id)
     result["can_moderate"] = await can_moderate_game(user_id, game_id, db)
     result["is_receiver"] = await is_game_receiver(db, user_id, game_id)
@@ -3044,14 +3059,22 @@ async def delete_game(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    """Permanently delete a draft or cancelled game (or, for Admins, an archived game) and all related records."""
+    """Permanently delete a draft (creator/Admin, any time, no trace) or cancelled game (or, for Admins, an archived game) and all related records."""
     await require_admin_moderator_or_ground_management(user_id, db)
 
     cursor = await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))
     game = await cursor.fetchone()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
-    if _game_is_archived(game):
+    is_draft = game["status"] == "draft"
+    if is_draft:
+        if game_id in await _hidden_draft_ids(db, user_id):
+            raise HTTPException(status_code=404, detail="Game not found")
+        if game["created_by"] != user_id and not await (await db.execute(
+            "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
+        )).fetchone():
+            raise HTTPException(status_code=403, detail="Only the moderator who created this draft can delete it")
+    elif _game_is_archived(game):
         is_admin = await (await db.execute(
             "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
         )).fetchone()
@@ -3076,6 +3099,9 @@ async def delete_game(
     # Delete discussion media and messages for this game
     await db.execute("DELETE FROM discussion_media WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM discussion_messages WHERE game_id = ?", (game_id,))
+    if is_draft:
+        for table in ("game_events", "payment_settlements", "payment_orders"):
+            await db.execute(f"DELETE FROM {table} WHERE game_id = ?", (game_id,))
     await db.execute("DELETE FROM games WHERE id = ?", (game_id,))
 
     await db.commit()
@@ -4276,9 +4302,12 @@ async def search_games(
 
     cursor = await db.execute(query, params)
     games = await cursor.fetchall()
+    hidden = await _hidden_draft_ids(db, user_id)
 
     result = []
     for g in games:
+        if g["id"] in hidden:
+            continue
         game_data = await get_game_dict(db, g["id"])
         result.append(game_data)
     return result

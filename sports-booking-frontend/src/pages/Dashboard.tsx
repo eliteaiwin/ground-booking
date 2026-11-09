@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays, Share2, Wallet } from 'lucide-react';
+import { Bell, Plus, Trophy, CreditCard, Users, SlidersHorizontal, MapPin, Shield, Archive, Search, FileText, Calendar, UserCircle, ChevronDown, UserPlus, ArrowRightLeft, Pencil, LogOut, Info, BarChart3, RefreshCw, CalendarDays, Share2, Wallet, Trash2 } from 'lucide-react';
 import { WhatsNew } from '@/components/WhatsNew';
 import { AboutDialog } from '@/components/AboutDialog';
 import { ShareDialog } from '@/components/InviteDialog';
@@ -29,6 +29,7 @@ interface Game {
   payment_timing: string;
   status: string;
   is_archived: boolean;
+  created_by?: number;
   duration_minutes: number;
   selected_players: { user_id: number; name: string }[];
   waiting_list: { user_id: number; name: string }[];
@@ -187,8 +188,13 @@ export default function Dashboard({ onNavigate }: Props) {
     onNavigate('game-detail', n.game_id);
   };
 
-  const activeGames = games.filter(g => !g.is_archived);
-  const archivedGames = games.filter(g => g.is_archived);
+  const activeGames = games.filter(g => !g.is_archived || g.status === 'draft');
+  const archivedGames = games.filter(g => g.is_archived && g.status !== 'draft');
+  const canDeleteDraft = (g: Game) => g.status === 'draft' && (isAdmin || g.created_by === user?.id);
+  const deleteDraft = (e: { stopPropagation: () => void }, g: Game) => {
+    e.stopPropagation();
+    api.deleteGame(g.id).then(() => setGames(prev => prev.filter(x => x.id !== g.id))).catch(err => alert(err.message));
+  };
   const archiveCounts = archivedGames.reduce<Record<string, number>>((acc, g) => {
     const k = archivePeriodOf(g.game_date);
     acc[k] = (acc[k] || 0) + 1;
@@ -636,6 +642,12 @@ export default function Dashboard({ onNavigate }: Props) {
                         <Badge className={`${statusColor(game.status)} text-xs shrink-0`}>
                           {statusLabel(game.status)}
                         </Badge>
+                        {canDeleteDraft(game) && (
+                          <button type="button" onClick={e => deleteDraft(e, game)} aria-label="Delete draft" title="Delete draft"
+                            data-testid="delete-draft" className="ml-auto p-1 rounded-md text-red-500 hover:bg-red-50">
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                       {game.title && <p className="text-sm text-gray-600 font-medium truncate">{game.title}</p>}
                       <p className="text-sm text-gray-500">

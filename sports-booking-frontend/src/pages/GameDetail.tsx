@@ -960,7 +960,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
     while (new Date(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${game.game_time || '23:59'}`) <= now);
     return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
   })();
-  const canDeleteGame = game.is_archived ? isAdmin : (isAdmin || isModerator || isGroundManagement) && !gameIsOver && (game.status === 'draft' || game.status === 'cancelled');
+  const canDeleteGame = game.status === 'draft' ? (isAdmin || game.created_by === user?.id) : game.is_archived ? isAdmin : (isAdmin || isModerator || isGroundManagement) && !gameIsOver && (game.status === 'draft' || game.status === 'cancelled');
   const reveal = (id: string) => setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   const openEditGame = () => {
     setEditPayeeUserId(game.payee ? String(game.payee.id) : '');
@@ -983,6 +983,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const guardCompleted = (what: 'edit' | 'delete') => {
     if (game.status === 'completed') setConfirmCompleted(what);
     else if (what === 'edit') openEditGame();
+    else if (game.status === 'draft') handleDelete();
     else openDeleteGame();
   };
 
