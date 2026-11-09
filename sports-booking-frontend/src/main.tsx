@@ -15,6 +15,10 @@ const onScroll = () => {
 }
 window.addEventListener('scroll', onScroll, { passive: true })
 
+// Ask the iPhone app for the real notch/status-bar height (it sets --safe-area-inset-* on <html>).
+type SafeAreaBridge = { webkit?: { messageHandlers?: { safeArea?: { postMessage: (m: string) => void } } } }
+;(window as unknown as SafeAreaBridge).webkit?.messageHandlers?.safeArea?.postMessage('get')
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 import Capacitor
 
 @UIApplicationMain
@@ -54,4 +55,42 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+/// Turns on the iPhone edge swipe for Back, and passes the real notch / status-bar height to the web app
+/// as --safe-area-inset-* CSS variables, because WKWebView's env(safe-area-inset-top) can read 0 on some iPhones.
+class SafeAreaBridgeViewController: CAPBridgeViewController, WKScriptMessageHandler {
+    override func capacitorDidLoad() {
+        super.capacitorDidLoad()
+        webView?.allowsBackForwardNavigationGestures = true
+        webView?.configuration.userContentController.add(self, name: "safeArea")
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        pushSafeArea()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        pushSafeArea()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        pushSafeArea()
+    }
+
+    private func pushSafeArea() {
+        let insets = view.window?.safeAreaInsets ?? view.safeAreaInsets
+        var top = insets.top
+        if top == 0 {
+            top = view.window?.windowScene?.statusBarManager?.statusBarFrame.height ?? 0
+        }
+        let js = "var s=document.documentElement.style;"
+            + "s.setProperty('--safe-area-inset-top','\(top)px');"
+            + "s.setProperty('--safe-area-inset-bottom','\(insets.bottom)px');"
+            + "s.setProperty('--safe-area-inset-left','\(insets.left)px');"
+            + "s.setProperty('--safe-area-inset-right','\(insets.right)px');"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
+    }
 }

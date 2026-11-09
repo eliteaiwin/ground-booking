@@ -401,7 +401,7 @@ export default function Discussion({ gameId, gameStatus, members = [] }: Props) 
 
   const card = (
     <Card className={fullscreen ? 'fixed inset-x-0 bottom-0 z-20 rounded-none flex flex-col overflow-hidden' : ''}
-      style={fullscreen ? { top: headerBottom || 'env(safe-area-inset-top)' } : undefined} data-testid="discussion">
+      style={fullscreen ? { top: headerBottom || 'var(--sat)' } : undefined} data-testid="discussion">
       {fullscreen ? (
         <div className="flex items-end gap-1 px-2 pt-2 border-b border-gray-200 bg-gray-50 shrink-0" data-testid="fullscreen-header">
           <button type="button" onClick={() => { setFullscreen(false); setOpenRow(activeTab); }} className="p-2 mb-0.5 rounded hover:bg-gray-100 text-gray-600" aria-label="Back">

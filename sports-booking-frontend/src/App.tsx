@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+
+type NavState = { page: string; gameId: number | null; depth: number } | null;
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import LoginPage from './pages/LoginPage';
@@ -41,6 +43,30 @@ function AppContent() {
   const [forcePasswordChange, setForcePasswordChange] = useState(
     () => localStorage.getItem('force_password_change') === '1'
   );
+
+  // Each screen opened from the Dashboard gets a browser-history entry, so the iPhone edge swipe
+  // and Android Back button return to the previous screen; returning to the Dashboard unwinds them all.
+  useEffect(() => {
+    if (!user) return;
+    const st = window.history.state as NavState;
+    if (currentPage === 'dashboard') {
+      if (st?.depth) window.history.go(-st.depth);
+      return;
+    }
+    if (st?.page === currentPage && st?.gameId === selectedGameId) return;
+    window.history.pushState({ page: currentPage, gameId: selectedGameId, depth: (st?.depth || 0) + 1 }, '');
+  }, [currentPage, selectedGameId, user]);
+
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const st = e.state as NavState;
+      setGameOpenTab('');
+      setCurrentPage((st?.page as Page) || 'dashboard');
+      setSelectedGameId(st?.gameId ?? null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // Sync forcePasswordChange state when localStorage changes after login
   useEffect(() => {
