@@ -5,6 +5,7 @@ export const CHANGELOG: Release[] = [
   { version: '1.57', date: '2026-11-04', changes: [
     'Phone app header now sits below the notch / status bar on every iPhone and Android phone',
     'Swipe from the left edge (iPhone) or press Back (Android) to return to the previous screen',
+    'Ground Management: an allotted slot and its game show as one box, with the timing shown once',
   ] },
   { version: '1.56', date: '2026-11-04', changes: [
     'Draft games are visible only to the moderator who created them (and Admins)',

@@ -70,6 +70,9 @@ const endTime = (start: string, minutes: number) => {
   const t = (h * 60 + (m || 0) + minutes) % 1440;
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
+// Games booked in an allotted slot (linked, or starting at the same time) are shown inside the allotment box.
+const gamesInAllotment = (a: ScheduleAllotment, games: ScheduleItem[]) =>
+  games.filter(g => g.allotment_id === a.id || (!g.allotment_id && g.game_time.slice(0, 5) === a.start_time.slice(0, 5)));
 const pitchName = (a: ScheduleAllotment) =>
   a.pitch_format ? `${a.pitch_format}${a.pitch_number ? ` ${String.fromCharCode(64 + a.pitch_number)}` : ''}` : 'Whole ground';
 
@@ -722,6 +725,9 @@ export default function GroundManagement({ onBack }: Props) {
           {days.map(day => {
             const dayGames = scheduleData.schedule.filter(g => g.game_date === day);
             const dayAllots = (scheduleData.allotments || []).filter(a => a.date === day);
+            const allotGames = new Map(dayAllots.map(a => [a.id, gamesInAllotment(a, dayGames)]));
+            const merged = new Set([...allotGames.values()].flat().map(g => g.game_id));
+            const otherGames = dayGames.filter(g => !merged.has(g.game_id));
             const isToday = day === today;
 
             return (
@@ -739,15 +745,20 @@ export default function GroundManagement({ onBack }: Props) {
                       <button key={a.id} type="button" data-testid="week-allotment"
                         onClick={() => { setCurrentDate(day); setViewMode('day'); }}
                         className="w-full text-left bg-red-500 text-white rounded-lg px-3 py-1.5 text-xs">
-                        <span className="font-semibold">Allotted to {a.holder || '—'}</span>
+                        <span className="font-semibold">Allotted - {a.holder || '—'}</span>
+                        {(allotGames.get(a.id) || []).map(g => (
+                          <span key={g.game_id} data-testid="week-allotment-game" className="block font-medium">
+                            {g.title} · {(statusColors[g.status] || statusColors.draft).label} · {g.current_players}/{g.max_players}
+                          </span>
+                        ))}
                         <span className="block opacity-90">{a.start_time}–{endTime(a.start_time, a.duration_minutes)} · {pitchName(a)} · {sportIcon(a.sport_type)}</span>
                       </button>
                     ))}
                   </div>
                 )}
-                {dayGames.length > 0 ? (
+                {otherGames.length > 0 ? (
                   <div className="px-3 py-2 space-y-1.5">
-                    {dayGames.map(game => {
+                    {otherGames.map(game => {
                       const colors = statusColors[game.status] || statusColors.draft;
                       return (
                         <div
@@ -831,8 +842,9 @@ export default function GroundManagement({ onBack }: Props) {
                 if (!dateStr) return <div key={di} className="min-h-[80px] bg-gray-50 border-r" />;
                 const dayNum = parseInt(dateStr.split('-')[2]);
                 const isToday = dateStr === today;
-                const dayGames = gamesByDate[dateStr] || [];
                 const dayAllots = (scheduleData.allotments || []).filter(a => a.date === dateStr);
+                const merged = new Set(dayAllots.flatMap(a => gamesInAllotment(a, gamesByDate[dateStr] || [])).map(g => g.game_id));
+                const dayGames = (gamesByDate[dateStr] || []).filter(g => !merged.has(g.game_id));
 
                 return (
                   <div key={di} className={`min-h-[80px] border-r p-1 ${isToday ? 'bg-blue-50' : ''}`}>
