@@ -13,6 +13,7 @@ import logging
 import aiosqlite
 
 from .database import init_db, DATABASE_PATH
+from .request_context import active_role
 from .user_merge import merge_duplicate_phone_users
 from .routers.users_router import ensure_super_admin_roles
 from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router, receivers_router
@@ -52,6 +53,12 @@ async def _reminder_loop():
 app = FastAPI(title="Elite Turf Booking", lifespan=lifespan)
 
 # Disable CORS. Do not remove this for full-stack development.
+@app.middleware("http")
+async def _active_role_middleware(request, call_next):
+    active_role.set(request.headers.get("x-active-role", ""))
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins

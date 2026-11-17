@@ -192,8 +192,8 @@ function useTip() {
 
 // Cash icon beside a player: red = due, green = paid, amber = paid too little or too much.
 // Hover (desktop) or tap (phone) shows the details.
-function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasReceiver = false, onReceived }: {
-  pd?: PaymentDetail; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void; onViewProof?: () => void;
+function PaymentIcon({ pd, share, confirmed, due, currency, onSettle, onViewProof, hasReceiver = false, onReceived }: {
+  pd?: PaymentDetail; share: number; confirmed: boolean; due: boolean; currency: string; onSettle?: (amount: string) => void; onViewProof?: () => void;
   hasReceiver?: boolean; onReceived?: (ok: boolean) => void;
 }) {
   const [tip, setTip, tipRef] = useTip();
@@ -203,8 +203,9 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
   const excess = pd?.excess || 0;
   const pending = pd?.pending || 0;
   const rs = (n: number) => `${formatMoney(Math.ceil(n - 0.001), currency)}`;
-  let color = 'text-gray-300';
-  let text = 'No payment yet';
+  const owed = pd ? pending : share;
+  let color = due ? 'text-red-500' : 'text-gray-300';
+  let text = due ? `Due ${rs(owed)}` : `${rs(owed)} to pay after the game`;
   const refund = !!pd?.refund_due && paid > 0;
   if (refund) {
     color = 'text-purple-600';
@@ -222,11 +223,6 @@ function PaymentIcon({ pd, confirmed, due, currency, onSettle, onViewProof, hasR
     else if (pd?.paid_via === 'online') text = `Paid ${rs(paid)} online by Self${when ? ` on ${when}` : ''}`;
     else if (pd?.paid_via === 'self') text = `Paid ${rs(paid)} by Self${when ? ` on ${when}` : ''}`;
     else text = pd ? `Paid ${rs(paid)}${when ? ` on ${when}` : ''}` : 'Paid';
-  } else if (pd && pending > 0 && due) {
-    color = 'text-red-500';
-    text = `Due ${rs(pending)}`;
-  } else if (pd && pending > 0) {
-    text = `${rs(pending)} to pay after the game`;
   }
   return (
     <span ref={tipRef} className="relative inline-flex" onPointerEnter={(e) => { if (e.pointerType === 'mouse') setTip(true); }} onPointerLeave={(e) => { if (e.pointerType === 'mouse') setTip(false); }}>
@@ -2224,8 +2220,9 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                           <>
                             <PaymentIcon
                               pd={paymentByUser.get(player.user_id)}
+                              share={perPerson}
                               confirmed={player.payment_confirmed === 1}
-                              due={game.status === 'completed' || game.payment_timing === 'before' || !!player.must_prepay}
+                              due={game.status === 'completed' || game.payment_timing === 'before' || (!!game.pay_first_enabled && !!player.must_prepay)}
                               currency={currency}
                               hasReceiver={!!game.receiver}
                               onReceived={(game.is_receiver || (isAdmin && !!game.receiver)) ? (ok) => {

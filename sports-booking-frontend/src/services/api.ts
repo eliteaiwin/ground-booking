@@ -86,6 +86,9 @@ async function request(path: string, options: RequestInit = {}, retries = 2): Pr
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const activeRole = localStorage.getItem('active_role');
+  if (activeRole) headers['X-Active-Role'] = activeRole;
+
   try {
     const res = await fetch(`${API_URL}${path}`, {
       ...options,

@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.58', date: '2026-11-17', changes: [
+    'Cash icon beside players: every unpaid player now shows the same colour and message',
+    'Draft games are hidden while you are in User mode, even for Admins',
+    'Archived: "Last 6 months" and "Last year" now include the newer games too',
+  ] },
   { version: '1.57', date: '2026-11-04', changes: [
     'Phone app header now sits below the notch / status bar on every iPhone and Android phone',
     'Swipe from the left edge (iPhone) or press Back (Android) to return to the previous screen',

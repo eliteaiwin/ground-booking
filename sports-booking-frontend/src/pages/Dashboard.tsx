@@ -75,9 +75,11 @@ const ARCHIVE_PERIODS = [
 ] as const;
 type ArchivePeriod = typeof ARCHIVE_PERIODS[number]['key'];
 
-const archivePeriodOf = (gameDate: string): ArchivePeriod => {
+// Periods are cumulative ("Last 6 months" includes "Last month"); "Older" is anything beyond a year.
+const inArchivePeriod = (gameDate: string, period: ArchivePeriod): boolean => {
   const days = (Date.now() - new Date(`${gameDate}T00:00:00`).getTime()) / 86400000;
-  return (ARCHIVE_PERIODS.find(p => days <= p.maxDays) ?? ARCHIVE_PERIODS[ARCHIVE_PERIODS.length - 1]).key;
+  if (period === 'older') return days > 365;
+  return days <= ARCHIVE_PERIODS.find(p => p.key === period)!.maxDays;
 };
 
 const statusColor = (status: string, isArchived?: boolean) => {
@@ -195,12 +197,10 @@ export default function Dashboard({ onNavigate }: Props) {
     e.stopPropagation();
     api.deleteGame(g.id).then(() => setGames(prev => prev.filter(x => x.id !== g.id))).catch(err => alert(err.message));
   };
-  const archiveCounts = archivedGames.reduce<Record<string, number>>((acc, g) => {
-    const k = archivePeriodOf(g.game_date);
-    acc[k] = (acc[k] || 0) + 1;
-    return acc;
-  }, {});
-  const archivedInPeriod = archivedGames.filter(g => archivePeriodOf(g.game_date) === archivePeriod);
+  const archiveCounts: Record<string, number> = Object.fromEntries(
+    ARCHIVE_PERIODS.map(p => [p.key, archivedGames.filter(g => inArchivePeriod(g.game_date, p.key)).length])
+  );
+  const archivedInPeriod = archivedGames.filter(g => inArchivePeriod(g.game_date, archivePeriod));
 
   return (
     <div className="min-h-screen bg-gray-50">

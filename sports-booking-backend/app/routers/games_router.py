@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from .. import cashfree
 from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
+from ..request_context import active_role
 from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency, format_money
@@ -1373,7 +1374,10 @@ async def create_game_series(
 
 
 async def _hidden_draft_ids(db: aiosqlite.Connection, user_id: int) -> set:
-    """Draft games are visible only to their creator and to Admins."""
+    """Draft games are visible only to their creator and to Admins; nobody sees them while in User mode."""
+    if active_role.get() in ("user", "user_read_only"):
+        rows = await (await db.execute("SELECT id FROM games WHERE status = 'draft'")).fetchall()
+        return {r["id"] for r in rows}
     is_admin = await (await db.execute(
         "SELECT 1 FROM user_roles WHERE user_id = ? AND role = 'admin'", (user_id,)
     )).fetchone()
