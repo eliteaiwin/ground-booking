@@ -26,6 +26,7 @@ interface GameDefaults {
   default_payment_collection?: string;
   roster_edit_days?: number;
   late_quit_hours?: number;
+  show_decimal_amounts?: boolean;
 }
 
 type UserLite = { id: number; name: string; phone: string };
@@ -187,6 +188,11 @@ function GameDefaultsCard() {
           <input type="checkbox" className="rounded border-gray-300" checked={defaults.show_quit_penalty}
             onChange={e => save({ show_quit_penalty: e.target.checked })} data-testid="show-quit-penalty" />
           Show quit penalty (on Create Game and game pages)
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="rounded border-gray-300" checked={!!defaults.show_decimal_amounts}
+            onChange={e => save({ show_decimal_amounts: e.target.checked })} data-testid="show-decimal-amounts" />
+          Show amounts with decimals in notifications (e.g. 1200.50 instead of 1201)
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" className="rounded border-gray-300" checked={defaults.pay_first_enabled}

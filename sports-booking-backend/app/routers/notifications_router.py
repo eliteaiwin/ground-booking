@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+import math
+import re
 import aiosqlite
 
-from ..database import get_db
+from ..database import get_db, get_app_setting
 from ..auth import get_current_user_id
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -73,30 +75,80 @@ async def remove_push_token(
 
 # --- Existing notification endpoints ---
 
+# Invitations to act before a game (join / confirm) are removed once the game is over.
+EXPIRING_TYPES = ("voting_opened", "tentative_nudge")
+
+
+async def _cleanup_notifications(db: aiosqlite.Connection, user_id: int):
+    """Drop notifications whose game was permanently deleted, whose chat message is gone, or whose invitation expired."""
+    from .games_router import _game_end, _local_now
+    await db.execute(
+        "DELETE FROM notifications WHERE user_id = ? AND game_id IS NOT NULL AND game_id NOT IN (SELECT id FROM games)",
+        (user_id,))
+    await db.execute(
+        "DELETE FROM notifications WHERE user_id = ? AND type = 'mention' AND ref_id IS NOT NULL "
+        "AND ref_id NOT IN (SELECT id FROM discussion_messages)", (user_id,))
+    rows = await (await db.execute(
+        f"""SELECT n.id, g.game_date, g.game_time, g.duration_minutes FROM notifications n JOIN games g ON g.id = n.game_id
+            WHERE n.user_id = ? AND n.type IN ({','.join('?' * len(EXPIRING_TYPES))})""",
+        (user_id, *EXPIRING_TYPES))).fetchall()
+    now = _local_now()
+    expired = [r["id"] for r in rows if (_game_end(r) or now) < now]
+    if expired:
+        await db.execute(f"DELETE FROM notifications WHERE id IN ({','.join('?' * len(expired))})", expired)
+    await db.commit()
+
+
+def _tidy_message(message: str, label: str, decimals: bool) -> str:
+    """Fix older notifications: blank game names, empty payee "()", and decimal amounts."""
+    msg = message.replace(" Pay to ()", "").replace(" Please pay to ().", "")
+    msg = msg.replace(" for . ", f" for {label}. ").replace(" for  at ", " at ")
+    if msg.endswith(" for ."):
+        msg = msg[:-2] + f" {label}."
+    if not decimals:
+        msg = re.sub(r"\b(\d+)\.(\d+)\b", lambda m: str(int(math.ceil(float(m.group(0)) - 0.001))), msg)
+    return msg
+
+
 @router.get("")
 async def get_notifications(
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
+    from .games_router import game_label
+    await _cleanup_notifications(db, user_id)
+    decimals = (await get_app_setting(db, "show_decimal_amounts", "false")) == "true"
     cursor = await db.execute(
         """SELECT n.*, g.title as game_title, g.sport_type, g.status as game_status,
-                  g.game_date, g.game_time
+                  g.game_date, g.game_time, g.ground_name, g.id AS existing_game_id
            FROM notifications n LEFT JOIN games g ON n.game_id = g.id 
            WHERE n.user_id = ? ORDER BY n.created_at DESC LIMIT 50""",
         (user_id,)
     )
     notifications = await cursor.fetchall()
+
+    def link(n) -> str:
+        if not n["existing_game_id"]:
+            return ""
+        return "chat" if n["type"] == "mention" else "game"
+
+    def label(n) -> str:
+        if not n["existing_game_id"]:
+            return "the game"
+        return game_label({"title": n["game_title"], "ground_name": n["ground_name"], "game_date": n["game_date"]})
+
     return [
         {
             "id": n["id"],
             "game_id": n["game_id"],
+            "link": link(n),
             "game_title": n["game_title"],
             "sport_type": n["sport_type"],
             "game_status": n["game_status"] or "",
             "game_date": n["game_date"] or "",
             "game_time": n["game_time"] or "",
             "type": n["type"],
-            "message": n["message"],
+            "message": _tidy_message(n["message"], label(n), decimals),
             "is_read": bool(n["is_read"]),
             "created_at": n["created_at"]
         }

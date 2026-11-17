@@ -78,6 +78,7 @@ class GameDefaultsRequest(BaseModel):
     default_payment_collection: Optional[str] = None
     roster_edit_days: Optional[int] = None
     late_quit_hours: Optional[int] = None
+    show_decimal_amounts: Optional[bool] = None
 
 
 async def game_defaults(db: aiosqlite.Connection) -> dict:
@@ -106,6 +107,7 @@ async def game_defaults(db: aiosqlite.Connection) -> dict:
         "default_payment_collection": (await get_app_setting(db, "default_payment_collection", "offline")) or "offline",
         "roster_edit_days": int(await get_app_setting(db, "roster_edit_days", "3") or 3),
         "late_quit_hours": int(await get_app_setting(db, "late_quit_hours", "2") or 0),
+        "show_decimal_amounts": (await get_app_setting(db, "show_decimal_amounts", "false")) == "true",
     }
 
 
@@ -152,6 +154,8 @@ async def update_game_defaults(
         if not 0 <= req.late_quit_hours <= 72:
             raise HTTPException(status_code=400, detail="Late quit hours must be 0-72")
         await set_app_setting(db, "late_quit_hours", str(req.late_quit_hours))
+    if req.show_decimal_amounts is not None:
+        await set_app_setting(db, "show_decimal_amounts", "true" if req.show_decimal_amounts else "false")
     return await game_defaults(db)
 
 

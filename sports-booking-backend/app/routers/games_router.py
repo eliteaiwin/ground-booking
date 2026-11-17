@@ -662,11 +662,27 @@ async def _compute_streaks(
     }
 
 
-async def create_notification(db: aiosqlite.Connection, user_id: int, game_id: int, notif_type: str, message: str):
+async def create_notification(db: aiosqlite.Connection, user_id: int, game_id: int, notif_type: str, message: str,
+                              ref_id: Optional[int] = None):
     await db.execute(
-        "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, ?, ?)",
-        (user_id, game_id, notif_type, message)
+        "INSERT INTO notifications (user_id, game_id, type, message, ref_id) VALUES (?, ?, ?, ?, ?)",
+        (user_id, game_id, notif_type, message, ref_id)
     )
+
+
+async def money_text(db: aiosqlite.Connection, amount) -> str:
+    """Amount for messages: rounded up to a whole number unless the moderator preference shows decimals."""
+    if (await get_app_setting(db, "show_decimal_amounts", "false")) == "true":
+        return f"{float(amount or 0):.2f}"
+    return str(int(math.ceil(float(amount or 0) - 0.001)))
+
+
+def game_label(game) -> str:
+    """Name for a game in messages; falls back to its ground and date when it has no title."""
+    title = (game["title"] or "").strip()
+    if title:
+        return title
+    return f"the {game['ground_name']} game on {game['game_date']}" if game["ground_name"] else f"the game on {game['game_date']}"
 
 
 PAY_FIRST_STATUS = "awaiting_payment"
@@ -1692,7 +1708,7 @@ async def open_voting(
     for u in all_users:
         await create_notification(
             db, u["id"], game_id, "voting_opened",
-            f"Nominations are open for {game['title']} at {game['ground_name']} on {game['game_date']} at {game['game_time']}. Join now!"
+            f"Nominations are open{' for ' + game['title'].strip() if (game['title'] or '').strip() else ''} at {game['ground_name']} on {game['game_date']} at {game['game_time']}. Join now!"
         )
 
     await db.commit()
@@ -2508,7 +2524,7 @@ async def _start_game(db: aiosqlite.Connection, game):
         if pays_first and payee_info:
             await create_notification(
                 db, p["user_id"], game_id, "payment_due",
-                f"Payment of {game['cost_per_person']} is due for {game['title']}. Pay to {payee_info['name']} ({payee_info['phone']})"
+                f"Payment of {await money_text(db, game['cost_per_person'])} is due for {game_label(game)}. Pay to {payee_info['name']} ({payee_info['phone']})"
             )
 
     await db.commit()
@@ -2664,7 +2680,8 @@ async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameReques
         for uid in played_user_ids:
             await create_notification(
                 db, uid, game_id, "payment_due",
-                f"Game completed! Payment of {per_person_amount:.2f} is due for {game['title']}. Pay to {payee_name} ({payee_phone})"
+                f"Game completed! Payment of {await money_text(db, per_person_amount)} is due for {game_label(game)}."
+                + (f" Pay to {payee_name} ({payee_phone})" if payee_name else "")
             )
     else:
         for uid in played_user_ids:
@@ -3766,7 +3783,8 @@ async def remind_unpaid_players(
 
     reminded = []
     for u in unpaid:
-        msg = f"Reminder: Payment of {game['cost_per_person']} is pending for {game['title']}. Please pay to {payee_name} ({payee_phone})."
+        msg = (f"Reminder: Payment of {await money_text(db, game['cost_per_person'])} is pending for {game_label(game)}."
+               + (f" Please pay to {payee_name} ({payee_phone})." if payee_name else ""))
         await create_notification(db, u["user_id"], game_id, "payment_reminder", msg)
         reminded.append({
             "user_id": u["user_id"],

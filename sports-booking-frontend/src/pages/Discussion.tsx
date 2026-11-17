@@ -86,6 +86,7 @@ interface Props {
   gameId?: number;
   gameStatus?: string;
   members?: Member[];
+  openChat?: boolean;
 }
 
 function timeAgo(dateStr: string): string {
@@ -151,10 +152,10 @@ function ReactionBar({ reactions, targetType, targetId, userId, onReact }: {
   );
 }
 
-export default function Discussion({ gameId, gameStatus, members = [] }: Props) {
+export default function Discussion({ gameId, gameStatus, members = [], openChat = false }: Props) {
   const { user, isAdmin, isModerator } = useAuth();
   const canModerate = isAdmin || isModerator;
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(openChat);
   const [headerBottom, setHeaderBottom] = useState(0);
   // Full screen sits below the page's sticky header so Back always stays reachable.
   useEffect(() => {

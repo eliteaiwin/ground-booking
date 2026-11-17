@@ -117,6 +117,7 @@ async def _delete_message(db: aiosqlite.Connection, message_id: int) -> int:
             if media and not media["in_gallery"]:
                 freed += await _delete_media(db, r["media_id"])
         await db.execute("DELETE FROM emoji_reactions WHERE target_type = 'message' AND target_id = ?", (r["id"],))
+        await db.execute("DELETE FROM notifications WHERE type = 'mention' AND ref_id = ?", (r["id"],))
     await db.execute("DELETE FROM discussion_messages WHERE parent_id = ?", (message_id,))
     await db.execute("DELETE FROM discussion_messages WHERE id = ?", (message_id,))
     return freed
@@ -132,21 +133,22 @@ async def _media_brief(db: aiosqlite.Connection, media_id: Optional[int]) -> Opt
             "file_path": f"/api/discussions/media/file/{m['id']}", "user_id": m["user_id"]}
 
 
-async def _notify_mentions(db: aiosqlite.Connection, sender_id: int, game_id: Optional[int], text: str, ids: Optional[List[int]]):
+async def _notify_mentions(db: aiosqlite.Connection, sender_id: int, game_id: Optional[int], text: str, ids: Optional[List[int]],
+                           msg_id: Optional[int] = None):
     targets = {i for i in (ids or []) if i != sender_id}
     if not targets:
         return
     sender = await (await db.execute("SELECT name FROM users WHERE id = ?", (sender_id,))).fetchone()
     where = "the discussion"
     if game_id:
-        g = await (await db.execute("SELECT title FROM games WHERE id = ?", (game_id,))).fetchone()
+        g = await (await db.execute("SELECT title, ground_name, game_date FROM games WHERE id = ?", (game_id,))).fetchone()
         if g:
-            where = f"{g['title']} chat"
+            where = f"{(g['title'] or '').strip() or g['ground_name'] or 'the game'} chat"
     snippet = text if len(text) <= 80 else text[:77] + "..."
     for uid in targets:
         if await (await db.execute("SELECT 1 FROM users WHERE id = ?", (uid,))).fetchone():
             await create_notification(db, uid, game_id, "mention",
-                                      f"{sender['name'] if sender else 'Someone'} mentioned you in {where}: \"{snippet}\"")
+                                      f"{sender['name'] if sender else 'Someone'} mentioned you in {where}: \"{snippet}\"", ref_id=msg_id)
 
 
 class MediaCommentRequest(BaseModel):
@@ -263,7 +265,7 @@ async def post_message(
         (req.game_id, user_id, req.message.strip(), req.parent_id)
     )
     msg_id = cursor.lastrowid
-    await _notify_mentions(db, user_id, req.game_id, req.message.strip(), req.mention_user_ids)
+    await _notify_mentions(db, user_id, req.game_id, req.message.strip(), req.mention_user_ids, msg_id)
     await db.commit()
 
     # Fetch the created message
@@ -319,7 +321,7 @@ async def post_message_with_media(
     )
     msg_id = cursor.lastrowid
     ids = [int(x) for x in mention_user_ids.split(",") if x.strip().isdigit()]
-    await _notify_mentions(db, user_id, game_id, message.strip() or f"[{media_type}]", ids)
+    await _notify_mentions(db, user_id, game_id, message.strip() or f"[{media_type}]", ids, msg_id)
     await db.commit()
     return {"id": msg_id, "media": await _media_brief(db, media_id)}
 

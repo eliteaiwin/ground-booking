@@ -513,6 +513,7 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN sports TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE notifications ADD COLUMN ref_id INTEGER",
         "ALTER TABLE users ADD COLUMN locations TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN sport_positions TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN google_id TEXT",

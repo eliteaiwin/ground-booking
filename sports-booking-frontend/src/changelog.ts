@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.59', date: '2026-11-17', changes: [
+    'Notifications: amounts are whole numbers (Moderator Preferences can show decimals); no more blank game or payee names',
+    'Tap a notification to open its game, or the chat for a mention',
+    'Notifications of permanently deleted games or chat messages disappear; join invitations disappear once the game is over',
+  ] },
   { version: '1.58', date: '2026-11-17', changes: [
     'Cash icon beside players: every unpaid player now shows the same colour and message',
     'Draft games are hidden while you are in User mode, even for Admins',

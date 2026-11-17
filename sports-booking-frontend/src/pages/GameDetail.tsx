@@ -2597,7 +2597,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
         )}
 
         {/* Discussion Section - Always active */}
-        <Discussion gameId={game.id} gameStatus={game.status}
+        <Discussion gameId={game.id} gameStatus={game.status} openChat={openTab === 'chat'}
           members={[...game.selected_players, ...game.waiting_list].map(p => ({ id: p.user_id, name: p.display_name || p.name }))} />
 
         {game.status === 'completed' && (insights.auto.length > 0 || insights.notes.length > 0 || isAdmin || isModerator) && (

@@ -183,6 +183,10 @@ function AppContent() {
   }
 
   const navigate = (page: string, gameId?: number) => {
+    if (page === 'game-chat') {
+      setGameOpenTab('chat');
+      page = 'game-detail';
+    }
     setCurrentPage(page as Page);
     if (gameId !== undefined) setSelectedGameId(gameId);
   };

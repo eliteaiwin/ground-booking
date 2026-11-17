@@ -49,6 +49,7 @@ interface Notification {
   game_status?: string;
   game_date?: string;
   game_time?: string;
+  link?: string;
 }
 
 const formatNamePhone = (name: string, phone?: string) => {
@@ -177,6 +178,14 @@ export default function Dashboard({ onNavigate }: Props) {
     api.markRead(n.id).catch(() => {});
     setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, is_read: true } : x)));
     setUnreadCount(c => Math.max(0, c - 1));
+  };
+
+  // Tapping a notification opens what it is about: the game's chat for mentions, otherwise the game.
+  const openNotification = (n: Notification) => {
+    markOneRead(n);
+    if (!n.game_id || !n.link) return;
+    if (/(Join now!?|Confirm now)$/.test(n.message)) openFromNotification(n);
+    else onNavigate(n.link === 'chat' ? 'game-chat' : 'game-detail', n.game_id);
   };
 
   const openFromNotification = (n: Notification) => {
@@ -754,8 +763,8 @@ export default function Dashboard({ onNavigate }: Props) {
               <Card
                 key={notif.id}
                 data-testid="notif-card"
-                onClick={() => markOneRead(notif)}
-                className={`${!notif.is_read ? 'border-l-4 border-l-green-500 bg-green-50/50 cursor-pointer' : ''}`}
+                onClick={() => openNotification(notif)}
+                className={`${!notif.is_read ? 'border-l-4 border-l-green-500 bg-green-50/50' : ''} ${notif.link || !notif.is_read ? 'cursor-pointer' : ''}`}
               >
                 <CardContent className="p-3">
                   <div className="flex items-start gap-2">
@@ -767,7 +776,7 @@ export default function Dashboard({ onNavigate }: Props) {
                           <button
                             type="button"
                             className="font-semibold text-green-700 underline hover:text-green-800"
-                            onClick={() => openFromNotification(notif)}
+                            onClick={(e) => { e.stopPropagation(); markOneRead(notif); openFromNotification(notif); }}
                             data-testid="notif-join"
                           >
                             {/Confirm now$/.test(notif.message) ? 'Confirm now' : /Open game$/.test(notif.message) ? 'Open game' : 'Join now!'}
