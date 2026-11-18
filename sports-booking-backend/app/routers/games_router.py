@@ -677,6 +677,28 @@ async def money_text(db: aiosqlite.Connection, amount) -> str:
     return str(int(math.ceil(float(amount or 0) - 0.001)))
 
 
+async def reminder_gap_hours(db: aiosqlite.Connection) -> int:
+    return int(await get_app_setting(db, "payment_reminder_gap_hours", "24") or 24)
+
+
+async def next_reminder_at(db: aiosqlite.Connection, game_id: int, user_id: int) -> Optional[datetime]:
+    """Local time from which this player may get another payment reminder, or None if one can be sent now.
+    The gap counts from the last "please pay" message (game completed or an earlier reminder)."""
+    row = await (await db.execute(
+        "SELECT MAX(created_at) AS last FROM notifications "
+        "WHERE user_id = ? AND game_id = ? AND type IN ('payment_due', 'payment_reminder')",
+        (user_id, game_id))).fetchone()
+    if not row or not row["last"]:
+        return None
+    last = datetime.strptime(str(row["last"])[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    nxt = last.astimezone(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None) + timedelta(hours=await reminder_gap_hours(db))
+    return nxt if nxt > _local_now() else None
+
+
+def reminder_time_text(when: datetime) -> str:
+    return when.strftime("%d %b, %I:%M %p").replace(" 0", " ")
+
+
 def game_label(game) -> str:
     """Name for a game in messages; falls back to its ground and date when it has no title."""
     title = (game["title"] or "").strip()
@@ -3782,7 +3804,12 @@ async def remind_unpaid_players(
             payee_phone = payee["phone"]
 
     reminded = []
+    waits = []
     for u in unpaid:
+        wait = await next_reminder_at(db, game_id, u["user_id"])
+        if wait:
+            waits.append(wait)
+            continue
         msg = (f"Reminder: Payment of {await money_text(db, game['cost_per_person'])} is pending for {game_label(game)}."
                + (f" Please pay to {payee_name} ({payee_phone})." if payee_name else ""))
         await create_notification(db, u["user_id"], game_id, "payment_reminder", msg)
@@ -3793,9 +3820,14 @@ async def remind_unpaid_players(
             "preference": u["notification_preference"]
         })
 
+    if not reminded:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not sent: every unpaid player was asked to pay within the last {await reminder_gap_hours(db)} hours. "
+                   f"You can remind them again from {reminder_time_text(min(waits))}.")
     await db.commit()
     await push_to_users(
-        db, [u["user_id"] for u in unpaid], f"Payment due: {game['title']}",
+        db, [u["user_id"] for u in reminded], f"Payment due: {game_label(game)}",
         f"{game['cost_per_person']} is pending. Tap to see payment details.", "payment", game_id, "payment"
     )
 
@@ -3807,7 +3839,8 @@ async def remind_unpaid_players(
     wa_msg += f"\nAmount: {game['cost_per_person']}/person\nPay to: {payee_name} ({payee_phone})"
 
     return {
-        "message": f"Reminder sent to {len(reminded)} players",
+        "message": f"Reminder sent to {len(reminded)} players"
+                   + (f"; {len(waits)} skipped (reminded within the last {await reminder_gap_hours(db)} hours)" if waits else ""),
         "reminded_count": len(reminded),
         "reminded": reminded,
         "whatsapp_message": wa_msg

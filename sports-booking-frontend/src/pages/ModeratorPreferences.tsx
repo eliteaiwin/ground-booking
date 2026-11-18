@@ -28,6 +28,7 @@ interface GameDefaults {
   roster_edit_days?: number;
   late_quit_hours?: number;
   show_decimal_amounts?: boolean;
+  payment_reminder_gap_hours?: number;
 }
 
 type UserLite = { id: number; name: string; phone: string };
@@ -93,6 +94,7 @@ function GameDefaultsCard() {
   const [quit, setQuit] = useState('0');
   const [rosterDays, setRosterDays] = useState('3');
   const [lateQuit, setLateQuit] = useState('2');
+  const [reminderGap, setReminderGap] = useState('24');
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<{ id: number; name: string; phone: string }[]>([]);
   const [message, setMessage] = useState('');
@@ -104,6 +106,7 @@ function GameDefaultsCard() {
       setQuit(String(d.default_quit_penalty_hours));
       setRosterDays(String(d.roster_edit_days ?? 3));
       setLateQuit(String(d.late_quit_hours ?? 2));
+      setReminderGap(String(d.payment_reminder_gap_hours ?? 24));
     }).catch(() => {});
   }, []);
 
@@ -179,6 +182,12 @@ function GameDefaultsCard() {
           <Input type="number" min="0" max="72" value={lateQuit} onChange={e => setLateQuit(e.target.value)}
             data-testid="late-quit-hours" onBlur={() => save({ late_quit_hours: parseInt(lateQuit) || 0 })} />
           <p className="text-xs text-gray-500">They're asked to contact a moderator instead. 0 turns this off.</p>
+        </div>
+        <div className="space-y-2 max-w-[50%]">
+          <Label>Gap between payment reminders (hours)</Label>
+          <Input type="number" min="1" max="168" value={reminderGap} onChange={e => setReminderGap(e.target.value)}
+            data-testid="reminder-gap-hours" onBlur={() => save({ payment_reminder_gap_hours: parseInt(reminderGap) || 24 })} />
+          <p className="text-xs text-gray-500">A player isn't reminded again until this long after the "Game completed, please pay" message or their last reminder.</p>
         </div>
         <label className="flex items-center justify-between gap-3 text-sm">
           <span>Let players choose a position when joining a game</span>

@@ -723,6 +723,13 @@ async def remind_payment(
     due = round(row["amount"] - row["paid_amount"], 2)
     if due <= 0:
         raise HTTPException(status_code=400, detail="Nothing is due for this game")
+    from .games_router import next_reminder_at, reminder_gap_hours, reminder_time_text
+    wait = await next_reminder_at(db, req.game_id, player_id)
+    if wait:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Already asked to pay within the last {await reminder_gap_hours(db)} hours. "
+                   f"You can remind again from {reminder_time_text(wait)}.")
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_reminder', ?)",
         (player_id, req.game_id,

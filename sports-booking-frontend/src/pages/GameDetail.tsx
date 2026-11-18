@@ -2076,7 +2076,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                         <Button variant="outline" onClick={() => navigator.clipboard.writeText(generateRemindMsg())}>Copy</Button>
                       </div>
                       <Button variant="outline" className="w-full mt-2 border-green-300 text-green-700"
-                        onClick={() => handleAction('remind', () => api.remindUnpaid(game.id))}
+                        onClick={() => handleAction('remind', async () => { const r = await api.remindUnpaid(game.id); window.alert(r.message); })}
                         disabled={actionLoading === 'remind'}>
                         <Bell size={16} className="mr-2" />
                         {actionLoading === 'remind' ? 'Sending...' : 'Send In-App Reminder to Unpaid'}
@@ -2585,7 +2585,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                     disabled={actionLoading === 'broadcast' || actionLoading === 'remind'}
                     onClick={() => shareKind === 'invite'
                       ? handleAction('broadcast', () => api.broadcastStatus(game.id))
-                      : handleAction('remind', () => api.remindUnpaid(game.id))}>
+                      : handleAction('remind', async () => { const r = await api.remindUnpaid(game.id); window.alert(r.message); })}>
                     <Bell size={16} className="mr-2" />
                     {actionLoading === 'broadcast' || actionLoading === 'remind' ? 'Sending...' : shareKind === 'invite' ? 'Send as In-App Notification' : 'Send In-App Reminder to Unpaid'}
                   </Button>

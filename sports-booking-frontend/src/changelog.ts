@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.61', date: '2026-11-18', changes: [
+    'Payment reminders wait 24 hours (Moderator Preferences) after the "Game completed, please pay" message or the last reminder',
+  ] },
   { version: '1.60', date: '2026-11-18', changes: [
     'Alert Settings: Vacation Mode moved to the bottom and opens/closes with a tap',
     'Clearer on/off switches and option circles, the same on every settings screen',
