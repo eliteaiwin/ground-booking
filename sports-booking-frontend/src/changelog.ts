@@ -2,6 +2,10 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.60', date: '2026-11-18', changes: [
+    'Alert Settings: Vacation Mode moved to the bottom and opens/closes with a tap',
+    'Clearer on/off switches and option circles, the same on every settings screen',
+  ] },
   { version: '1.59', date: '2026-11-17', changes: [
     'Notifications: amounts are whole numbers (Moderator Preferences can show decimals); no more blank game or payee names',
     'Tap a notification to open its game, or the chat for a mention',

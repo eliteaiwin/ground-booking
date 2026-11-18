@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Bell, BellOff, Palmtree, MapPin, Shield, Volume2, VolumeX } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { ArrowLeft, Bell, BellOff, ChevronDown, Palmtree, MapPin, Shield, Volume2, VolumeX } from 'lucide-react';
 
 interface NotifSettings {
   voting_started: boolean;
@@ -57,6 +58,7 @@ export default function NotificationSettings({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vacStart, setVacStart] = useState('');
+  const [vacOpen, setVacOpen] = useState(false);
   const [vacEnd, setVacEnd] = useState('');
 
   useEffect(() => {
@@ -184,45 +186,6 @@ export default function NotificationSettings({ onBack }: Props) {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
-        {/* Vacation Mode - User role only */}
-        {isUserRole && (<Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Palmtree size={18} className="text-green-600" /> Vacation Mode
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {settings?.is_on_vacation && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <p className="text-sm text-green-700 font-medium flex items-center gap-1">
-                  <BellOff size={14} /> You are on vacation - all alerts paused
-                </p>
-              </div>
-            )}
-            <p className="text-xs text-gray-500">During vacation, you won't receive any game alerts (voting, cancellation, POTD). Moderator-controlled alerts (payment reminders) are not affected.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Start Date</Label>
-                <Input type="date" value={vacStart} onChange={e => setVacStart(e.target.value)} className="text-sm" />
-              </div>
-              <div>
-                <Label className="text-xs">End Date</Label>
-                <Input type="date" value={vacEnd} onChange={e => setVacEnd(e.target.value)} className="text-sm" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={saveVacation} disabled={saving || !vacStart || !vacEnd}>
-                {settings?.is_on_vacation ? 'Update Vacation' : 'Set Vacation'}
-              </Button>
-              {(settings?.vacation_start || vacStart) && (
-                <Button size="sm" variant="outline" onClick={clearVacation} disabled={saving}>
-                  Clear Vacation
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>)}
-
         {/* Alert Toggles */}
         <Card>
           <CardHeader className="pb-2">
@@ -245,17 +208,8 @@ export default function NotificationSettings({ onBack }: Props) {
                       <p className="text-sm font-medium text-gray-800">{item.label}</p>
                       <p className="text-xs text-gray-500">{item.desc}</p>
                     </div>
-                    <button
-                      onClick={() => toggleSetting(item.key, !getSettingValue(item.key))}
-                      disabled={saving}
-                      className={`w-12 h-6 rounded-full transition-colors relative ${
-                        getSettingValue(item.key) ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                        getSettingValue(item.key) ? 'translate-x-6' : 'translate-x-0.5'
-                      }`} />
-                    </button>
+                    <Switch checked={!!getSettingValue(item.key)} disabled={saving} aria-label={item.label}
+                      onCheckedChange={(v) => toggleSetting(item.key, v)} data-testid={`alert-${item.key}`} />
                   </div>
                 ))}
               </div>
@@ -366,6 +320,50 @@ export default function NotificationSettings({ onBack }: Props) {
             </CardContent>
           </Card>
         )}
+
+        {/* Vacation Mode - User role only; collapsed by default */}
+        {isUserRole && (<Card data-testid="vacation-card">
+          <CardHeader className="pb-2">
+            <button type="button" onClick={() => setVacOpen(o => !o)} aria-expanded={vacOpen} data-testid="vacation-toggle"
+              className="w-full flex items-center justify-between text-left">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Palmtree size={18} className="text-green-600" /> Vacation Mode
+                {settings?.is_on_vacation && <Badge className="bg-green-100 text-green-700 border-0 text-xs">On</Badge>}
+              </CardTitle>
+              <ChevronDown size={18} className={`text-gray-500 transition-transform ${vacOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </CardHeader>
+          {vacOpen && (<CardContent className="space-y-3">
+            {settings?.is_on_vacation && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-700 font-medium flex items-center gap-1">
+                  <BellOff size={14} /> You are on vacation - all alerts paused
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-gray-500">During vacation, you won't receive any game alerts (voting, cancellation, POTD). Moderator-controlled alerts (payment reminders) are not affected.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <Label className="text-xs">Start Date</Label>
+                <Input type="date" value={vacStart} onChange={e => setVacStart(e.target.value)} className="text-sm w-full min-w-0" />
+              </div>
+              <div className="min-w-0">
+                <Label className="text-xs">End Date</Label>
+                <Input type="date" value={vacEnd} onChange={e => setVacEnd(e.target.value)} className="text-sm w-full min-w-0" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={saveVacation} disabled={saving || !vacStart || !vacEnd}>
+                {settings?.is_on_vacation ? 'Update Vacation' : 'Set Vacation'}
+              </Button>
+              {(settings?.vacation_start || vacStart) && (
+                <Button size="sm" variant="outline" onClick={clearVacation} disabled={saving}>
+                  Clear Vacation
+                </Button>
+              )}
+            </div>
+          </CardContent>)}
+        </Card>)}
       </div>
     </div>
   );

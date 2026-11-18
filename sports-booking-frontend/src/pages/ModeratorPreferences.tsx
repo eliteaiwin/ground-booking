@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { ALL_SPORTS } from '../lib/sports';
 import CurrencyIcon from '@/components/CurrencyIcon';
 import PaymentCollectionChoice from '@/components/PaymentCollectionChoice';
+import { Switch } from '@/components/ui/switch';
 
 interface Props {
   onBack: () => void;
@@ -179,25 +180,21 @@ function GameDefaultsCard() {
             data-testid="late-quit-hours" onBlur={() => save({ late_quit_hours: parseInt(lateQuit) || 0 })} />
           <p className="text-xs text-gray-500">They're asked to contact a moderator instead. 0 turns this off.</p>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" className="rounded border-gray-300" checked={defaults.allow_position_selection}
-            onChange={e => save({ allow_position_selection: e.target.checked })} data-testid="allow-positions" />
-          Let players choose a position when joining a game
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Let players choose a position when joining a game</span>
+          <Switch checked={defaults.allow_position_selection} onCheckedChange={v => save({ allow_position_selection: v })} data-testid="allow-positions" />
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" className="rounded border-gray-300" checked={defaults.show_quit_penalty}
-            onChange={e => save({ show_quit_penalty: e.target.checked })} data-testid="show-quit-penalty" />
-          Show quit penalty (on Create Game and game pages)
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Show quit penalty (on Create Game and game pages)</span>
+          <Switch checked={defaults.show_quit_penalty} onCheckedChange={v => save({ show_quit_penalty: v })} data-testid="show-quit-penalty" />
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" className="rounded border-gray-300" checked={!!defaults.show_decimal_amounts}
-            onChange={e => save({ show_decimal_amounts: e.target.checked })} data-testid="show-decimal-amounts" />
-          Show amounts with decimals in notifications (e.g. 1200.50 instead of 1201)
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Show amounts with decimals in notifications (e.g. 1200.50 instead of 1201)</span>
+          <Switch checked={!!defaults.show_decimal_amounts} onCheckedChange={v => save({ show_decimal_amounts: v })} data-testid="show-decimal-amounts" />
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" className="rounded border-gray-300" checked={defaults.pay_first_enabled}
-            onChange={e => save({ pay_first_enabled: e.target.checked })} data-testid="pay-first-enabled" />
-          Use Pay first (chosen players must pay before they are added to a game)
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>Use Pay first (chosen players must pay before they are added to a game)</span>
+          <Switch checked={defaults.pay_first_enabled} onCheckedChange={v => save({ pay_first_enabled: v })} data-testid="pay-first-enabled" />
         </label>
         {defaults.pay_first_enabled && <PayFirstPlayers />}
         <div className="space-y-1" data-testid="default-payment-collection">
@@ -435,15 +432,10 @@ export default function ModeratorPreferences({ onBack }: Props) {
             </CardHeader>
             <CardContent className="space-y-4">
               {success === 'payments' && <div className="bg-green-50 text-green-600 p-3 rounded-md text-sm">Payment settings saved!</div>}
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={appSettings.payments_enabled}
-                  onChange={handleTogglePayments}
-                  disabled={saving === 'payments'}
-                  className="rounded border-gray-300"
-                />
-                In-App Payments Enabled
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>In-App Payments Enabled</span>
+                <Switch checked={appSettings.payments_enabled} onCheckedChange={() => handleTogglePayments()}
+                  disabled={saving === 'payments'} />
               </label>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Payment Surcharge (%)</label>
