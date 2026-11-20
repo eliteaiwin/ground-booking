@@ -41,7 +41,7 @@ export default function DeleteAccount() {
         <CardContent className="p-6">
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-white text-2xl">&#9917;</span>
+              <span className="text-white text-2xl">&#127967;</span>
             </div>
             <h1 className="text-xl font-bold text-gray-800"><span className="text-red-600">Elite</span> Turf Booking</h1>
             <h2 className="text-lg font-semibold text-red-600 mt-2">Delete Account</h2>

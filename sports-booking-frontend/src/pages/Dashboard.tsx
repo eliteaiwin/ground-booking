@@ -228,9 +228,9 @@ export default function Dashboard({ onNavigate }: Props) {
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <button type="button" aria-label="About" data-testid="about-logo" className="text-2xl" onClick={() => setShowAbout(true)}>&#9917;</button>
+            <button type="button" aria-label="About" data-testid="about-logo" className="text-2xl" onClick={() => setShowAbout(true)}>&#127967;</button>
             <div className="flex flex-col items-end leading-tight">
-              <h1 className="text-lg font-bold"><span className="text-red-600">Elite</span> Turf Booking</h1>
+              <h1 className="text-lg font-bold whitespace-nowrap"><span className="text-red-600">Elite</span> Turf Booking</h1>
               <WhatsNew />
             </div>
           </div>
@@ -240,10 +240,10 @@ export default function Dashboard({ onNavigate }: Props) {
               {who.impersonator && <div className="truncate">by {who.impersonator.name.split(' ')[0]} ({who.impersonator.role})</div>}
             </div>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-center shrink-0" data-testid="header-icons">
             <button
               onClick={() => setActiveTab('notifications')}
-              className="relative p-2 rounded-full hover:opacity-80"
+              className="relative p-1.5 rounded-full hover:opacity-80"
             >
               <Bell size={20} />
               {unreadCount > 0 && (
