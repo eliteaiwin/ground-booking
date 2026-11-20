@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Smartphone, Mail, ArrowLeft, Phone } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 import { SignInWithApple } from '@capacitor-community/apple-sign-in';
 
 declare global {
@@ -32,6 +33,10 @@ declare global {
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const APPLE_CLIENT_ID = 'com.elitedev.turfbooking';
 const APPLE_SIGN_IN_AVAILABLE = Capacitor.getPlatform() === 'ios';
+// Phone apps use the phone's own Google sign-in; iPhone also needs its iOS client ID (and URL scheme in Info.plist).
+const GOOGLE_IOS_CLIENT_ID = import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID || '';
+const NATIVE_GOOGLE = Capacitor.isNativePlatform();
+const GOOGLE_AVAILABLE = !!GOOGLE_CLIENT_ID && (Capacitor.getPlatform() !== 'ios' || !!GOOGLE_IOS_CLIENT_ID);
 
 const GoogleIcon = () => (
   <svg width="22" height="22" viewBox="0 0 48 48" aria-hidden="true">
@@ -88,6 +93,33 @@ export default function LoginPage({ isAddUserMode }: Props) {
       setLoading(false);
     }
   }, [loginWithGoogle]);
+
+  const handleNativeGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await SocialLogin.initialize({
+        google: {
+          webClientId: GOOGLE_CLIENT_ID,
+          iOSClientId: GOOGLE_IOS_CLIENT_ID || undefined,
+          iOSServerClientId: GOOGLE_CLIENT_ID,
+          mode: 'online',
+          // Only the ID token is needed; skips an extra Android step that can hang in a plain Capacitor activity.
+          skipAuthOnlyAuthorizationAfterSignIn: true,
+        },
+      });
+      const res = await SocialLogin.login({ provider: 'google', options: { scopes: ['email', 'profile'] } });
+      const idToken = (res.result as { idToken?: string | null }).idToken;
+      if (!idToken) throw new Error('Google did not return a sign-in token. Please try again.');
+      await loginWithGoogle(idToken);
+      localStorage.removeItem('last_login_identifier');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (!/cancel/i.test(msg)) setError(msg || 'Google login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAppleLogin = async () => {
     setError('');
@@ -216,11 +248,11 @@ export default function LoginPage({ isAddUserMode }: Props) {
               onClick={handleAppleLogin}
             />
           )}
-          {GOOGLE_CLIENT_ID && (
+          {GOOGLE_AVAILABLE && (
             <OptionButton
               icon={<GoogleIcon />}
               label="Login with Google"
-              onClick={() => setLoginMode('google')}
+              onClick={NATIVE_GOOGLE ? handleNativeGoogleLogin : () => setLoginMode('google')}
             />
           )}
           <OptionButton

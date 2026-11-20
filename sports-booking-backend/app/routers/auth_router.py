@@ -78,6 +78,8 @@ class AppleAuthRequest(BaseModel):
 
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+# ID tokens from the phone apps' native Google sign-in may carry the iOS client ID as audience.
+GOOGLE_AUDIENCES = [a for a in [GOOGLE_CLIENT_ID, *os.environ.get("GOOGLE_IOS_CLIENT_ID", "").split(",")] if a.strip()]
 # Audiences accepted for Sign in with Apple: the iOS bundle id (native) and optional web Services ID.
 APPLE_CLIENT_IDS = [c for c in os.environ.get("APPLE_CLIENT_IDS", "com.elitedev.turfbooking").split(",") if c]
 _apple_jwks = PyJWKClient("https://appleid.apple.com/auth/keys", cache_keys=True)
@@ -385,7 +387,7 @@ async def google_auth(req: GoogleAuthRequest, db: aiosqlite.Connection = Depends
 
     try:
         idinfo = google_id_token.verify_oauth2_token(
-            req.id_token, google_requests.Request(), GOOGLE_CLIENT_ID
+            req.id_token, google_requests.Request(), GOOGLE_AUDIENCES
         )
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid Google ID token")

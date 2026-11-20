@@ -4,6 +4,10 @@ primary_region = "sin"
 [build]
   dockerfile = "Dockerfile"
 
+# Public Google sign-in (Web) client ID baked into the website build.
+[build.args]
+  GOOGLE_CLIENT_ID = "350882320724-2u90hmstt78qqd4jse0b5m0kg7ksngi9.apps.googleusercontent.com"
+
 [env]
   DATABASE_PATH = "/data/app.db"
   UPLOAD_DIR = "/data/uploads"

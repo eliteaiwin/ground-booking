@@ -10,6 +10,11 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
+    // Native Google sign-in (Google blocks its web sign-in page inside apps). Apple uses its own plugin.
+    SocialLogin: {
+      providers: { google: true, facebook: false, apple: false, twitter: false },
+      logLevel: 1,
+    },
     FirebaseMessaging: {
       presentationOptions: ['alert', 'badge', 'sound'],
     },
