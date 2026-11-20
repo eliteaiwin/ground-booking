@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AppLogo from '../components/AppLogo';
 import { SportTile } from '@/components/SportTile';
 import { maskedPhoneText } from '@/lib/player';
 import { formatPhone } from '@/lib/phone';
@@ -228,7 +229,7 @@ export default function Dashboard({ onNavigate }: Props) {
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            <button type="button" aria-label="About" data-testid="about-logo" className="text-2xl" onClick={() => setShowAbout(true)}>&#127967;</button>
+            <button type="button" aria-label="About" data-testid="about-logo" onClick={() => setShowAbout(true)}><AppLogo size={36} /></button>
             <div className="flex flex-col leading-tight min-w-0">
               <h1 className="text-lg font-bold whitespace-nowrap"><span className="text-red-600">Elite</span> Turf Booking</h1>
               {who?.user && (

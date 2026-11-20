@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.65', date: '2026-11-20', changes: [
+    'Header logo is now the app icon with a football, instead of the stadium',
+  ] },
   { version: '1.64', date: '2026-11-20', changes: [
     'Under 80% of expected players: moderators are warned 4 and 3 hours before, and the game is auto-cancelled at start unless they lower the expected count',
     'Header: title on one line, bell above the user icon; football icon only for soccer, spinning ball while loading',

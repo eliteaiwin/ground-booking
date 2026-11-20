@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AppLogo from '../components/AppLogo';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -159,9 +160,7 @@ export default function RegisterPage({ onSwitchToLogin }: Props) {
           <X size={20} />
         </button>
         <CardHeader className="text-center pb-3">
-          <div className="mx-auto mb-3 w-14 h-14 bg-green-600 rounded-full flex items-center justify-center">
-            <span className="text-white text-xl">&#127967;</span>
-          </div>
+          <div className="mx-auto mb-3 w-14 h-14"><AppLogo size={56} /></div>
           <CardTitle className="text-2xl font-bold"><span className="text-red-600">Elite</span> Turf Booking</CardTitle>
           <p className="text-gray-500 mt-1">Create your account</p>
         </CardHeader>
