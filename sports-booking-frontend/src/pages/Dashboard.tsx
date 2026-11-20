@@ -244,11 +244,12 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="flex flex-col items-center shrink-0" data-testid="header-icons">
             <button
               onClick={() => setActiveTab('notifications')}
-              className="relative p-1.5 rounded-full hover:opacity-80"
+              className="relative flex items-center gap-1 p-1.5 rounded-full hover:opacity-80"
             >
-              <Bell size={20} />
+              <Bell size={22} />
+              <span className="w-[14px]" aria-hidden />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                <span className="absolute -top-1 right-3 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                   {unreadCount}
                 </span>
               )}
