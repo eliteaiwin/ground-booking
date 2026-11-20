@@ -227,19 +227,19 @@ export default function Dashboard({ onNavigate }: Props) {
         tabs={[{ key: 'install', label: 'Install app', text: installMessage(appLinks, inviteUrl(user?.id)), qrUrl: inviteUrl(user?.id) }]} />}
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <button type="button" aria-label="About" data-testid="about-logo" className="text-2xl" onClick={() => setShowAbout(true)}>&#127967;</button>
-            <div className="flex flex-col items-end leading-tight">
+            <div className="flex flex-col leading-tight min-w-0">
               <h1 className="text-lg font-bold whitespace-nowrap"><span className="text-red-600">Elite</span> Turf Booking</h1>
+              {who?.user && (
+                <div className="text-[11px] opacity-90 truncate" data-testid="header-who">
+                  <span className="font-semibold">{who.user.name.split(' ')[0]} ({who.user.role})</span>
+                  {who.impersonator && <span> by {who.impersonator.name.split(' ')[0]} ({who.impersonator.role})</span>}
+                </div>
+              )}
               <WhatsNew />
             </div>
           </div>
-          {who?.user && (
-            <div className="text-[11px] leading-tight text-right opacity-90 truncate max-w-[40%]" data-testid="header-who">
-              <div className="font-semibold truncate">{who.user.name.split(' ')[0]} ({who.user.role})</div>
-              {who.impersonator && <div className="truncate">by {who.impersonator.name.split(' ')[0]} ({who.impersonator.role})</div>}
-            </div>
-          )}
           <div className="flex flex-col items-center shrink-0" data-testid="header-icons">
             <button
               onClick={() => setActiveTab('notifications')}
