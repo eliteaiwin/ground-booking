@@ -2111,12 +2111,17 @@ async def send_tentative_reminders(db: aiosqlite.Connection) -> int:
     return sent
 
 
+def _below_min_turnout(joined: int, expected: int) -> bool:
+    return expected > 0 and joined < math.ceil(expected * 0.8)
+
+
 async def send_low_turnout_alerts(db: aiosqlite.Connection) -> int:
-    """About 3 hours before a game, ask its moderators to go ahead or cancel if under 80% of the players have joined."""
+    """4 and 3 hours before a game under 80% of its expected players, warn its moderators that it will be
+    auto-cancelled at start time unless they lower the expected count."""
     now = _local_now()
     rows = await (await db.execute(
         """SELECT g.*, (SELECT COUNT(*) FROM game_players gp WHERE gp.game_id = g.id AND gp.status = 'selected') AS joined
-           FROM games g WHERE g.status = 'voting_open' AND g.low_turnout_alerted = 0 AND g.ground_cost > 0"""
+           FROM games g WHERE g.status = 'voting_open' AND g.low_turnout_alerted < 2"""
     )).fetchall()
     sent = 0
     for g in rows:
@@ -2124,10 +2129,11 @@ async def send_low_turnout_alerts(db: aiosqlite.Connection) -> int:
             start = datetime.strptime(f"{g['game_date']} {g['game_time']}", "%Y-%m-%d %H:%M")
         except (TypeError, ValueError):
             continue
-        if not (start - timedelta(hours=3) <= now < start):
+        stage = 2 if now >= start - timedelta(hours=3) else 1 if now >= start - timedelta(hours=4) else 0
+        if now >= start or stage <= g["low_turnout_alerted"]:
             continue
         n, mx = g["joined"], g["max_players"]
-        if n <= 0 or mx <= 0 or n >= math.ceil(mx * 0.8):
+        if mx <= 0 or not _below_min_turnout(n, mx):
             continue
         cur = await ground_currency(db, g["ground_name"])
         each = lambda c: format_money(math.ceil(g["ground_cost"] / c - 0.001), cur)
@@ -2139,10 +2145,13 @@ async def send_low_turnout_alerts(db: aiosqlite.Connection) -> int:
         for uid in mods:
             await create_notification(
                 db, uid, g["id"], "low_turnout",
-                f"{g['title']} at {start.strftime('%-I:%M %p')} is near and only {n} of {mx} players have joined. "
-                f"Do you want to go ahead (each player pays {each(n)} instead of {each(mx)}) or cancel the game? Open game"
+                f"{g['title'] or 'Your game'} at {start.strftime('%-I:%M %p')}: only {n} of {mx} players have joined. "
+                f"It will be auto-cancelled at start time because it is under 80%. To keep it, reduce Expected players "
+                f"to {math.floor(n / 0.8)} or fewer"
+                + (f" (each player then pays {each(n)} instead of {each(mx)})" if n and g["ground_cost"] else "")
+                + ". Open game"
             )
-        await db.execute("UPDATE games SET low_turnout_alerted = 1 WHERE id = ?", (g["id"],))
+        await db.execute("UPDATE games SET low_turnout_alerted = ? WHERE id = ?", (stage, g["id"]))
         sent += 1
     if sent:
         await db.commit()
@@ -2729,6 +2738,18 @@ async def _auto_progress_games(db: aiosqlite.Connection):
             continue
         end = _game_end(g)
         try:
+            if g["status"] == "voting_open" and now >= start and now < start + timedelta(hours=1):
+                joined = (await (await db.execute(
+                    "SELECT COUNT(*) AS n FROM game_players WHERE game_id = ? AND status = 'selected'", (g["id"],)
+                )).fetchone())["n"]
+                if _below_min_turnout(joined, g["max_players"]):
+                    try:
+                        await cancel_game(g["id"], CancelGameRequest(
+                            reason=f"Auto-cancelled: only {joined} of {g['max_players']} expected players joined (under 80%)"
+                        ), g["created_by"], db)
+                        continue
+                    except HTTPException:
+                        await db.rollback()
             if g["status"] == "voting_open" and now >= start:
                 await _start_game(db, g)
                 g = await _get_game(db, g["id"])

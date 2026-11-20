@@ -45,6 +45,8 @@ async def _reminder_loop():
                 await games_router.send_tentative_reminders(db)
                 await games_router.send_low_turnout_alerts(db)
                 await games_router.send_tentative_moderator_alerts(db)
+                await games_router._auto_progress_games(db)
+                await db.commit()
         except Exception:
             logging.exception("tentative reminder loop failed")
         await asyncio.sleep(300)
