@@ -2,6 +2,9 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.62', date: '2026-11-20', changes: [
+    'iPhone: header no longer slides under the notch when the app is opened from a notification or after being in the background',
+  ] },
   { version: '1.61', date: '2026-11-18', changes: [
     'Payment reminders wait 24 hours (Moderator Preferences) after the "Game completed, please pay" message or the last reminder',
   ] },
