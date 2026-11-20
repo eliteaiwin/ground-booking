@@ -231,14 +231,13 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="flex items-center gap-2 min-w-0">
             <button type="button" aria-label="About" data-testid="about-logo" onClick={() => setShowAbout(true)}><AppLogo size={36} /></button>
             <div className="flex flex-col leading-tight min-w-0">
-              <h1 className="text-lg font-bold whitespace-nowrap"><span className="text-red-600">Elite</span> Turf Booking</h1>
+              <h1 className="text-lg font-bold whitespace-nowrap"><span className="text-red-600">Elite</span> Turf Booking<sup className="ml-0.5 align-super"><WhatsNew /></sup></h1>
               {who?.user && (
                 <div className="text-[11px] opacity-90 truncate" data-testid="header-who">
                   <span className="font-semibold">{who.user.name.split(' ')[0]} ({who.user.role})</span>
                   {who.impersonator && <span> by {who.impersonator.name.split(' ')[0]} ({who.impersonator.role})</span>}
                 </div>
               )}
-              <WhatsNew />
             </div>
           </div>
           <div className="flex flex-col items-center shrink-0" data-testid="header-icons">

@@ -6,8 +6,8 @@ export function WhatsNew() {
   return (
     <>
       <button type="button" data-testid="app-version" onClick={() => setOpen(true)}
-        className="text-[9px] leading-none opacity-80 hover:opacity-100 underline-offset-2 hover:underline">
-        Ver {APP_VERSION}
+        className="text-[8px] leading-none font-normal opacity-80 hover:opacity-100 underline-offset-2 hover:underline">
+        V {APP_VERSION}
       </button>
       {open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={() => setOpen(false)}>
