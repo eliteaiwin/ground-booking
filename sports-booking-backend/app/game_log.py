@@ -40,6 +40,11 @@ async def log_event(db: aiosqlite.Connection, game_id: int, kind: str, user_id: 
                     at_local: Optional[datetime] = None):
     """Record a game event. `at_local` (games' local time) caps the time, e.g. a game auto-completed
     when someone next opens the app is logged at its scheduled end."""
+    from .request_context import impersonator_id
+    imp = impersonator_id.get()
+    if imp and actor_id and actor_id != imp:
+        # Done while impersonating: the real person is the actor ("Amit adds Rohit to the game").
+        actor_id = imp
     now = datetime.now(timezone.utc)
     at = now
     if at_local is not None:

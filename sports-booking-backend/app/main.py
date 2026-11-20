@@ -16,7 +16,7 @@ from .database import init_db, DATABASE_PATH
 from .request_context import active_role
 from .user_merge import merge_duplicate_phone_users
 from .routers.users_router import ensure_super_admin_roles
-from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router, receivers_router
+from .routers import auth_router, users_router, games_router, payments_router, notifications_router, preferences_router, locations_router, discussion_router, allotments_router, gateway_router, receivers_router, impersonation_router
 
 # Optional: path to a pre-built frontend dist folder to serve as static files.
 # When set, the backend serves the SPA on all non-/api routes (same-origin, no CORS issues).
@@ -68,6 +68,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router)
+app.include_router(impersonation_router.router)
 app.include_router(users_router.router)
 app.include_router(games_router.router)
 app.include_router(payments_router.router)

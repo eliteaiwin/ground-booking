@@ -514,6 +514,21 @@ async def init_db():
         "ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN sports TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE notifications ADD COLUMN ref_id INTEGER",
+        """CREATE TABLE IF NOT EXISTS impersonation_grants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            target_user_id INTEGER NOT NULL,
+            granted_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, target_user_id)
+        )""",
+        """CREATE TABLE IF NOT EXISTS impersonation_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            impersonator_id INTEGER NOT NULL,
+            target_user_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            revoked_at TIMESTAMP
+        )""",
         "ALTER TABLE users ADD COLUMN locations TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN sport_positions TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN google_id TEXT",
