@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.63', date: '2026-11-20', changes: [
+    'Impersonate User (menu): act as a friend to nominate them; Admins/Moderators choose who each player may impersonate',
+    'Header shows your name and role, and who is impersonating',
+    'Profile: see who has impersonated you and log them off',
+  ] },
   { version: '1.62', date: '2026-11-20', changes: [
     'iPhone: header no longer slides under the notch when the app is opened from a notification or after being in the background',
     'Login with Google now uses the phone\'s own Google sign-in (Google blocks its web page inside apps); website Google button restored',

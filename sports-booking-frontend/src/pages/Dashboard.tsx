@@ -14,6 +14,8 @@ import { WhatsNew } from '@/components/WhatsNew';
 import { AboutDialog } from '@/components/AboutDialog';
 import { ShareDialog } from '@/components/InviteDialog';
 import { inviteUrl, installMessage, type AppLinks } from '@/lib/invite';
+import ImpersonateDialog from '../components/ImpersonateDialog';
+import { impersonatedAccounts, impersonationOwner, switchToImpersonated, backToOwner, type ImpUser } from '../lib/impersonation';
 import { formatMoney, currencySymbol } from '@/lib/currency';
 
 interface Game {
@@ -125,7 +127,7 @@ interface ReceiverGame {
 }
 
 export default function Dashboard({ onNavigate }: Props) {
-  const { user, logout, isAdmin, isModerator, isGroundManagement, isReceiver, isReadOnly, isGroundAdmin, activeRole, switchRole, storedAccounts, switchAccount, setIsAddingAccount } = useAuth();
+  const { user, logout, isAdmin, isModerator, isGroundManagement, isReceiver, isReadOnly, isGroundAdmin, activeRole, switchRole, storedAccounts, switchAccount } = useAuth();
   const { activeTheme } = useTheme();
   const [games, setGames] = useState<Game[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -144,6 +146,12 @@ export default function Dashboard({ onNavigate }: Props) {
     if (isReceiver) api.myReceiverGames().then(setReceiverGames).catch(() => setReceiverGames([]));
   }, [isReceiver]);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
+  const [showImpersonate, setShowImpersonate] = useState(false);
+  const [showImpMenu, setShowImpMenu] = useState(false);
+  const [who, setWho] = useState<{ user: ImpUser | null; impersonator: ImpUser | null } | null>(null);
+  useEffect(() => { api.impersonationWhoami().then(setWho).catch(() => {}); }, [user?.id]);
+  const impAccounts = impersonatedAccounts();
+  const impOwner = impersonationOwner();
   const [showSwitchRole, setShowSwitchRole] = useState(false);
 
   const currency = currencySymbol(user?.currency);
@@ -214,6 +222,7 @@ export default function Dashboard({ onNavigate }: Props) {
   return (
     <div className="min-h-screen bg-gray-50">
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
+      {showImpersonate && <ImpersonateDialog onClose={() => setShowImpersonate(false)} />}
       {showRefer && <ShareDialog title="Refer a friend" onClose={() => setShowRefer(false)}
         tabs={[{ key: 'install', label: 'Install app', text: installMessage(appLinks, inviteUrl(user?.id)), qrUrl: inviteUrl(user?.id) }]} />}
       <header className="text-white shadow-lg" style={{ backgroundColor: activeTheme.header_bg }}>
@@ -225,6 +234,12 @@ export default function Dashboard({ onNavigate }: Props) {
               <WhatsNew />
             </div>
           </div>
+          {who?.user && (
+            <div className="text-[11px] leading-tight text-right opacity-90 truncate max-w-[40%]" data-testid="header-who">
+              <div className="font-semibold truncate">{who.user.name.split(' ')[0]} ({who.user.role})</div>
+              {who.impersonator && <div className="truncate">by {who.impersonator.name.split(' ')[0]} ({who.impersonator.role})</div>}
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTab('notifications')}
@@ -357,16 +372,48 @@ export default function Dashboard({ onNavigate }: Props) {
                         </div>
                       )}
 
-                      <button
-                        onClick={() => {
-                          setShowUserMenu(false);
-                          setIsAddingAccount(true);
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <UserPlus size={16} className="text-gray-400" />
-                        Add User
-                      </button>
+                      {impAccounts.length === 0 ? (
+                        <button
+                          onClick={() => { setShowUserMenu(false); setShowImpersonate(true); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          data-testid="menu-impersonate"
+                        >
+                          <UserPlus size={16} className="text-gray-400" />
+                          Impersonate User
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setShowImpMenu(o => !o)}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                            data-testid="menu-switch-user"
+                          >
+                            <ArrowRightLeft size={16} className="text-gray-400" />
+                            Switch User
+                            <ChevronDown size={14} className={`ml-auto text-gray-400 transition-transform ${showImpMenu ? 'rotate-180' : ''}`} />
+                          </button>
+                          {showImpMenu && (
+                            <div className="bg-gray-50 border-y">
+                              <button onClick={() => { setShowUserMenu(false); setShowImpersonate(true); }}
+                                className="w-full flex items-center gap-3 px-6 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <UserPlus size={14} className="text-gray-400" /> Impersonate new User
+                              </button>
+                              {impOwner && (
+                                <button onClick={backToOwner} disabled={!who?.impersonator}
+                                  className="w-full flex items-center gap-3 px-6 py-2 text-sm hover:bg-gray-100 text-gray-700">
+                                  {impOwner.name} ({impOwner.role}){!who?.impersonator && <span className="ml-auto text-xs text-green-700">(You, active)</span>}
+                                </button>
+                              )}
+                              {impAccounts.map(a => (
+                                <button key={a.id} onClick={() => switchToImpersonated(a.id)} disabled={who?.user?.id === a.id}
+                                  className="w-full flex items-center gap-3 px-6 py-2 text-sm hover:bg-gray-100 text-gray-700">
+                                  {a.name} ({a.role}){who?.user?.id === a.id && <span className="ml-auto text-xs text-green-700">(Active)</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
 
                       <button
                         onClick={() => { setShowUserMenu(false); setShowRefer(true); }}

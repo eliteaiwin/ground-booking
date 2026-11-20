@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { ImageCropDialog } from '../components/ImageCropDialog';
 import PaymentHistory from '../components/PaymentHistory';
+import ImpersonatedBy from '../components/ImpersonatedBy';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -805,6 +806,8 @@ export default function ProfilePage({ onBack }: Props) {
             )}
           </CardContent>
         </Card>
+
+        <ImpersonatedBy />
 
         {/* Delete Account */}
         <Card className="border-red-200">

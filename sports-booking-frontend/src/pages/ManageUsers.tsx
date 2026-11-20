@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import ImpersonationGrants from '../components/ImpersonationGrants';
 import { ArrowLeft, Shield, Users, Search, Edit2, Key, X, Plus, Trash2, Lock, Ban, CheckCircle, Upload } from 'lucide-react';
 
 interface GroundItem {
@@ -670,6 +671,7 @@ export default function ManageUsers({ onBack }: Props) {
                   <p className="text-xs text-red-500 mt-1">Admin role is protected for this account</p>
                 )}
               </div>
+              <ImpersonationGrants userId={editUser.id} />
               {editError && <p className="text-red-500 text-sm">{editError}</p>}
               <div className="flex gap-2">
                 <Button onClick={saveEdit} disabled={editLoading} className="flex-1">

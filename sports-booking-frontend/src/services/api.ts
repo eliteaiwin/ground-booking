@@ -396,6 +396,17 @@ export const api = {
   settlePaymentOffline: (userId: number, gameId: number, comment = '') =>
     request(`/api/payments/history/${userId}/settle`, { method: 'POST', body: JSON.stringify({ game_id: gameId, comment }) }),
 
+  impersonationWhoami: () => request('/api/impersonation/whoami'),
+  impersonationTargets: (search: string) => request(`/api/impersonation/targets?search=${encodeURIComponent(search)}`),
+  startImpersonation: (targetUserId: number) =>
+    request('/api/impersonation/start', { method: 'POST', body: JSON.stringify({ target_user_id: targetUserId }) }),
+  impersonationSessions: () => request('/api/impersonation/sessions'),
+  revokeImpersonation: (sessionId: number) => request(`/api/impersonation/sessions/${sessionId}/revoke`, { method: 'POST' }),
+  impersonationGrants: (userId: number) => request(`/api/impersonation/grants/${userId}`),
+  addImpersonationGrant: (userId: number, targetUserId: number) =>
+    request(`/api/impersonation/grants/${userId}`, { method: 'POST', body: JSON.stringify({ target_user_id: targetUserId }) }),
+  removeImpersonationGrant: (userId: number, targetUserId: number) =>
+    request(`/api/impersonation/grants/${userId}/${targetUserId}`, { method: 'DELETE' }),
   remindPayment: (userId: number, gameId: number) =>
     request(`/api/payments/history/${userId}/remind`, { method: 'POST', body: JSON.stringify({ game_id: gameId }) }),
 
