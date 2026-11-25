@@ -2,6 +2,11 @@
 export interface Release { version: string; date: string; changes: string[] }
 
 export const CHANGELOG: Release[] = [
+  { version: '1.66', date: '2026-11-25', changes: [
+    'A draft whose time is over now shows Confirm Game (it was played), Cancel Game and Delete Game, so it never stays stuck',
+    'Notifications always name the game and its date, e.g. Payment confirmed for Sunday Game (Sun 22-Nov); no more blank names or Pay to ()',
+    'Mark as Paid takes a screenshot, a comment (e.g. Paid to Sri), or both; View payment details shows whichever was given',
+  ] },
   { version: '1.65', date: '2026-11-20', changes: [
     'Header logo is now the app icon with a football, instead of the stadium',
   ] },

@@ -11,6 +11,7 @@ from ..auth import get_current_user_id
 from ..currency import ground_currency
 from ..database import get_db
 from ..game_log import log_event
+from ..game_names import game_label
 
 router = APIRouter(prefix="/api/receivers", tags=["receivers"])
 
@@ -325,7 +326,7 @@ async def confirm_received(game_id: int, player_id: int, req: ReceivedRequest,
             "UPDATE payments SET received_amount = paid_amount, received_at = ?, received_by = ? WHERE game_id = ? AND user_id = ?",
             (now, user_id, game_id, player_id)
         )
-        msg = f"{nick} confirmed it received your {amount} for {game['title']} ({game['game_date']})."
+        msg = f"{nick} confirmed it received your {amount} for {game_label(game)}."
         notify = {player_id}
     else:
         await db.execute(
@@ -334,7 +335,7 @@ async def confirm_received(game_id: int, player_id: int, req: ReceivedRequest,
             (game_id, player_id)
         )
         await db.execute("UPDATE game_players SET payment_confirmed = 0 WHERE game_id = ? AND user_id = ?", (game_id, player_id))
-        msg = f"{nick} has not received your {amount} for {game['title']} ({game['game_date']}). Please check and pay again."
+        msg = f"{nick} has not received your {amount} for {game_label(game)}. Please check and pay again."
         notify = {player_id, game["created_by"]} - {None, user_id}
     await log_event(db, game_id, "received" if req.received else "not_received", user_id=player_id,
                     actor_id=user_id, amount=pay["paid_amount"], note=game["nick_name"] or "")

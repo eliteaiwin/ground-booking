@@ -14,6 +14,7 @@ from ..auth import get_current_user_id
 from ..database import get_db, get_app_setting
 from ..currency import ground_currency
 from ..game_log import log_event
+from ..game_names import game_label
 from .games_router import online_breakdown, payment_fee_settings, _admit_paid_pay_first_player, PAY_FIRST_STATUS
 
 router = APIRouter(prefix="/api/payments", tags=["payment-gateway"])
@@ -294,10 +295,10 @@ async def _confirm_order(db: aiosqlite.Connection, row: aiosqlite.Row, cf_paymen
             )
             await _admit_paid_pay_first_player(db, row["game_id"], row["user_id"])
             game = await (await db.execute(
-                "SELECT title, payee_user_id, created_by FROM games WHERE id = ?", (row["game_id"],)
+                "SELECT * FROM games WHERE id = ?", (row["game_id"],)
             )).fetchone()
             payer = await (await db.execute("SELECT name FROM users WHERE id = ?", (row["user_id"],))).fetchone()
-            title = game["title"] if game else "the game"
+            title = game_label(game) if game else "the game"
             await db.execute(
                 "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_confirmed', ?)",
                 (row["user_id"], row["game_id"], f"Payment of Rs {row['order_amount']:.2f} received for {title}."),

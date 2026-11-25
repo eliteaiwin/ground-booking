@@ -13,6 +13,7 @@ from ..auth import get_current_user_id
 from ..currency import ground_currency
 from .receivers_router import is_game_receiver, receiver_owner
 from ..game_log import log_event
+from ..game_names import game_label
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -87,9 +88,9 @@ async def record_payment(
     )
 
     # Notify user of payment confirmation
-    cursor = await db.execute("SELECT title FROM games WHERE id = ?", (req.game_id,))
+    cursor = await db.execute("SELECT * FROM games WHERE id = ?", (req.game_id,))
     game = await cursor.fetchone()
-    game_title = game["title"] if game else "Unknown"
+    game_title = game_label(game) if game else "the game"
 
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_confirmed', ?)",
@@ -120,18 +121,24 @@ def _money(currency: str, amount: float) -> str:
 @router.post("/pay-with-proof")
 async def record_payment_with_proof(
     game_id: int = Form(...),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    comment: str = Form(""),
     user_id: int = Depends(get_current_user_id),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    """Settle Offline: the player marks their share as paid and attaches a payment screenshot."""
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=400, detail="Please upload a screenshot image of the payment")
-    content = await file.read(PROOF_MAX_BYTES + 1)
-    if len(content) > PROOF_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="Screenshot too large. Max size: 10MB")
-    if not content:
-        raise HTTPException(status_code=400, detail="The screenshot is empty")
+    """Settle Offline: the player marks their share as paid with a payment screenshot, a comment, or both."""
+    comment = comment.strip()[:300]
+    content = b""
+    if file is not None and file.filename:
+        if not (file.content_type or "").startswith("image/"):
+            raise HTTPException(status_code=400, detail="Please upload a screenshot image of the payment")
+        content = await file.read(PROOF_MAX_BYTES + 1)
+        if len(content) > PROOF_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="Screenshot too large. Max size: 10MB")
+        if not content:
+            raise HTTPException(status_code=400, detail="The screenshot is empty")
+    if not content and not comment:
+        raise HTTPException(status_code=400, detail="Add a payment screenshot or a comment (e.g. Paid to Sri)")
     pay = await (await db.execute(
         "SELECT amount, paid_amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, user_id)
     )).fetchone()
@@ -143,16 +150,20 @@ async def record_payment_with_proof(
         if e.detail != "Already paid":
             raise
 
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in (".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif"):
-        ext = ".jpg"
-    name = f"proof_{uuid.uuid4().hex}{ext}"
-    with open(os.path.join(PROOF_DIR, name), "wb") as f:
-        f.write(content)
-    await db.execute("UPDATE payments SET proof_file = ? WHERE game_id = ? AND user_id = ?", (name, game_id, user_id))
+    if content:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        if ext not in (".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif"):
+            ext = ".jpg"
+        name = f"proof_{uuid.uuid4().hex}{ext}"
+        with open(os.path.join(PROOF_DIR, name), "wb") as f:
+            f.write(content)
+        await db.execute("UPDATE payments SET proof_file = ? WHERE game_id = ? AND user_id = ?", (name, game_id, user_id))
+    if comment:
+        await db.execute("UPDATE payments SET proof_note = ? WHERE game_id = ? AND user_id = ?", (comment, game_id, user_id))
+    event_note = " + ".join(filter(None, ["screenshot" if content else "", comment]))
     await db.execute(
-        "UPDATE game_events SET note = 'screenshot' WHERE id = (SELECT MAX(id) FROM game_events "
-        "WHERE game_id = ? AND user_id = ? AND kind = 'paid')", (game_id, user_id)
+        "UPDATE game_events SET note = ? WHERE id = (SELECT MAX(id) FROM game_events "
+        "WHERE game_id = ? AND user_id = ? AND kind = 'paid')", (event_note, game_id, user_id)
     )
 
     game = await (await db.execute(
@@ -164,15 +175,16 @@ async def record_payment_with_proof(
             row = await (await db.execute("SELECT amount FROM payments WHERE game_id = ? AND user_id = ?", (game_id, user_id))).fetchone()
             owed = row["amount"] if row else game["cost_per_person"]
         amount = _money(await ground_currency(db, game["ground_name"]), owed)
-        message = (f"{payer['name'] if payer else 'A player'} marked {amount} as paid for {game['title']} "
-                   f"({_short_date(game['game_date'])}) and uploaded a payment screenshot.")
+        message = (f"{payer['name'] if payer else 'A player'} marked {amount} as paid for {game_label(game)}"
+                   + (" and uploaded a payment screenshot" if content else "")
+                   + (f". Comment: {comment}" if comment else ".") )
         for mod_id in {game["created_by"], game["payee_user_id"], await receiver_owner(db, game["receiver_id"])} - {None, user_id}:
             await db.execute(
                 "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_proof', ?)",
                 (mod_id, game_id, message)
             )
     await db.commit()
-    return {"message": "Marked as paid. The moderator has been told and can see your screenshot."}
+    return {"message": "Marked as paid. The moderator has been told and can see your payment details."}
 
 
 @router.get("/proof/{game_id}/{player_id}")
@@ -466,7 +478,7 @@ async def mark_paid_with_comment(
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_confirmed', ?)",
         (req.user_id, req.game_id,
-         f"Your payment for {game['title']} has been marked as paid by {mod_name}.{comment_text}")
+         f"Your payment for {game_label(game)} has been marked as paid by {mod_name}.{comment_text}")
     )
 
     # Notify all moderators of this game
@@ -480,7 +492,7 @@ async def mark_paid_with_comment(
         await db.execute(
             "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'settlement_update', ?)",
             (m["user_id"], req.game_id,
-             f"{mod_name} marked {target_name}'s payment for {game['title']} as paid.{comment_text}")
+             f"{mod_name} marked {target_name}'s payment for {game_label(game)} as paid.{comment_text}")
         )
 
     await db.commit()
@@ -706,7 +718,7 @@ async def settle_offline(
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_confirmed', ?)",
         (player_id, req.game_id,
-         f"{mod['name'] if mod else 'Moderator'} confirmed your {what} for {game['title']} ({game['game_date']}) was settled offline.")
+         f"{mod['name'] if mod else 'Moderator'} confirmed your {what} for {game_label(game)} was settled offline.")
     )
     await db.commit()
     return {"message": f"Settled {what}"}
@@ -733,7 +745,7 @@ async def remind_payment(
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_reminder', ?)",
         (player_id, req.game_id,
-         f"Reminder: please pay {due:.0f} for {game['title']} on {game['game_date']}.")
+         f"Reminder: please pay {due:.0f} for {game_label(game)}.")
     )
     nick = await (await db.execute(
         """SELECT r.nick_name FROM games g JOIN payment_receivers r ON r.id = g.receiver_id

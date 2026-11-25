@@ -100,11 +100,16 @@ async def _cleanup_notifications(db: aiosqlite.Connection, user_id: int):
 
 
 def _tidy_message(message: str, label: str, decimals: bool) -> str:
-    """Fix older notifications: blank game names, empty payee "()", and decimal amounts."""
-    msg = message.replace(" Pay to ()", "").replace(" Please pay to ().", "")
-    msg = msg.replace(" for . ", f" for {label}. ").replace(" for  at ", " at ")
-    if msg.endswith(" for ."):
-        msg = msg[:-2] + f" {label}."
+    """Fix older notifications: blank or dateless game names, empty payee "()", and decimal amounts."""
+    msg = re.sub(r"\s*(?:Please )?[Pp]ay to\s*\(\)\.?", "", message)
+    msg = msg.replace(" for  at ", " at ")
+    msg = re.sub(r"^Payment confirmed for (.*?)!$", lambda m: f"Payment confirmed for {label}!", msg)
+    msg = re.sub(r"^Your payment for (.*?) has been confirmed by the moderator\.$",
+                 lambda m: f"Your payment for {label} has been confirmed by the moderator.", msg)
+    msg = re.sub(r"^You were added to (.*?) as a player\.", lambda m: f"You were added as a player to {label}.", msg)
+    msg = re.sub(r"\b(for|to|from) +(?=[.!?])", lambda m: f"{m.group(1)} {label}", msg)
+    msg = re.sub(r"\b(for|to|from) {2,}", lambda m: f"{m.group(1)} {label} ", msg)
+    msg = re.sub(r"^Game '' ", "Game ", msg)
     if not decimals:
         msg = re.sub(r"\b(\d+)\.(\d+)\b", lambda m: str(int(math.ceil(float(m.group(0)) - 0.001))), msg)
     return msg

@@ -252,10 +252,10 @@ function PaymentIcon({ pd, share, confirmed, due, currency, onSettle, onViewProo
                 onClick={(e) => { e.stopPropagation(); setTip(false); onReceived(false); }}>Not received</button>
             </span>
           )}
-          {pd?.has_proof && onViewProof && (
+          {(pd?.has_proof || !!pd?.proof_note) && onViewProof && (
             <button type="button" className="block mt-1 underline font-medium text-green-300" data-testid="view-proof"
               onClick={(e) => { e.stopPropagation(); setTip(false); onViewProof(); }}>
-              View payment screenshot
+              View payment details
             </button>
           )}
           {excess > 0 && onSettle && (
@@ -322,6 +322,7 @@ interface PaymentDetail {
   paid_by_name?: string;
   paid_via?: string;
   has_proof?: boolean;
+  proof_note?: string;
   received_amount?: number;
   received_by_name?: string;
   refund_due?: boolean;
@@ -503,6 +504,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
   const [proofGameOpen, setProofGameOpen] = useState(false);
   const [payPreview, setPayPreview] = useState<FeeBreakdown | null>(null);
   const [proofUrl, setProofUrl] = useState('');
+  const [proofNote, setProofNote] = useState('');
   const [showShare, setShowShare] = useState(false);
   const [appLinks, setAppLinks] = useState<AppLinks | null>(null);
   const [showRemind, setShowRemind] = useState(false);
@@ -1381,6 +1383,35 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
             </div>
           )}
 
+          {(isModerator || isAdmin) && game.status === 'draft' && gameIsOver && (
+            <div className="space-y-2" data-testid="draft-over">
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-md text-sm">
+                This draft was never opened for nomination and its time is over. Was it played?
+              </div>
+              <Button className="w-full bg-green-600 hover:bg-green-700" data-testid="confirm-played"
+                disabled={!!actionLoading}
+                onClick={() => window.confirm('Mark this game as played by the confirmed players? Their payments will open.') &&
+                  handleAction('confirm-played', () => api.confirmPlayed(game.id))}>
+                {actionLoading === 'confirm-played' ? 'Confirming...' : 'Confirm Game (it was played)'}
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="border-red-300 text-red-600" data-testid="cancel-draft"
+                  disabled={!!actionLoading}
+                  onClick={() => window.confirm('Cancel this game? Players will be told it did not happen.') &&
+                    handleAction('cancel-draft', () => api.cancelGame(game.id, 'Not played'))}>
+                  {actionLoading === 'cancel-draft' ? 'Cancelling...' : 'Cancel Game'}
+                </Button>
+                {canDeleteGame && (
+                  <Button variant="outline" className="border-red-300 text-red-600" data-testid="delete-draft"
+                    disabled={!!actionLoading}
+                    onClick={() => window.confirm('Delete this game permanently?') && handleDelete()}>
+                    {actionLoading === 'delete' ? 'Deleting...' : 'Delete Game'}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {isReadOnly && game.status === 'voting_open' && (
             <Card className="border-gray-200 bg-gray-50">
               <CardContent className="p-3 text-center text-sm text-gray-500">
@@ -1898,7 +1929,7 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
           amount={formatMoney(myPaidSoFar > 0 ? dueAmount(myPendingAmount) : perPerson.toFixed(0), currency)}
           payee={game.payee?.name} onClose={() => setProofGameOpen(false)}
           onDone={() => handleAction('pay', async () => {})} />
-        <ProofViewer url={proofUrl} onClose={() => { URL.revokeObjectURL(proofUrl); setProofUrl(''); }} />
+        <ProofViewer url={proofUrl} note={proofNote} onClose={() => { if (proofUrl) URL.revokeObjectURL(proofUrl); setProofUrl(''); setProofNote(''); }} />
 
         {canCreateTeams && game.teams.length === 0 && (
           <Card className="border-blue-200 bg-blue-50">
@@ -2231,7 +2262,11 @@ export default function GameDetail({ gameId, onBack, openTab = '', onOpenGame }:
                                 }
                               } : undefined}
                               onViewProof={(isModerator || isAdmin || game.is_receiver || player.user_id === user?.id)
-                                ? () => { api.getPaymentProof(game.id, player.user_id).then(setProofUrl).catch((e: Error) => setError(e.message)); }
+                                ? () => {
+                                  const ppd = paymentByUser.get(player.user_id);
+                                  setProofNote(ppd?.proof_note || '');
+                                  if (ppd?.has_proof) api.getPaymentProof(game.id, player.user_id).then(setProofUrl).catch((e: Error) => setError(e.message));
+                                }
                                 : undefined}
                               onSettle={(isModerator || isAdmin) ? (amt) => {
                                 if (window.confirm(`Returned ${formatMoney(amt, currency)} to this player offline? This marks the excess as settled.`)) {

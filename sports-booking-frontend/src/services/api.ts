@@ -263,6 +263,9 @@ export const api = {
 
   getGame: (id: number) => request(`/api/games/${id}`),
 
+  confirmPlayed: (id: number) =>
+    request(`/api/games/${id}/confirm-played`, { method: 'POST' }),
+
   openVoting: (id: number) =>
     request(`/api/games/${id}/open-voting`, { method: 'POST' }),
 
@@ -635,10 +638,11 @@ export const api = {
     });
   },
 
-  markPaidWithProof: (gameId: number, file: File) => {
+  markPaidWithProof: (gameId: number, file: File | null, comment = '') => {
     const formData = new FormData();
     formData.append('game_id', String(gameId));
-    formData.append('file', file);
+    if (file) formData.append('file', file);
+    formData.append('comment', comment);
     return fetch(`${API_URL}/api/payments/pay-with-proof`, { method: 'POST', headers: uploadHeaders(), body: formData })
       .then(async (res) => {
         const body = await res.json().catch(() => ({ detail: 'Upload failed' }));

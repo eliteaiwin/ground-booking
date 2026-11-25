@@ -16,6 +16,7 @@ from ..pitches import resolve_game_slot, user_group_ids
 from .preferences_router import game_defaults
 from ..currency import ground_currency, format_money
 from ..game_log import log_event, build_log, log_join_before_leaving
+from ..game_names import game_label, game_name, game_date_text
 from .notifications_router import should_notify_user
 from ..push import push_to_users
 from ..goal_insights import save_goal_times, game_insights
@@ -699,14 +700,6 @@ def reminder_time_text(when: datetime) -> str:
     return when.strftime("%d %b, %I:%M %p").replace(" 0", " ")
 
 
-def game_label(game) -> str:
-    """Name for a game in messages; falls back to its ground and date when it has no title."""
-    title = (game["title"] or "").strip()
-    if title:
-        return title
-    return f"the {game['ground_name']} game on {game['game_date']}" if game["ground_name"] else f"the game on {game['game_date']}"
-
-
 PAY_FIRST_STATUS = "awaiting_payment"
 
 
@@ -830,7 +823,7 @@ async def _add_pay_first_player(db: aiosqlite.Connection, game, uid: int, nomina
     )
     await create_notification(
         db, uid, game["id"], "payment_due",
-        f"Pay {due:.0f} for {game['title']} to confirm your spot. Your name is added to the list once payment is received."
+        f"Pay {due:.0f} for {game_label(game)} to confirm your spot. Your name is added to the list once payment is received."
     )
     return {"status": PAY_FIRST_STATUS, "amount": due,
             "message": f"Payment of {due:.0f} is needed first. The name is added to the list once paid."}
@@ -857,7 +850,7 @@ async def _admit_paid_pay_first_player(db: aiosqlite.Connection, game_id: int, u
     await log_event(db, game_id, "admitted", user_id=uid)
     await create_notification(
         db, uid, game_id, "payment_confirmed",
-        f"Payment received. You're {'confirmed' if status == 'selected' else 'on the waiting list'} for {game['title']}."
+        f"Payment received. You're {'confirmed' if status == 'selected' else 'on the waiting list'} for {game_label(game)}."
     )
     await _recalc_game_cost(db, game_id)
 
@@ -1049,7 +1042,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
 
     # Get per-player payment details for players who actually played/are selected
     cursor = await db.execute(
-        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, u.name, p.received_amount,
+        """SELECT p.user_id, p.status as pay_status, p.amount, p.paid_amount, p.paid_at, p.proof_file, p.proof_note, u.name, p.received_amount,
                   p.paid_by, p.paid_via, m.name AS paid_by_name, rv.name AS received_by_name, p.refund_due
            FROM payments p
            JOIN users u ON p.user_id = u.id
@@ -1074,6 +1067,7 @@ async def get_game_dict(db: aiosqlite.Connection, game_id: int) -> dict:
             "paid_by_name": pr["paid_by_name"] or "",
             "paid_via": pr["paid_via"] or "",
             "has_proof": bool(pr["proof_file"]),
+            "proof_note": pr["proof_note"] or "",
             "received_amount": pr["received_amount"] or 0,
             "received_by_name": pr["received_by_name"] or "",
             "refund_due": bool(pr["refund_due"]),
@@ -1563,7 +1557,7 @@ async def _notify_share_change(db: aiosqlite.Connection, game: aiosqlite.Row, re
         await db.execute(
             "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
             (r["user_id"], game_id,
-             f"{reason} for {game['title']} changed. Your share is now {r['amount']:.0f}. {note}")
+             f"{reason} for {game_label(game)} changed. Your share is now {r['amount']:.0f}. {note}")
         )
 
 
@@ -1599,7 +1593,7 @@ async def _add_to_completed_game(db: aiosqlite.Connection, game: aiosqlite.Row, 
     )).fetchone())["amount"]
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
-        (player_id, game_id, f"You were added to {game['title']} as a player. Your share is {_whole_rupees(share):.0f}.")
+        (player_id, game_id, f"You were added as a player to {game_label(game)}. Your share is {_whole_rupees(share):.0f}.")
     )
     await db.commit()
     return await get_game_dict(db, game_id)
@@ -1747,7 +1741,7 @@ async def open_voting(
     except (TypeError, ValueError):
         when = f"{game['game_date']} {game['game_time']}"
     await push_to_users(
-        db, push_ids, f"Game voting started: {game['title']}",
+        db, push_ids, f"Game voting started: {game_label(game)}",
         f"{game['ground_name']}, {when}. Tap to join.", "voting", game_id
     )
     return await get_game_dict(db, game_id)
@@ -1986,7 +1980,7 @@ async def mod_mark_tentative(
             who = (mod["display_name"] or mod["name"]) if mod else "Your moderator"
             await create_notification(
                 db, player_id, game_id, "marked_tentative",
-                f"{who} marked you tentative for {game['title']}. If you will definitely play, tap the x on your T. Open game")
+                f"{who} marked you tentative for {game_label(game)}. If you will definitely play, tap the x on your T. Open game")
         await db.commit()
     return await get_game_dict(db, game_id)
 
@@ -2014,7 +2008,7 @@ async def nudge_tentative(
     await create_notification(
         db, player_id, game_id, "tentative_nudge",
         f"{(mod['display_name'] or mod['name']) if mod else 'Your moderator'} asks you to confirm your availability for "
-        f"{game['title']} {when}. Confirm now"
+        f"{game_name(game)} {when}. Confirm now"
     )
     await db.execute("UPDATE game_players SET tentative_nudged_at = ? WHERE id = ?",
                      (_local_now().strftime("%Y-%m-%d %H:%M:%S"), player["id"]))
@@ -2062,7 +2056,7 @@ async def send_tentative_moderator_alerts(db: aiosqlite.Connection) -> int:
         for uid in await _game_moderator_ids(db, g):
             await create_notification(
                 db, uid, g["id"], "tentative_alert",
-                f"{g['title']} at {start.strftime('%-I:%M %p')} today: {len(names)} confirmed players are still tentative "
+                f"{game_name(g, cap=True)} at {start.strftime('%-I:%M %p')} today: {len(names)} confirmed players are still tentative "
                 f"({', '.join(names)}). Nudge them to confirm their availability. Open game"
             )
         await db.execute("UPDATE games SET tentative_alert_at = ? WHERE id = ?", (now.strftime("%Y-%m-%d %H:%M:%S"), g["id"]))
@@ -2296,7 +2290,7 @@ async def _quit_game(game_id: int, user_id: int, db: aiosqlite.Connection, by_mo
             # Notify promoted player
             await create_notification(
                 db, next_player["user_id"], game_id, "promoted",
-                f"You've been promoted from the waiting list for {game['title']}!"
+                f"You've been promoted from the waiting list for {game_label(game)}!"
             )
 
     await _recalc_game_cost(db, game_id)
@@ -2330,7 +2324,7 @@ async def remove_player(
         remover = await (await db.execute("SELECT name FROM users WHERE id = ?", (user_id,))).fetchone()
         await create_notification(
             db, player_user_id, game_id, "removed",
-            f"{remover['name'] if remover else 'A moderator'} removed you from {game['title']}."
+            f"{remover['name'] if remover else 'A moderator'} removed you from {game_label(game)}."
         )
         await db.commit()
         result = {**result, "message": "Player removed from the game"}
@@ -2482,7 +2476,7 @@ async def nominate_player(
     if game["status"] == "voting_open":
         await create_notification(
             db, req.user_id, game_id, "nominated",
-            f"You've been nominated for {game['title']} at {game['ground_name']}!"
+            f"You've been nominated for {game_label(game)}" + (f" at {game['ground_name']}!" if (game['title'] or '').strip() else "!")
         )
 
     await _recalc_game_cost(db, game_id)
@@ -2517,7 +2511,7 @@ async def set_player_prepay(
     if req.must_prepay or req.always:
         await create_notification(
             db, player_user_id, game_id, "payment_due",
-            f"Please pay {game['cost_per_person']:.0f} for {game['title']} before the game starts."
+            f"Please pay {game['cost_per_person']:.0f} for {game_label(game)} before the game starts."
         )
     await db.commit()
     return {"message": "Saved"}
@@ -2580,6 +2574,27 @@ async def start_game(
         raise HTTPException(status_code=400, detail="Can only start a game that has open voting")
 
     return await _start_game(db, game)
+
+
+@router.post("/{game_id}/confirm-played")
+async def confirm_draft_played(
+    game_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    """A draft whose time is over was actually played: mark it completed with its confirmed players so payments open."""
+    await require_game_moderator(user_id, game_id, db)
+    game = await (await db.execute("SELECT * FROM games WHERE id = ?", (game_id,))).fetchone()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game["status"] != "draft" or not _game_has_ended(game):
+        raise HTTPException(status_code=400, detail="Only a draft whose time is over can be confirmed as played")
+    if not (await (await db.execute(
+        "SELECT 1 FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,))).fetchone()):
+        raise HTTPException(status_code=400, detail="Add the players who played first, then confirm")
+    await db.execute("UPDATE games SET status = 'voting_open' WHERE id = ?", (game_id,))
+    await _start_game(db, await _get_game(db, game_id))
+    return await _complete_game(db, await _get_game(db, game_id), CompleteGameRequest())
 
 
 async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameRequest):
@@ -2718,7 +2733,7 @@ async def _complete_game(db: aiosqlite.Connection, game, req: CompleteGameReques
         for uid in played_user_ids:
             await create_notification(
                 db, uid, game_id, "game_completed",
-                f"Game '{game['title']}' has been completed! Nominate the Player of the Day."
+                f"{game_label(game, cap=True)} has been completed! Nominate the Player of the Day."
             )
 
     await db.commit()
@@ -3015,7 +3030,7 @@ async def cancel_game(
         raise HTTPException(status_code=400, detail="Cannot cancel a completed game")
     if game["status"] == "cancelled":
         raise HTTPException(status_code=400, detail="Game is already cancelled")
-    if _game_has_ended(game):
+    if _game_has_ended(game) and game["status"] != "draft":
         raise HTTPException(status_code=400, detail="Can't cancel a game that is already over")
     unverified = await _unverified_paid_names(db, game_id)
     if unverified:
@@ -3033,7 +3048,7 @@ async def cancel_game(
     await log_event(db, game_id, "cancelled", actor_id=user_id, note=reason)
 
     cancel_detail = (
-        f"Game '{game['title']}' on {game['game_date']} at {game['game_time']} "
+        f"{game_name(game, cap=True)} on {game_date_text(game['game_date'])} at {game['game_time']} "
         f"at {game['ground_name']} has been cancelled. Reason: {reason}."
     )
 
@@ -3694,7 +3709,7 @@ async def settle_excess(
     await log_event(db, game_id, "excess_settled", user_id=req.user_id, actor_id=user_id, amount=excess)
     await db.execute(
         "INSERT INTO notifications (user_id, game_id, type, message) VALUES (?, ?, 'payment_update', ?)",
-        (req.user_id, game_id, f"Moderator settled your excess payment of {excess:.0f} for {game['title']}.")
+        (req.user_id, game_id, f"Moderator settled your excess payment of {excess:.0f} for {game_label(game)}.")
     )
     await db.commit()
     return await get_game_dict(db, game_id)
@@ -3752,7 +3767,7 @@ async def mark_payment_made(
     # Notify user
     await create_notification(
         db, req.user_id, game_id, "payment_confirmed",
-        f"Your payment for {game['title']} has been confirmed by the moderator."
+        f"Your payment for {game_label(game)} has been confirmed by the moderator."
     )
     await _admit_paid_pay_first_player(db, game_id, req.user_id)
 
@@ -3780,7 +3795,7 @@ async def announce_game_confirmed(
     rows = await (await db.execute(
         "SELECT user_id FROM game_players WHERE game_id = ? AND status = 'selected'", (game_id,)
     )).fetchall()
-    msg = f"Game is Confirmed: {game['title']} at {start.strftime('%-I:%M %p')}. See you on the ground!"
+    msg = f"Game is Confirmed: {game_label(game)} at {start.strftime('%-I:%M %p')}. See you on the ground!"
     for r in rows:
         await create_notification(db, r["user_id"], game_id, "game_confirmed", msg)
     await db.execute("UPDATE games SET confirmed_announced_at = ? WHERE id = ?", (now.isoformat(), game_id))
